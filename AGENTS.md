@@ -157,6 +157,9 @@ gofmt -l .                        # CI fails on unformatted files
   real player instance.
 - Version string: `main.version`, injected by `build.sh` (`-X main.version=…`, leading
   `v` stripped). `dev` builds never offer self-updates.
+- Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).
+  That disables the update check, the banner and `-self-update` (which then tells the user
+  to use their package manager): a packaged binary is owned by the package manager.
 
 ## Releasing
 

@@ -26,6 +26,11 @@ import (
 
 var version = "dev" // set by the release build: -ldflags "-X main.version=…"
 
+// packaged names the package manager that installed this binary (e.g. "AUR"), set by
+// distro builds with -ldflags "-X main.packaged=…". Such builds never self-update: the
+// binary is owned by the package manager, which is also how it gets updated.
+var packaged = ""
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -49,9 +54,14 @@ func run() error {
 	flag.Parse()
 	selfupdate.CleanupOld()
 	if *showVer {
-		fmt.Println("gtnh-update", version)
+		if packaged != "" {
+			fmt.Printf("gtnh-update %s (%s)\n", version, packaged)
+		} else {
+			fmt.Println("gtnh-update", version)
+		}
 		return nil
 	}
+	updateCheck := !*noCheck && packaged == ""
 	if *serverMods != "" && *serverMods != "none" {
 		if err := update.CheckCustomModsURL(*serverMods); err != nil {
 			return err
@@ -76,14 +86,14 @@ func run() error {
 		if *instance == "" || *target == "" {
 			return errors.New("-yes needs -instance and -version")
 		}
-		if !*noCheck {
+		if updateCheck {
 			noticeNewer(client)
 		}
 		return headless(client, dirs, *instance, *installed, *target, *serverMods)
 	}
 	out, err := tui.Run(tui.Config{
 		Client: client, AppVersion: version, PrismDirs: dirs, Instance: *instance,
-		Installed: *installed, Target: *target, ServerMods: *serverMods, UpdateCheck: !*noCheck,
+		Installed: *installed, Target: *target, ServerMods: *serverMods, UpdateCheck: updateCheck,
 	})
 	if err != nil {
 		return err
@@ -95,6 +105,9 @@ func run() error {
 }
 
 func selfUpdate(client *http.Client) error {
+	if packaged != "" {
+		return fmt.Errorf("this gtnh-update was installed with %s -- update it with your package manager instead", packaged)
+	}
 	rel, err := selfupdate.Latest(client)
 	if err != nil {
 		return fmt.Errorf("couldn't check for a new version: %w", err)
