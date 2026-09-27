@@ -124,7 +124,9 @@ go test ./...
 Releases are built by GitHub Actions: pushing a tag like `v1.2.3` runs the tests on all
 three systems and publishes the binaries with a signed `checksums.txt`. Signing needs the
 `RELEASE_SIGNING_KEY` repository secret (see `internal/cmd/sign`); forks building their own
-releases must generate their own key.
+releases must generate their own key. The AUR package is built from
+[`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD) (`makepkg -si` in that folder builds it
+locally).
 
 ## License
 

@@ -1,0 +1,43 @@
+# Maintainer: Enn3Developer
+
+pkgname=gtnh-update
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Update a GT: New Horizons Prism Launcher instance in place, keeping worlds and settings"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Enn3Developer/gtnh-client-updater"
+license=('MIT')
+depends=('glibc')
+makedepends=('go')
+optdepends=('prismlauncher: the launcher whose GTNH instances this updates')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('c99a869fcd1f98968bc07c1042db52ab7c4d46da7d2beaf32604a7c70ea673a0')
+
+prepare() {
+  cd "gtnh-client-updater-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  go mod download -modcacherw
+}
+
+build() {
+  cd "gtnh-client-updater-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  export CGO_CPPFLAGS="$CPPFLAGS" CGO_CFLAGS="$CFLAGS" CGO_CXXFLAGS="$CXXFLAGS" CGO_LDFLAGS="$LDFLAGS"
+  export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
+  # packaged=AUR: pacman owns the binary, so its built-in self-updater is switched off.
+  go build -ldflags "-linkmode=external -X main.version=$pkgver -X main.packaged=AUR" \
+    -o gtnh-update ./cmd/gtnh-update
+}
+
+check() {
+  cd "gtnh-client-updater-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  go test -mod=readonly ./...
+}
+
+package() {
+  cd "gtnh-client-updater-$pkgver"
+  install -Dm755 gtnh-update "$pkgdir/usr/bin/gtnh-update"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

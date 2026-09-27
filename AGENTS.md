@@ -33,7 +33,9 @@ internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <che
 internal/tui/                bubbletea UI (single file, screen state machine)
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
-.github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, gh release create
+.github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
+                             then push the AUR package
+packaging/aur/               PKGBUILD + .SRCINFO template for the AUR package `gtnh-update`
 .github/release-notes.md     download table prepended to generated release notes
 staticcheck.conf             disables ST1005 (TUI errors are capitalized sentences on purpose)
 ```
@@ -171,6 +173,18 @@ gofmt -l .                        # CI fails on unformatted files
    `checksums.txt` + `checksums.txt.sig` with `.github/release-notes.md` prepended to
    generated notes.
    Existing installs see the in-app "new version" banner and can self-update.
+   Then the `aur` job builds `packaging/aur/PKGBUILD` with the tag's version and tarball
+   sha256 in a clean `archlinux:base-devel` container, checks `-V` says `(AUR)`, and pushes
+   PKGBUILD + .SRCINFO to `ssh://aur@aur.archlinux.org/gtnh-update.git`. It's skipped with a
+   notice when the `AUR_SSH_KEY` secret (an SSH private key registered on the maintainer's
+   AUR account) is missing, and for tags with a `-` (pkgver can't have one). The AUR host
+   key is pinned in the workflow from the fingerprints on https://aur.archlinux.org/.
+   The repo's PKGBUILD only needs editing when packaging itself changes (deps, build
+   flags); keep its `pkgver`/`sha256sums` at the last release so `makepkg` works from a
+   checkout. After changing it, rerun `makepkg --printsrcinfo > .SRCINFO` there.
+   (As of 0.2.0 the AUR package isn't published yet — AUR registration was closed. Once
+   the first push lands, add an "Arch Linux: `yay -S gtnh-update`" line to README's
+   "How to use it".)
 4. Verify: `gh release view vX.Y.Z`, download one asset, `sha256sum -c --ignore-missing
    checksums.txt`, `-V` prints the version, `gh attestation verify <asset> --repo
    Enn3Developer/gtnh-client-updater`, and self-update an older build to it.

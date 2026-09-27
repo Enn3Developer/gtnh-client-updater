@@ -1,0 +1,15 @@
+pkgbase = gtnh-update
+	pkgdesc = Update a GT: New Horizons Prism Launcher instance in place, keeping worlds and settings
+	pkgver = 0.2.0
+	pkgrel = 1
+	url = https://github.com/Enn3Developer/gtnh-client-updater
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	makedepends = go
+	depends = glibc
+	optdepends = prismlauncher: the launcher whose GTNH instances this updates
+	source = gtnh-update-0.2.0.tar.gz::https://github.com/Enn3Developer/gtnh-client-updater/archive/refs/tags/v0.2.0.tar.gz
+	sha256sums = c99a869fcd1f98968bc07c1042db52ab7c4d46da7d2beaf32604a7c70ea673a0
+
+pkgname = gtnh-update

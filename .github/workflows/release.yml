@@ -58,3 +58,54 @@ jobs:
             --title "gtnh-update ${GITHUB_REF_NAME#v}" \
             --notes-file .github/release-notes.md \
             --generate-notes
+
+  # Publishes packaging/aur/PKGBUILD to the AUR with this tag's version and tarball hash,
+  # after building it once in a clean Arch container. Skipped (not failed) until the
+  # AUR_SSH_KEY secret exists, and for pre-release tags (pkgver can't contain "-").
+  aur:
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+    steps:
+      - name: No AUR_SSH_KEY secret, skipping
+        if: env.AUR_SSH_KEY == ''
+        run: echo "::notice::AUR_SSH_KEY is not set; the AUR package was not updated."
+      - name: Install tools
+        if: env.AUR_SSH_KEY != ''
+        run: pacman -Syu --noconfirm --needed git openssh go
+      - uses: actions/checkout@v7
+        if: env.AUR_SSH_KEY != ''
+      - name: Update and build the PKGBUILD
+        if: env.AUR_SSH_KEY != ''
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          useradd -m builder
+          mkdir /aurbuild && cp packaging/aur/PKGBUILD /aurbuild/ && cd /aurbuild
+          sum=$(curl -fsSL "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz" | sha256sum | cut -d' ' -f1)
+          sed -i -e "s/^pkgver=.*/pkgver=$ver/" -e "s/^pkgrel=.*/pkgrel=1/" \
+                 -e "s/^sha256sums=.*/sha256sums=('$sum')/" PKGBUILD
+          chown -R builder /aurbuild
+          su builder -c "makepkg --noconfirm"
+          su builder -c "makepkg --printsrcinfo > .SRCINFO"
+          pacman -U --noconfirm gtnh-update-"$ver"-1-*.pkg.tar.zst
+          gtnh-update -V | grep -Fx "gtnh-update $ver (AUR)"
+      - name: Push to the AUR
+        if: env.AUR_SSH_KEY != ''
+        run: |
+          install -dm700 /root/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > /root/.ssh/aur && chmod 600 /root/.ssh/aur
+          # Pinned from the fingerprints published on https://aur.archlinux.org/
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > /root/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i /root/.ssh/aur -o UserKnownHostsFile=/root/.ssh/known_hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes"
+          git -c init.defaultBranch=master clone ssh://aur@aur.archlinux.org/gtnh-update.git /aur
+          cp /aurbuild/PKGBUILD /aurbuild/.SRCINFO /aur/
+          cd /aur
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "AUR already up to date"; exit 0; fi
+          git commit -m "Update to ${GITHUB_REF_NAME#v}"
+          git push origin HEAD:master
