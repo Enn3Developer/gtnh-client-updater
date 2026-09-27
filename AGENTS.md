@@ -160,6 +160,9 @@ gofmt -l .                        # CI fails on unformatted files
 - Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).
   That disables the update check, the banner and `-self-update` (which then tells the user
   to use their package manager): a packaged binary is owned by the package manager.
+- Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).
+  That disables the update check, the banner and `-self-update` (which then tells the user
+  to use their package manager): a packaged binary is owned by the package manager.
 
 ## Releasing
 
