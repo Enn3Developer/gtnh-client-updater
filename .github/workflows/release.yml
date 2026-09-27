@@ -27,7 +27,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write     # create the release
+      id-token: write     # build provenance attestation (Sigstore)
+      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,6 +39,17 @@ jobs:
           go-version-file: go.mod
       - name: Build
         run: ./build.sh "${GITHUB_REF_NAME}"
+      # Binaries only self-update to releases whose checksums.txt is signed by the key
+      # embedded in them (internal/selfupdate/signing_key.pub). Fails closed: a missing
+      # or mismatched secret stops the release.
+      - name: Sign checksums
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: go run ./internal/cmd/sign sign dist/checksums.txt
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: 'dist/gtnh-update-*'
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

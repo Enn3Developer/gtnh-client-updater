@@ -1,6 +1,8 @@
 package selfupdate
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -9,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -38,25 +41,31 @@ func TestApplyReplacesExecutable(t *testing.T) {
 	newBin := []byte("new binary")
 	sum := sha256.Sum256(newBin)
 	name := AssetName(runtime.GOOS, runtime.GOARCH)
+	sums := fmt.Sprintf("%s  %s\n%s  other\n", hex.EncodeToString(sum[:]), name, "00")
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	sig := SignChecksums(priv, []byte(sums))
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	mux.HandleFunc("/repos/"+Repo+"/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"tag_name":"v9.9.9","html_url":"x","assets":[
 		  {"name":%q,"browser_download_url":"%s/dl/%s"},
-		  {"name":"checksums.txt","browser_download_url":"%s/dl/checksums.txt"}]}`,
-			name, srv.URL, name, srv.URL)
+		  {"name":"checksums.txt","browser_download_url":"%s/dl/checksums.txt"},
+		  {"name":"checksums.txt.sig","browser_download_url":"%s/dl/checksums.txt.sig"}]}`,
+			name, srv.URL, name, srv.URL, srv.URL)
 	})
 	mux.HandleFunc("/dl/"+name, func(w http.ResponseWriter, r *http.Request) { w.Write(newBin) })
-	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "%s  %s\n%s  other\n", hex.EncodeToString(sum[:]), name, "00")
-	})
+	mux.HandleFunc("/dl/checksums.txt", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, sums) })
+	mux.HandleFunc("/dl/checksums.txt.sig", func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, sig) })
 
 	exe := filepath.Join(t.TempDir(), "gtnh-update")
 	os.WriteFile(exe, []byte("old binary"), 0o755)
 	apiBase, downloadPrefix = srv.URL, srv.URL+"/dl/"
 	executable = func() (string, error) { return exe, nil }
+	oldKey := publicKey
+	publicKey = pub
 	defer func() {
+		publicKey = oldKey
 		apiBase = "https://api.github.com"
 		downloadPrefix = "https://github.com/" + Repo + "/releases/download/"
 		executable = os.Executable
@@ -80,6 +89,31 @@ func TestApplyReplacesExecutable(t *testing.T) {
 		t.Error(".old left behind")
 	}
 
+	// Signature problems must stop the update before anything is downloaded or replaced.
+	os.WriteFile(exe, []byte("new binary"), 0o755)
+	otherPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	publicKey = otherPub
+	if err := rel.Apply(srv.Client(), nil); err == nil {
+		t.Fatal("release signed by another key accepted")
+	}
+	publicKey = nil
+	if err := rel.Apply(srv.Client(), nil); err == nil {
+		t.Fatal("a build without a key accepted an update")
+	}
+	publicKey = pub
+	realSums := sums
+	sums = strings.Replace(sums, "00  other", "11  other", 1) // tampered after signing
+	if err := rel.Apply(srv.Client(), nil); err == nil {
+		t.Fatal("tampered checksums.txt accepted")
+	}
+	sums = realSums
+	sigURL := rel.assets["checksums.txt.sig"]
+	delete(rel.assets, "checksums.txt.sig")
+	if err := rel.Apply(srv.Client(), nil); err == nil || !strings.Contains(err.Error(), "not signed") {
+		t.Fatalf("unsigned release accepted: %v", err)
+	}
+	rel.assets["checksums.txt.sig"] = sigURL
+
 	// A tampered download must not replace anything.
 	mux.HandleFunc("/dl/bad", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("evil")) })
 	rel.assets[name] = srv.URL + "/dl/bad"
@@ -93,5 +127,20 @@ func TestApplyReplacesExecutable(t *testing.T) {
 	rel.assets[name] = "https://evil.example/x"
 	if err := rel.Apply(srv.Client(), nil); err == nil {
 		t.Fatal("foreign download accepted")
+	}
+}
+
+func TestKeyEncodingRoundTrip(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	p2, err := ParsePrivateKey(EncodePrivateKey(priv))
+	if err != nil || !p2.Equal(priv) {
+		t.Fatalf("private key round trip: %v", err)
+	}
+	k2, err := ParsePublicKey(EncodePublicKey(pub))
+	if err != nil || !k2.Equal(pub) {
+		t.Fatalf("public key round trip: %v", err)
+	}
+	if _, err := ParsePublicKey(""); err == nil {
+		t.Error("empty key accepted")
 	}
 }

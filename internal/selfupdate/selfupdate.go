@@ -6,12 +6,14 @@
 // overwrite a running .exe but can rename it, so there the old binary is moved to
 // <exe>.old first and deleted on the next start (CleanupOld).
 //
-// The checksum protects against corrupted or truncated downloads; authenticity rests on
-// HTTPS to github.com and the pinned repository URL.
+// checksums.txt must carry a valid ed25519 signature (checksums.txt.sig) from the key
+// embedded in the binary (signature.go), so a release is only installed if it was
+// signed by the maintainers — not merely because it appeared on the releases page.
 package selfupdate
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -115,16 +117,30 @@ var ErrNotWritable = errors.New("can't replace the program file here")
 // executable. progress gets bytes downloaded.
 func (r *Release) Apply(client *http.Client, progress func(done, total int64)) error {
 	name := AssetName(runtime.GOOS, runtime.GOARCH)
-	binURL, sumsURL := r.assets[name], r.assets["checksums.txt"]
+	binURL, sumsURL, sigURL := r.assets[name], r.assets["checksums.txt"], r.assets["checksums.txt.sig"]
 	if binURL == "" || sumsURL == "" {
 		return fmt.Errorf("release %s has no %s download", r.Version, name)
 	}
-	for _, u := range []string{binURL, sumsURL} {
+	if sigURL == "" {
+		return fmt.Errorf("release %s is not signed, so I won't install it -- download it yourself from %s", r.Version, r.Page)
+	}
+	for _, u := range []string{binURL, sumsURL, sigURL} {
 		if !strings.HasPrefix(u, downloadPrefix) {
 			return fmt.Errorf("refusing download from unexpected location: %s", u)
 		}
 	}
-	want, err := expectedSum(client, sumsURL, name)
+	sums, err := fetchSmall(client, sumsURL)
+	if err != nil {
+		return err
+	}
+	sig, err := fetchSmall(client, sigURL)
+	if err != nil {
+		return err
+	}
+	if err := VerifyChecksums(publicKey, sums, sig); err != nil {
+		return err
+	}
+	want, err := sumFor(sums, name)
 	if err != nil {
 		return err
 	}
@@ -185,16 +201,21 @@ func CleanupOld() {
 	}
 }
 
-func expectedSum(client *http.Client, url, name string) (string, error) {
+func fetchSmall(client *http.Client, url string) ([]byte, error) {
 	resp, err := client.Get(url)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("checksums: HTTP %s", resp.Status)
+		return nil, fmt.Errorf("%s: HTTP %s", url, resp.Status)
 	}
-	sc := bufio.NewScanner(io.LimitReader(resp.Body, 1<<20))
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// sumFor finds name's SHA-256 in sha256sum-format content.
+func sumFor(sums []byte, name string) (string, error) {
+	sc := bufio.NewScanner(bytes.NewReader(sums))
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == name {

@@ -27,7 +27,9 @@ internal/prism/              find Prism data dirs, list/load instances, instance
                              "is the game running" (Linux only; other OSes return false)
 internal/update/             the engine: state, version detection, plan, apply, server mods,
                              Session (Prepare -> Apply)
-internal/selfupdate/         GitHub-release self-update, restart (unix exec / windows child)
+internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
+                             (signature.go, embedded signing_key.pub), restart
+internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
 internal/tui/                bubbletea UI (single file, screen state machine)
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
@@ -77,8 +79,16 @@ hash; download integrity comes from HTTPS to the pinned host + zip CRC checks.
   servers.dat, player-added jars must never be modified or deleted by the reconcile.
 - **Pack downloads only from `https://downloads.gtnewhorizons.com`** (`manifest.CheckURL`).
   Versions must be exact manifest keys. No caller-supplied pack URLs.
-- **Self-update downloads only from this repo's release URLs** (`selfupdate.downloadPrefix`)
-  and must match `checksums.txt`. Asset names come from `selfupdate.AssetName` and must
+- **Self-update downloads only from this repo's release URLs** (`selfupdate.downloadPrefix`),
+  and only installs a release whose `checksums.txt` has a valid `checksums.txt.sig`
+  (ed25519 over `"gtnh-update checksums.txt v1\n" + checksums.txt`) from the embedded
+  public key, and whose binary matches its checksum. Unsigned releases are refused. A build
+  with an empty `signing_key.pub` refuses all self-updates.
+- **Never change or rotate `internal/selfupdate/signing_key.pub` casually**: every
+  released binary trusts only that key, so after a rotation existing installs can't
+  self-update and players must download once by hand. The private key lives only in the
+  `RELEASE_SIGNING_KEY` repo secret and the maintainer's offline backup — never in the
+  repo, logs or agent output. Asset names come from `selfupdate.AssetName` and must
   stay in sync with `build.sh` naming (`gtnh-update-<os>-<arch>[.exe]`).
 - **Server-mods sync only removes jars it installed itself** (`State.CustomMods`). Archive
   entries must be flat `*.jar` names (no `/`, `:`). A 404 means "no mods right now".
@@ -152,11 +162,15 @@ gofmt -l .                        # CI fails on unformatted files
 
 1. Make sure `main` is green in CI.
 2. `git tag -a vX.Y.Z -m "gtnh-update X.Y.Z" && git push origin vX.Y.Z`
-3. The Release workflow tests on 3 OSes, runs `./build.sh vX.Y.Z`, and publishes the 6
-   binaries + `checksums.txt` with `.github/release-notes.md` prepended to generated notes.
+3. The Release workflow tests on 3 OSes, runs `./build.sh vX.Y.Z`, signs
+   `checksums.txt` with the `RELEASE_SIGNING_KEY` secret (fails if it's missing or doesn't
+   match `signing_key.pub`), attests build provenance, and publishes the 6 binaries +
+   `checksums.txt` + `checksums.txt.sig` with `.github/release-notes.md` prepended to
+   generated notes.
    Existing installs see the in-app "new version" banner and can self-update.
 4. Verify: `gh release view vX.Y.Z`, download one asset, `sha256sum -c --ignore-missing
-   checksums.txt`, `-V` prints the version.
+   checksums.txt`, `-V` prints the version, `gh attestation verify <asset> --repo
+   Enn3Developer/gtnh-client-updater`, and self-update an older build to it.
 
 Binaries are unsigned (SmartScreen/Gatekeeper warn on first run; release notes explain).
 Git: commit/push only when the maintainer asks.

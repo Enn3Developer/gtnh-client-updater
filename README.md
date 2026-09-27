@@ -106,8 +106,11 @@ one on disk, and the one in the new pack. Only files GTNH ships are ever touched
 - **Only official downloads.** Versions and download links come from the official
   [GTNH manifest](https://downloads.gtnewhorizons.com/versions.json), and downloads are
   only accepted from `downloads.gtnewhorizons.com` over HTTPS.
-- **Self-update.** It checks this repository's latest release, and verifies the new binary
-  against the release's `checksums.txt` before replacing itself.
+- **Signed self-updates.** It checks this repository's latest release and only installs it
+  if the release's `checksums.txt` carries a valid ed25519 signature from the maintainers'
+  key (built into the program) and the new binary matches its checksum. Every release also
+  has a GitHub build provenance attestation:
+  `gh attestation verify <file> --repo Enn3Developer/gtnh-client-updater`.
 
 ## Building
 
@@ -119,7 +122,9 @@ go test ./...
 ```
 
 Releases are built by GitHub Actions: pushing a tag like `v1.2.3` runs the tests on all
-three systems and publishes the binaries with `checksums.txt`.
+three systems and publishes the binaries with a signed `checksums.txt`. Signing needs the
+`RELEASE_SIGNING_KEY` repository secret (see `internal/cmd/sign`); forks building their own
+releases must generate their own key.
 
 ## License
 
