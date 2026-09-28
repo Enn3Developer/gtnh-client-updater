@@ -214,6 +214,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.bar.Width = max(min(msg.Width-8, 64), 10)
+		m.input.Width = m.inputWidth()
 		if m.hasList {
 			m.list.SetSize(m.listWidth(), m.listHeight())
 		}
@@ -481,7 +482,8 @@ func (m *model) pickInstance(in prism.Instance) (tea.Model, tea.Cmd) {
 	return m.showTargets()
 }
 
-func (m *model) listWidth() int { return max(m.width-4, 20) }
+func (m *model) inputWidth() int { return max(min(m.width-10, 70), 20) }
+func (m *model) listWidth() int  { return max(m.width-4, 20) }
 func (m *model) listHeight() int {
 	h := m.height - 5 // padding + header
 	if m.newer != nil {
@@ -494,7 +496,8 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	d := list.NewDefaultDelegate()
 	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(accent).BorderForeground(accent)
 	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("#98BB6C")).BorderForeground(accent)
-	l := list.New(items, d, m.listWidth(), m.listHeight())
+	l := list.New(items, d, 0, 0)
+	l.SetSize(m.listWidth(), m.listHeight()) // New doesn't size the help line, SetSize does
 	l.Title = title
 	l.Styles.Title = titleSty.Padding(0, 1)
 	l.SetStatusBarItemName("choice", "choices")
@@ -641,7 +644,7 @@ func (m *model) askServerMods(thenPrepare bool) (tea.Model, tea.Cmd) {
 	m.modsThenPrepare = thenPrepare
 	m.input.SetValue(m.serverMods)
 	m.input.CursorEnd()
-	m.input.Width = max(min(m.width-10, 70), 20)
+	m.input.Width = m.inputWidth()
 	m.screen = scServerMods
 	return m, m.input.Focus()
 }
