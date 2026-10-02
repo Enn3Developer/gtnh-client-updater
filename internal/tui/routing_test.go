@@ -735,11 +735,15 @@ func TestCreateConfirmViewDescribesTheNewInstance(t *testing.T) { // C9
 		"Java 17+",
 		"Heads up: something odd",
 	} {
-		if !strings.Contains(body, want) {
+		// The temp dir can be wider than the page (macOS, Windows), so the view wraps inside the path; compare
+		// with whitespace removed so wrapping doesn't matter.
+		if !strings.Contains(noSpace(body), noSpace(want)) {
 			t.Errorf("create confirm body %q lacks %q", body, want)
 		}
 	}
 }
+
+func noSpace(s string) string { return strings.Join(strings.Fields(s), "") }
 
 func TestCreateConfirmViewJava8AndNoServerMods(t *testing.T) { // C9
 	m := routeModel(t)
