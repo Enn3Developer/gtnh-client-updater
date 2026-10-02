@@ -70,6 +70,9 @@ func (j *journal) install(disk string, open func() (io.ReadCloser, error)) error
 	return nil
 }
 
+// ErrRolledBack marks an Apply error after which every change was undone.
+var ErrRolledBack = errors.New("all changes rolled back, nothing modified")
+
 // Apply executes the plan against the new pack. On any failure it rolls back every
 // change it made and returns the error; the instance is then as it was before.
 // progress is called with actions done so far.
@@ -81,7 +84,7 @@ func Apply(pl *Plan, next *pack.Pack, instDir, backupDir string, progress func(d
 				err = fmt.Errorf("%w (ROLLBACK ALSO FAILED: %v — originals are in %s)", err, rerr, backupDir)
 			} else {
 				os.RemoveAll(backupDir) // everything was moved back; only empty dirs remain
-				err = fmt.Errorf("%w (all changes rolled back, nothing modified)", err)
+				err = fmt.Errorf("%w (%w)", err, ErrRolledBack)
 			}
 		}
 	}()

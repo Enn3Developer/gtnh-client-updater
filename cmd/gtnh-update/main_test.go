@@ -422,3 +422,23 @@ func TestHeadlessReportsServerModsSyncFailure(t *testing.T) { // C1
 		t.Errorf("output = %q, want the server-mods sync warning", out)
 	}
 }
+
+// ---- -configs maps through update.ParseChoice (C6) ----
+
+func TestC6ConfigChoiceAgreesWithParseChoice(t *testing.T) {
+	for _, v := range []string{"new", "mine"} {
+		want, _ := update.ParseChoice(v)
+		got, err := configChoice(v)
+		if err != nil || got != want {
+			t.Errorf("configChoice(%q) = %v, %v; want %v, nil", v, got, err, want)
+		}
+	}
+}
+
+func TestC6ConfigChoiceKeepsItsOwnErrorText(t *testing.T) {
+	_, err := configChoice("both")
+	want := `-configs must be "new" or "mine", not "both"`
+	if err == nil || err.Error() != want {
+		t.Errorf("configChoice(\"both\") error = %v, want %q", err, want)
+	}
+}

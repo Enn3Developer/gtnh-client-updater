@@ -130,13 +130,11 @@ func run() error {
 // configChoice maps the -configs flag to the engine's choice for conflicting configs.
 // The flag's default, "new", is update.Recommended.
 func configChoice(v string) (update.Choice, error) {
-	switch v {
-	case "new":
-		return update.TakeNew, nil
-	case "mine":
-		return update.KeepMine, nil
+	c, err := update.ParseChoice(v)
+	if err != nil {
+		return 0, fmt.Errorf("-configs must be \"new\" or \"mine\", not %q", v)
 	}
-	return 0, fmt.Errorf("-configs must be \"new\" or \"mine\", not %q", v)
+	return c, nil
 }
 
 // tuiConfigs is the -configs value for tui.Config.Configs: "" (the recommended answer)
@@ -289,7 +287,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		serverMods = st.CustomModsURL
 	}
 	fmt.Printf("Updating %s from %s to %s\n", inst.Name, installed, target)
-	if manifest.CompareVersions(target, installed) < 0 {
+	if update.IsDowngrade(target, installed) {
 		fmt.Printf("  heads up: %s is OLDER than %s -- worlds played on the newer version may break\n", target, installed)
 	}
 	rep := &textReporter{}
@@ -301,7 +299,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	}
 	pl := s.Plan
 	pl.ChooseAll(configs)
-	if pl.BaselineMatch < 0.8 {
+	if pl.BaselineSuspect() {
 		s.Close()
 		return fmt.Errorf("only %.0f%% of the mods that come with %s are in this instance, so it's probably on another version -- pass it with -installed",
 			pl.BaselineMatch*100, installed)
@@ -311,7 +309,11 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		return err
 	}
 	fmt.Printf("\nDone: %s is now on GTNH %s.\n", inst.Name, res.To)
-	fmt.Printf("  %d files updated, %d removed\n", pl.Count(update.Install), pl.Count(update.Remove))
+	files := "files"
+	if pl.Count(update.Install) == 1 {
+		files = "file"
+	}
+	fmt.Printf("  %d %s updated, %d removed\n", pl.Count(update.Install), files, pl.Count(update.Remove))
 	if res.Renamed != "" {
 		fmt.Printf("  renamed in Prism to %q\n", res.Renamed)
 	}

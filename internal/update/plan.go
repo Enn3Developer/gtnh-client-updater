@@ -1,12 +1,14 @@
 package update
 
 import (
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/pack"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 )
@@ -33,6 +35,22 @@ const (
 // (the player's file is backed up).
 const Recommended Choice = TakeNew
 
+// ParseChoice maps the player-facing names "new" and "mine" to a Choice.
+func ParseChoice(s string) (Choice, error) {
+	switch s {
+	case "new":
+		return TakeNew, nil
+	case "mine":
+		return KeepMine, nil
+	}
+	return 0, fmt.Errorf("configs must be new or mine (got %q)", s)
+}
+
+// IsDowngrade reports whether going from installed to target goes back to an older version.
+func IsDowngrade(target, installed string) bool {
+	return manifest.CompareVersions(target, installed) < 0
+}
+
 // Action is one planned change. Path is the canonical pack path; Disk is where it lands.
 type Action struct {
 	Kind Kind
@@ -56,6 +74,10 @@ type Plan struct {
 	// so it stays out of JSON and other packages go through the methods.
 	choices map[string]Choice
 }
+
+// BaselineSuspect reports whether too few of the baseline's mods are on disk, i.e. the
+// installed-version guess is probably wrong.
+func (p *Plan) BaselineSuspect() bool { return p.BaselineMatch < 0.8 }
 
 // Count returns how many actions of a kind the plan holds.
 func (p *Plan) Count(k Kind) int {

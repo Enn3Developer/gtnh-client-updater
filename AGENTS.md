@@ -36,7 +36,12 @@ internal/update/create.go    new instance: download into the new folder, extract
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
-internal/tui/                bubbletea UI (single file, screen state machine)
+internal/tui/                bubbletea UI, a screen state machine: tui.go model/messages/
+                             update loop, keys.go per-screen keys, nav.go navigation,
+                             lists.go list screens, views.go screen bodies, layout.go
+                             frame/scroll/styles, format.go number/time formatting,
+                             flow_load.go/flow_create.go/flow_update.go/flow_self.go
+                             background commands, reporter.go engine progress -> messages
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
 .github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
