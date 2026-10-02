@@ -187,6 +187,8 @@ func (s *Session) loadBaseline(rep Reporter) error {
 	return nil
 }
 
+var errGameRunning = errors.New("the game is still running from this instance -- close Minecraft and try again")
+
 // Apply executes the plan, then renames the instance, syncs custom mods, saves the new
 // baseline and prunes older backups. If the pack changes fail, everything is rolled
 // back. A custom-mods failure is reported in Result.CustomErr but does not undo the
@@ -195,11 +197,14 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	defer s.Close()
 	inst := s.opts.Instance
 	if prism.Running(inst) {
-		return nil, errors.New("the game is still running from this instance -- close Minecraft and try again")
+		return nil, errGameRunning
 	}
 	ts := time.Now().Format("20060102-150405")
 	backupDir := filepath.Join(inst.Dir, StateDir, "backup-"+ts)
 	res := &Result{From: s.opts.Installed, To: s.opts.Target, BackupDir: backupDir}
+
+	added := addedPaths(s.Plan, inst.Dir)
+	var addedMods []string
 
 	rep.Step("Updating files")
 	if err := Apply(s.Plan, s.next, inst.Dir, backupDir, itemProgress(rep)); err != nil {
@@ -233,6 +238,7 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 			rep.Warn("your server's extra mods could not be synced: " + err.Error())
 		} else {
 			res.CustomMods, managed = cm, cm.Installed
+			addedMods = newlyAdded(cm.Added, filepath.Join(backupDir, "custom-mods"))
 			s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, cm.Installed)
 		}
 	}
@@ -256,6 +262,14 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	// Keep only the newest backup, but never let a run that changed nothing (and so
 	// made no backup) throw away the last real one.
 	if _, err := os.Stat(backupDir); err == nil {
+		info := BackupInfo{From: s.opts.Installed, To: s.opts.Target, When: time.Now(),
+			PrevState: s.state, Added: added, AddedMods: addedMods}
+		if res.Renamed != "" {
+			info.PrevName = inst.Name
+		}
+		if err := writeBackupInfo(backupDir, info); err != nil {
+			rep.Warn("could not write the backup notes: " + err.Error())
+		}
 		pruneBackups(filepath.Join(inst.Dir, StateDir), "backup-"+ts)
 	} else {
 		res.BackupDir = ""
@@ -286,6 +300,37 @@ func pruneBackups(dir, keep string) {
 			os.RemoveAll(filepath.Join(dir, e.Name()))
 		}
 	}
+}
+
+// addedPaths lists the backup-mirror paths (slash-separated) the plan will create where no
+// file exists yet; Apply stashes nothing for them, so a restore has to delete them.
+func addedPaths(pl *Plan, instDir string) []string {
+	var out []string
+	for _, a := range pl.Actions {
+		target := a.Disk
+		switch {
+		case a.Kind == Remove:
+			continue
+		case a.Kind == Conflict && pl.ChoiceOf(a.Path) == KeepMine:
+			target += ".mcnew"
+		}
+		if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+			out = append(out, filepath.ToSlash(mirrorRel(instDir, target)))
+		}
+	}
+	return out
+}
+
+// newlyAdded returns the jars the sync wrote that had no previous copy stashed in
+// stashDir, i.e. the ones a restore must delete rather than move back.
+func newlyAdded(names []string, stashDir string) []string {
+	var out []string
+	for _, n := range names {
+		if _, err := os.Lstat(filepath.Join(stashDir, n)); errors.Is(err, os.ErrNotExist) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // withoutNames drops jars (possibly ".disabled") the custom-mods sync now manages: on a

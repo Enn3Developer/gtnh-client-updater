@@ -20,14 +20,19 @@ type journal struct {
 	undo      []func() error
 }
 
-// stash moves an existing file into the backup dir and records how to put it back.
-func (j *journal) stash(disk string) error {
-	rel, err := filepath.Rel(j.root, disk)
+// mirrorRel maps a file on disk to its path inside a backup dir that mirrors root.
+func mirrorRel(root, disk string) string {
+	rel, err := filepath.Rel(root, disk)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		// Game dir outside the instance (symlinked elsewhere): key it by absolute path.
 		rel = filepath.Join("_external", strings.ReplaceAll(filepath.ToSlash(disk), ":", "_"))
 	}
-	dst := filepath.Join(j.backupDir, rel)
+	return rel
+}
+
+// stash moves an existing file into the backup dir and records how to put it back.
+func (j *journal) stash(disk string) error {
+	dst := filepath.Join(j.backupDir, mirrorRel(j.root, disk))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
