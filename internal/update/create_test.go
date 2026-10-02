@@ -667,21 +667,24 @@ func TestApplySavesStateWithFullPackBaseline(t *testing.T) {
 	}
 }
 
-// C8
+// C8; CreateOptions.ServerAddress is saved verbatim into State.ServerAddress.
 func TestApplySavesCustomModsSettingsVerbatim(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		url   string
 		asked bool
+		addr  string
 	}{
-		{"url and asked", customModsURL, true},
-		{"none, never asked", "", false},
-		{"none, asked", "", true},
+		{"url and asked", customModsURL, true, ""},
+		{"none, never asked", "", false, ""},
+		{"none, asked", "", true, ""},
+		{"server address", "", true, "play.example:25565"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newCreateEnv(t, createPack())
 			env.files["/custom_mods.zip"] = zipBytes(t, "", map[string]string{"extra-1.jar": "e1"})
 			env.opts.CustomModsURL, env.opts.CustomModsAsked = tc.url, tc.asked
+			env.opts.ServerAddress = tc.addr
 			c, _ := createInstance(t, env, &recReporter{})
 			st, err := LoadState(c.Dir)
 			if err != nil || st == nil {
@@ -689,6 +692,9 @@ func TestApplySavesCustomModsSettingsVerbatim(t *testing.T) {
 			}
 			if st.CustomModsURL != tc.url || st.CustomModsAsked != tc.asked {
 				t.Errorf("state URL %q asked %v, want %q %v", st.CustomModsURL, st.CustomModsAsked, tc.url, tc.asked)
+			}
+			if st.ServerAddress != tc.addr {
+				t.Errorf("State.ServerAddress = %q, want %q", st.ServerAddress, tc.addr)
 			}
 		})
 	}

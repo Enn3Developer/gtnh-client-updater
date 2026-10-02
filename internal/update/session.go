@@ -213,8 +213,9 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	}
 
 	var managed []string
+	var serverAddress string
 	if s.state != nil {
-		managed = s.state.CustomMods
+		managed, serverAddress = s.state.CustomMods, s.state.ServerAddress
 	}
 	nextFP := s.nextFP
 	if s.opts.CustomModsURL != "" {
@@ -248,7 +249,7 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 		}
 	}
 	st := &State{Version: s.opts.Target, Baseline: nextFP, CustomMods: managed,
-		CustomModsURL: s.opts.CustomModsURL, CustomModsAsked: true}
+		CustomModsURL: s.opts.CustomModsURL, CustomModsAsked: true, ServerAddress: serverAddress}
 	if err := SaveState(inst.Dir, st); err != nil {
 		return nil, fmt.Errorf("update applied, but saving updater state failed: %w", err)
 	}

@@ -27,6 +27,7 @@ type CreateOptions struct {
 	Target          string // manifest version key
 	CustomModsURL   string // "" = none
 	CustomModsAsked bool   // saved verbatim into State.CustomModsAsked
+	ServerAddress   string // saved verbatim into State.ServerAddress; "" = none
 }
 
 // Creation is a prepared new instance: pack downloaded and verified into the new
@@ -272,7 +273,8 @@ func (c *Creation) Apply(rep Reporter) (res *CreateResult, err error) {
 		}
 	}
 	st := &State{Version: c.opts.Target, Baseline: fps, CustomMods: managed,
-		CustomModsURL: c.opts.CustomModsURL, CustomModsAsked: c.opts.CustomModsAsked}
+		CustomModsURL: c.opts.CustomModsURL, CustomModsAsked: c.opts.CustomModsAsked,
+		ServerAddress: c.opts.ServerAddress}
 	if err := SaveState(c.Dir, st); err != nil {
 		return nil, fmt.Errorf("I couldn't save my notes about the new instance: %w", err)
 	}

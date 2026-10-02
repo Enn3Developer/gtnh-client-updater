@@ -475,6 +475,70 @@ func TestSessionEndToEnd(t *testing.T) {
 	}
 }
 
+// C2, K: Session.Apply carries the saved ServerAddress into the new state; a first-time
+// Apply (no saved state) leaves it empty.
+func TestSessionApplyKeepsServerAddress(t *testing.T) {
+	oldPack := withRequired(map[string]string{cfgA: "v1", modX: "x1"})
+	newPack := withRequired(map[string]string{cfgA: "v2", ".minecraft/mods/x-2.jar": "x2"})
+	files := map[string][]byte{
+		"/old.zip": zipBytes(t, "GT New Horizons 2.8.4/", oldPack),
+		"/new.zip": zipBytes(t, "GT New Horizons 2.9.0/", newPack),
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, ok := files[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, r.URL.Path, time.Time{}, bytes.NewReader(b))
+	}))
+	defer srv.Close()
+	m, err := manifest.Parse([]byte(`{
+	  "2.8.4": {"title":"Stable release","releaseDate":"2025/12/23","mmc":{"java17_2XUrl":"https://downloads.gtnewhorizons.com/old.zip"}},
+	  "2.9.0": {"title":"Stable release","releaseDate":"2026/10/04","mmc":{"java17_2XUrl":"https://downloads.gtnewhorizons.com/new.zip"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := newInstance(t, "GT_New_Horizons_2.8.4_Java_17-25", map[string]string{cfgA: "v1", modX: "x1"})
+	os.WriteFile(filepath.Join(inst.Dir, "mmc-pack.json"), []byte(oldPack["mmc-pack.json"]), 0o644)
+	opts := Options{Client: &http.Client{Transport: hostRewrite{srv}}, Manifest: m, Instance: inst,
+		Installed: "2.8.4", Target: "2.9.0"}
+	rep := &nopReporter{}
+
+	s, err := Prepare(opts, rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Apply(rep); err != nil {
+		t.Fatal(err)
+	}
+	st, err := LoadState(inst.Dir)
+	if err != nil || st == nil {
+		t.Fatalf("LoadState after first Apply = %v, %v", st, err)
+	}
+	if st.ServerAddress != "" {
+		t.Errorf("first-time Apply: ServerAddress = %q, want \"\"", st.ServerAddress)
+	}
+
+	if err := UpdateState(inst.Dir, func(st *State) { st.ServerAddress = "play.example:25565" }); err != nil {
+		t.Fatal(err)
+	}
+	opts.Installed = "2.9.0"
+	if s, err = Prepare(opts, rep); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Apply(rep); err != nil {
+		t.Fatal(err)
+	}
+	st, err = LoadState(inst.Dir)
+	if err != nil || st == nil {
+		t.Fatalf("LoadState after rerun = %v, %v", st, err)
+	}
+	if st.ServerAddress != "play.example:25565" || st.Version != "2.9.0" {
+		t.Errorf("after rerun Apply: ServerAddress %q version %q, want %q %q", st.ServerAddress, st.Version, "play.example:25565", "2.9.0")
+	}
+}
+
 // backupDirs returns the names of the backup-* dirs in stateDir, sorted; the names carry
 // a sortable timestamp, so the last one is the newest.
 func backupDirs(t *testing.T, stateDir string) []string {

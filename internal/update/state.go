@@ -33,6 +33,8 @@ type State struct {
 	// instance ("" = none). CustomModsAsked tells "chose none" from "never asked".
 	CustomModsURL   string `json:"customModsURL,omitempty"`
 	CustomModsAsked bool   `json:"customModsAsked,omitempty"`
+	// ServerAddress is the host[:port] the player joins with "Play & join"; "" = none.
+	ServerAddress string `json:"serverAddress,omitempty"`
 }
 
 func statePath(instDir string) string { return filepath.Join(instDir, StateDir, "state.json") }
@@ -72,4 +74,19 @@ func SaveState(instDir string, st *State) error {
 		return err
 	}
 	return os.Rename(tmp, p)
+}
+
+// UpdateState loads the saved state (an empty one if the instance was never saved),
+// lets fn edit it and saves it back. Load and save errors are returned; fn is not
+// called on a load error.
+func UpdateState(instDir string, fn func(*State)) error {
+	st, err := LoadState(instDir)
+	if err != nil {
+		return err
+	}
+	if st == nil {
+		st = &State{Baseline: map[string]pack.Fingerprint{}}
+	}
+	fn(st)
+	return SaveState(instDir, st)
 }
