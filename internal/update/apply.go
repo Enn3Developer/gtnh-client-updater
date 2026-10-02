@@ -52,12 +52,8 @@ func (j *journal) rollback() error {
 
 // install writes content to disk, stashing whatever was there first.
 func (j *journal) install(disk string, open func() (io.ReadCloser, error)) error {
-	if err := os.MkdirAll(filepath.Dir(disk), 0o755); err != nil {
-		return err
-	}
-	tmp := disk + ".gtnh-tmp"
-	if err := writeFrom(tmp, open); err != nil {
-		os.Remove(tmp)
+	tmp, err := writeTemp(disk, open)
+	if err != nil {
 		return err
 	}
 	if _, err := os.Lstat(disk); err == nil {
@@ -93,7 +89,7 @@ func Apply(pl *Plan, next *pack.Pack, instDir, backupDir string, progress func(d
 	for i, a := range pl.Actions {
 		src := strings.TrimSuffix(a.Path, ".disabled")
 		switch a.Kind {
-		case Install:
+		case Install, Conflict:
 			if next == nil {
 				return fmt.Errorf("internal: %s needs the pack, but none was downloaded", src)
 			}
@@ -101,19 +97,12 @@ func Apply(pl *Plan, next *pack.Pack, instDir, backupDir string, progress func(d
 			if !ok {
 				return fmt.Errorf("internal: %s not in pack", src)
 			}
-			if err := j.install(a.Disk, e.Open); err != nil {
+			if a.Kind == Conflict && pl.ChoiceOf(a.Path) == KeepMine {
+				if err := j.install(a.Disk+".mcnew", e.Open); err != nil {
+					return fmt.Errorf("write %s.mcnew: %w", a.Path, err)
+				}
+			} else if err := j.install(a.Disk, e.Open); err != nil {
 				return fmt.Errorf("install %s: %w", a.Path, err)
-			}
-		case Conflict:
-			if next == nil {
-				return fmt.Errorf("internal: %s needs the pack, but none was downloaded", src)
-			}
-			e, ok := next.Entries[src]
-			if !ok {
-				return fmt.Errorf("internal: %s not in pack", src)
-			}
-			if err := j.install(a.Disk+".mcnew", e.Open); err != nil {
-				return fmt.Errorf("write %s.mcnew: %w", a.Path, err)
 			}
 		case Remove:
 			if err := j.stash(a.Disk); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -140,6 +129,20 @@ func pruneEmptyDirs(dirs []string, stop string) {
 			d = filepath.Dir(d)
 		}
 	}
+}
+
+// writeTemp writes open's content next to disk as <disk>.gtnh-tmp (creating the parent
+// dirs) for the caller to rename into place. On failure no temp file is left.
+func writeTemp(disk string, open func() (io.ReadCloser, error)) (tmp string, err error) {
+	if err := os.MkdirAll(filepath.Dir(disk), 0o755); err != nil {
+		return "", err
+	}
+	tmp = disk + ".gtnh-tmp"
+	if err := writeFrom(tmp, open); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return tmp, nil
 }
 
 func writeFrom(dst string, open func() (io.ReadCloser, error)) error {

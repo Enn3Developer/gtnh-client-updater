@@ -5,7 +5,11 @@
 // Run it without arguments for the interactive TUI. For scripting:
 //
 //	gtnh-update -list
-//	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> -yes
+//	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] -yes
+//	gtnh-update -create -version <ver|latest|latest-stable> [-name <name>] [-server-mods <url>] -yes
+//
+// -configs new|mine decides what happens to config files changed both by the player and
+// by the new version (default new); in the TUI it only changes the preselected answer.
 package main
 
 import (
@@ -45,7 +49,10 @@ func run() error {
 		target     = flag.String("version", "", "GTNH version to install: e.g. 2.8.4, \"latest\" or \"latest-stable\"")
 		installed  = flag.String("installed", "", "the GTNH version the instance is on now, if it's detected wrong")
 		serverMods = flag.String("server-mods", "", "link to your server's extra mods archive (https://…), or \"none\"; default: what the instance remembers")
-		yes        = flag.Bool("yes", false, "don't ask anything, just update (needs -instance and -version)")
+		configs    = flag.String("configs", "new", "what to do with config files changed both by you and by the new version: new (replace yours, old ones backed up) or mine (keep yours, new ones saved as .mcnew)")
+		create     = flag.Bool("create", false, "create a new Prism instance with -version instead of updating one")
+		name       = flag.String("name", "", "name for the new instance; default: GT New Horizons <version>")
+		yes        = flag.Bool("yes", false, "don't ask anything, just do it (update needs -instance and -version; -create needs -version)")
 		list       = flag.Bool("list", false, "show your instances and the available GTNH versions")
 		selfUpd    = flag.Bool("self-update", false, "update gtnh-update itself to the newest release")
 		noCheck    = flag.Bool("no-update-check", false, "don't check GitHub for a newer gtnh-update")
@@ -62,6 +69,13 @@ func run() error {
 		return nil
 	}
 	updateCheck := !*noCheck && packaged == ""
+	choice, err := configChoice(*configs)
+	if err != nil {
+		return err
+	}
+	if *create && *instance != "" {
+		return errors.New("-create makes a new instance, so it can't be used with -instance")
+	}
 	if *serverMods != "" && *serverMods != "none" {
 		if err := update.CheckCustomModsURL(*serverMods); err != nil {
 			return err
@@ -82,6 +96,14 @@ func run() error {
 		return selfUpdate(client)
 	case *list:
 		return listAll(client, dirs)
+	case *create && *yes:
+		if *target == "" {
+			return errors.New("-create -yes needs -version")
+		}
+		if updateCheck {
+			noticeNewer(client)
+		}
+		return createHeadless(client, dirs, *name, *target, *serverMods)
 	case *yes:
 		if *instance == "" || *target == "" {
 			return errors.New("-yes needs -instance and -version")
@@ -89,11 +111,12 @@ func run() error {
 		if updateCheck {
 			noticeNewer(client)
 		}
-		return headless(client, dirs, *instance, *installed, *target, *serverMods)
+		return headless(client, dirs, *instance, *installed, *target, *serverMods, choice)
 	}
 	out, err := tui.Run(tui.Config{
 		Client: client, AppVersion: version, PrismDirs: dirs, Instance: *instance,
 		Installed: *installed, Target: *target, ServerMods: *serverMods, UpdateCheck: updateCheck,
+		Create: *create, Name: *name, Configs: tuiConfigs(*configs),
 	})
 	if err != nil {
 		return err
@@ -102,6 +125,29 @@ func run() error {
 		return selfupdate.Restart()
 	}
 	return nil
+}
+
+// configChoice maps the -configs flag to the engine's choice for conflicting configs.
+// The flag's default, "new", is update.Recommended.
+func configChoice(v string) (update.Choice, error) {
+	switch v {
+	case "new":
+		return update.TakeNew, nil
+	case "mine":
+		return update.KeepMine, nil
+	}
+	return 0, fmt.Errorf("-configs must be \"new\" or \"mine\", not %q", v)
+}
+
+// tuiConfigs is the -configs value for tui.Config.Configs: "" (the recommended answer)
+// unless the flag was given.
+func tuiConfigs(v string) string {
+	set := false
+	flag.Visit(func(f *flag.Flag) { set = set || f.Name == "configs" })
+	if !set {
+		return ""
+	}
+	return v
 }
 
 func selfUpdate(client *http.Client) error {
@@ -134,24 +180,6 @@ func noticeNewer(client *http.Client) {
 	if rel, err := selfupdate.Latest(&c); err == nil && selfupdate.Newer(version, rel.Version) {
 		fmt.Printf("note: gtnh-update %s is available (you have %s) -- run with -self-update to get it\n", rel.Version, version)
 	}
-}
-
-func resolveTarget(m *manifest.Manifest, t string) (string, error) {
-	switch t {
-	case "latest":
-		return m.Releases[0].Version, nil
-	case "latest-stable":
-		for _, r := range m.Releases {
-			if r.Stable() {
-				return r.Version, nil
-			}
-		}
-		return "", errors.New("the GTNH manifest has no stable release")
-	}
-	if _, ok := m.Find(t); !ok {
-		return "", fmt.Errorf("GTNH has no version called %q (see -list)", t)
-	}
-	return t, nil
 }
 
 func findInstance(dirs []string, want string) (prism.Instance, error) {
@@ -228,7 +256,7 @@ func (r *textReporter) Progress(done, total int64) {
 	fmt.Printf("    %d%%\n", pct)
 }
 
-func headless(client *http.Client, dirs []string, instName, installed, target, serverMods string) error {
+func headless(client *http.Client, dirs []string, instName, installed, target, serverMods string, configs update.Choice) error {
 	m, err := manifest.Fetch(client)
 	if err != nil {
 		return err
@@ -240,7 +268,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	if prism.Running(inst) {
 		return fmt.Errorf("%s is running -- close Minecraft first", inst.Name)
 	}
-	if target, err = resolveTarget(m, target); err != nil {
+	if target, err = manifest.Resolve(m, target); err != nil {
 		return err
 	}
 	st, err := update.LoadState(inst.Dir)
@@ -272,6 +300,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		return err
 	}
 	pl := s.Plan
+	pl.ChooseAll(configs)
 	if pl.BaselineMatch < 0.8 {
 		s.Close()
 		return fmt.Errorf("only %.0f%% of the mods that come with %s are in this instance, so it's probably on another version -- pass it with -installed",
@@ -286,14 +315,15 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	if res.Renamed != "" {
 		fmt.Printf("  renamed in Prism to %q\n", res.Renamed)
 	}
-	if cm := res.CustomMods; cm != nil {
-		fmt.Printf("  server extra mods: %d installed (%d new or updated, %d removed)\n", len(cm.Installed), len(cm.Added), len(cm.Removed))
-		if len(cm.Skipped) > 0 {
-			fmt.Println("  skipped (GTNH ships a mod with that name):", strings.Join(cm.Skipped, ", "))
-		}
+	printCustomMods(res.CustomMods)
+	if res.CustomErr != nil {
+		fmt.Printf("  heads up: your server's extra mods couldn't be synced: %v\n", res.CustomErr)
 	}
-	for _, c := range pl.Conflicts() {
+	for _, c := range pl.Chosen(update.KeepMine) {
 		fmt.Println("  kept your version, new one saved as .mcnew:", c)
+	}
+	for _, c := range pl.Chosen(update.TakeNew) {
+		fmt.Println("  replaced your changed config with the new version:", c)
 	}
 	if len(pl.ExtraMods) > 0 {
 		fmt.Println("  mods you added yourself, left in place:", strings.Join(pl.ExtraMods, ", "))
@@ -302,4 +332,72 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		fmt.Println("  old files backed up in", res.BackupDir)
 	}
 	return nil
+}
+
+// printCustomMods prints the server-mods line of a run's summary (cm nil = no sync ran).
+func printCustomMods(cm *update.CustomModsResult) {
+	if cm == nil {
+		return
+	}
+	fmt.Printf("  server extra mods: %d installed (%d new or updated, %d removed)\n", len(cm.Installed), len(cm.Added), len(cm.Removed))
+	if len(cm.Skipped) > 0 {
+		fmt.Println("  skipped (GTNH ships a mod with that name):", strings.Join(cm.Skipped, ", "))
+	}
+}
+
+func createHeadless(client *http.Client, dirs []string, name, target, serverMods string) error {
+	if len(dirs) == 0 {
+		return errors.New("Prism Launcher not found -- pass -prism-dir")
+	}
+	instDir := prism.InstancesDir(dirs[0])
+	m, err := manifest.Fetch(client)
+	if err != nil {
+		return err
+	}
+	opts, err := createOptions(m, instDir, name, target, serverMods)
+	if err != nil {
+		return err
+	}
+	opts.Client = client
+	fmt.Printf("Creating %s with GTNH %s in %s\n", opts.Name, opts.Target, instDir)
+	rep := &textReporter{}
+	c, err := update.PrepareCreate(opts, rep)
+	if err != nil {
+		return err
+	}
+	res, err := c.Apply(rep)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nDone: %s is ready in Prism.\n", opts.Name)
+	fmt.Printf("  %d files installed\n", res.Files)
+	if res.CustomErr != nil {
+		fmt.Printf("  heads up: your server's extra mods couldn't be installed: %v\n", res.CustomErr)
+	}
+	printCustomMods(res.CustomMods)
+	return nil
+}
+
+// createOptions turns the -create flags into CreateOptions without touching
+// the network; Client is left for the caller to set.
+func createOptions(m *manifest.Manifest, instDir, name, target, serverMods string) (update.CreateOptions, error) {
+	target, err := manifest.Resolve(m, target)
+	if err != nil {
+		return update.CreateOptions{}, err
+	}
+	if name == "" {
+		name = update.DefaultInstanceName(target)
+	}
+	name = strings.TrimSpace(name)
+	if err := update.CheckInstanceName(instDir, name); err != nil {
+		return update.CreateOptions{}, err
+	}
+	asked := serverMods != ""
+	if serverMods == "none" {
+		serverMods = ""
+	}
+	return update.CreateOptions{
+		Manifest: m, InstancesDir: instDir, Name: name, Target: target,
+		CustomModsURL: serverMods, CustomModsAsked: asked,
+	}, nil
 }

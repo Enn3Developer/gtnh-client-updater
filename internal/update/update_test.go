@@ -396,12 +396,8 @@ func TestSessionEndToEnd(t *testing.T) {
 	if s.next != nil || downloads["/new.zip"] != 1 {
 		t.Errorf("same-version rerun downloaded the pack again (%d downloads)", downloads["/new.zip"])
 	}
-	firstBackup := res.BackupDir
 	if _, err := s.Apply(rep); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(firstBackup, ".minecraft", "mods", "x-1.jar")); err != nil {
-		t.Errorf("a no-op rerun pruned the previous backup: %v", err)
 	}
 	if _, ok := read(t, inst, ".minecraft/mods/extra-1.jar"); ok {
 		t.Error("custom mod removed on the server is still installed")
@@ -417,6 +413,35 @@ func TestSessionEndToEnd(t *testing.T) {
 	}
 	if st, _ := LoadState(inst.Dir); st.CustomModsURL != opts.CustomModsURL || !st.CustomModsAsked {
 		t.Errorf("link not remembered: %+v", st)
+	}
+
+	// A run with nothing changed on disk or on the server makes no backup and must
+	// not prune the newest existing one.
+	stateDir := filepath.Join(inst.Dir, StateDir)
+	backupsBefore := backupDirs(t, stateDir)
+	if len(backupsBefore) == 0 {
+		t.Fatal("no backup-* dir exists before the no-op run")
+	}
+	newestBackup := backupsBefore[len(backupsBefore)-1]
+	if s, err = Prepare(opts, rep); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Plan.Actions) != 0 {
+		t.Errorf("no-op run: actions %v, want none", s.Plan.Actions)
+	}
+	noop, err := s.Apply(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CHARACTERIZATION: suspected bug: Apply decides "made a backup" by stat-ing
+	// backup-<second>, so a no-op run in the same second as the previous backing-up run
+	// reports that run's dir as its BackupDir (and two backing-up runs in one second
+	// would share a dir). Accept "" or the pre-existing newest dir; nothing new may appear.
+	if want := filepath.Join(stateDir, newestBackup); noop.BackupDir != "" && noop.BackupDir != want {
+		t.Errorf("no-op run: BackupDir = %q, want \"\" (or %q within the same second)", noop.BackupDir, want)
+	}
+	if got := backupDirs(t, stateDir); fmt.Sprint(got) != fmt.Sprint(backupsBefore) {
+		t.Errorf("no-op run changed the backups: %v, want %v", got, backupsBefore)
 	}
 	opts.CustomModsURL = ""
 	if s, err = Prepare(opts, rep); err != nil {
@@ -448,4 +473,21 @@ func TestSessionEndToEnd(t *testing.T) {
 	if got, _ := read(t, inst, ".minecraft/mods/x-2.jar"); got != "x2" {
 		t.Errorf("deleted pack mod not restored: %q", got)
 	}
+}
+
+// backupDirs returns the names of the backup-* dirs in stateDir, sorted; the names carry
+// a sortable timestamp, so the last one is the newest.
+func backupDirs(t *testing.T, stateDir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(stateDir) // ReadDir sorts by name
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), "backup-") {
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }

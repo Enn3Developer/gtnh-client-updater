@@ -31,6 +31,9 @@ It's a small program that runs in a terminal window, with arrow keys and Enter �
    selected — and press **Enter**. It shows you exactly what will happen before it
    changes anything.
 
+Want a fresh GTNH instance instead? Press **n** (*new instance*) on the instance list (or just run it if
+Prism has no instances yet), pick a version and a name.
+
 > **Windows** may say "Windows protected your PC" the first time, because the file isn't
 > signed: click *More info* → *Run anyway*.
 > **macOS:** right-click the file → *Open* the first time. From Terminal you may need
@@ -45,16 +48,19 @@ It's a small program that runs in a terminal window, with arrow keys and Enter �
 | Mods you added yourself | Left in place — you'll be reminded to check they work with the new version |
 | Config files you never changed | Updated to the new version's |
 | Config files you changed, that GTNH didn't | Yours are kept |
-| Config files both you and GTNH changed | Yours are kept, GTNH's new one is saved next to it as `<name>.mcnew` |
+| Config files both you and GTNH changed | You choose: take GTNH's new one (yours goes to the backup), keep yours (GTNH's is saved next to it as `<name>.mcnew`), or decide file by file |
 | Java path, memory and other Prism settings | Kept. Only the version number in the instance name is updated |
 
 Everything that gets replaced or removed is moved to a `.gtnh-updater/backup-…` folder
 inside the instance first (the latest backup is kept). If something goes wrong halfway, all
 changes are undone automatically. If the updater itself gets interrupted (say, the window is
 closed mid-update), just run it again: it picks up where it stopped.
+If it gets killed while creating a new instance, it may leave that instance's folder behind;
+delete it from Prism's instances folder before using the name again.
 
-A few `.mcnew` files after an update are normal even if you never edited a config: many
-GTNH mods rewrite their own config files when the game starts.
+A few config files changed both by you and by the new version are normal after an update,
+even if you never edited a config: many GTNH mods rewrite their own config files when the
+game starts.
 
 ## Server extra mods
 
@@ -72,6 +78,7 @@ means "no extra mods right now".
 ```text
 gtnh-update -list                                   # your instances + all GTNH versions
 gtnh-update -instance "GTNH" -version latest-stable -yes
+gtnh-update -create -version latest-stable -name "GTNH" -yes   # a brand-new instance
 gtnh-update -self-update
 ```
 
@@ -82,7 +89,10 @@ gtnh-update -self-update
 | `-installed` | The version the instance is on now, if it's detected wrong |
 | `-server-mods` | Server extra-mods link, or `none`. Default: what the instance remembers |
 | `-prism-dir` | Prism's data folder (the one with `prismlauncher.cfg`), if it isn't found automatically |
-| `-yes` | Don't ask, just update |
+| `-configs` | Config files both you and GTNH changed: `new` (default, yours backed up) or `mine` (GTNH's saved as `.mcnew`). Without `-yes` it picks the preselected answer |
+| `-create` | Create a new instance with `-version` instead of updating one |
+| `-name` | Name for the new instance. Default: `GT New Horizons <version>` |
+| `-yes` | Don't ask, just do it: updating needs `-instance` and `-version`, `-create` needs `-version` (plus optional `-name`, `-server-mods`, and `-configs` for updates) |
 | `-no-update-check` | Don't check GitHub for a newer gtnh-update |
 
 Prism is found automatically in its standard place on Windows, macOS and Linux (including

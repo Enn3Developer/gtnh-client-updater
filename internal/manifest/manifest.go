@@ -6,6 +6,7 @@ package manifest
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -90,6 +91,26 @@ func (m *Manifest) Find(version string) (Release, bool) {
 		}
 	}
 	return Release{}, false
+}
+
+// Resolve turns a version argument into a manifest key: "latest" is the newest release,
+// "latest-stable" the newest stable one, anything else must be an exact key.
+func Resolve(m *Manifest, t string) (string, error) {
+	switch t {
+	case "latest":
+		return m.Releases[0].Version, nil
+	case "latest-stable":
+		for _, r := range m.Releases {
+			if r.Stable() {
+				return r.Version, nil
+			}
+		}
+		return "", errors.New("the GTNH manifest has no stable release")
+	}
+	if _, ok := m.Find(t); !ok {
+		return "", fmt.Errorf("GTNH has no version called %q (see -list)", t)
+	}
+	return t, nil
 }
 
 type rawRelease struct {

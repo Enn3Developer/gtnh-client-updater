@@ -17,8 +17,21 @@ type Kind int
 const (
 	Install  Kind = iota // write the new pack's file (create or overwrite)
 	Remove               // delete: the pack dropped it and the player never changed it
-	Conflict             // player changed it and so did the pack: keep theirs, write .mcnew
+	Conflict             // player changed it and so did the pack: the Choice decides (see Plan.Choose)
 )
+
+// Choice is the player's decision for one config conflict.
+type Choice int
+
+const (
+	KeepMine Choice = iota // keep the player's file, write the pack's as .mcnew
+	TakeNew                // replace the player's file with the pack's (backed up)
+)
+
+// Recommended is the choice to offer by default: many GTNH mods rewrite their configs on
+// every game start, so most conflicts are noise and the pack's version is the safe pick
+// (the player's file is backed up).
+const Recommended Choice = TakeNew
 
 // Action is one planned change. Path is the canonical pack path; Disk is where it lands.
 type Action struct {
@@ -39,6 +52,9 @@ type Plan struct {
 	// BaselineMatch is the share of the baseline's mod jars found on disk (0..1). A low
 	// value means the installed-version guess is probably wrong.
 	BaselineMatch float64
+	// choices holds the per-path conflict decisions; unset paths are KeepMine. Unexported
+	// so it stays out of JSON and other packages go through the methods.
+	choices map[string]Choice
 }
 
 // Count returns how many actions of a kind the plan holds.
@@ -52,7 +68,7 @@ func (p *Plan) Count(k Kind) int {
 	return n
 }
 
-// Conflicts returns the paths that get a .mcnew file.
+// Conflicts returns the paths both the player and the pack changed, whatever the choice.
 func (p *Plan) Conflicts() []string {
 	var out []string
 	for _, a := range p.Actions {
@@ -60,6 +76,38 @@ func (p *Plan) Conflicts() []string {
 			out = append(out, a.Path)
 		}
 	}
+	return out
+}
+
+// ChoiceOf returns the choice for path; KeepMine when none was made.
+func (p *Plan) ChoiceOf(path string) Choice {
+	return p.choices[path] // nil map and missing key both yield KeepMine
+}
+
+// Choose sets the choice for one path, overwriting any earlier one.
+func (p *Plan) Choose(path string, c Choice) {
+	if p.choices == nil {
+		p.choices = map[string]Choice{}
+	}
+	p.choices[path] = c
+}
+
+// ChooseAll sets c for every Conflict action's Path.
+func (p *Plan) ChooseAll(c Choice) {
+	for _, path := range p.Conflicts() {
+		p.Choose(path, c)
+	}
+}
+
+// Chosen returns the sorted Paths of the Conflict actions whose choice is c.
+func (p *Plan) Chosen(c Choice) []string {
+	var out []string
+	for _, path := range p.Conflicts() {
+		if p.ChoiceOf(path) == c {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

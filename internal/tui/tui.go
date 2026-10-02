@@ -4,11 +4,12 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
@@ -37,7 +39,12 @@ type Config struct {
 	Target     string   // version to install
 	// ServerMods: "" = use what the instance remembers (or ask), "none" = off, or a URL.
 	ServerMods  string
-	UpdateCheck bool // look for a newer gtnh-update on GitHub
+	UpdateCheck bool   // look for a newer gtnh-update on GitHub
+	Create      bool   // start by creating a new instance instead of updating one
+	Name        string // preset name for a new instance
+	// Configs preselects what happens to config files changed both by the player and by
+	// the new version: "new", "mine", or "" = update.Recommended.
+	Configs string
 }
 
 // Outcome tells the caller what to do after the TUI exits.
@@ -62,7 +69,10 @@ const (
 	scInstalled
 	scTarget
 	scServerMods
+	scName // name of a new instance
 	scPreparing
+	scConflicts // what to do with config files the player and the new version both changed
+	scResolve   // the same, decided file by file
 	scConfirm
 	scApplying
 	scDone
@@ -80,15 +90,19 @@ var (
 	dimSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("#727169"))
 	keySty    = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	bannerSty = lipgloss.NewStyle().Foreground(lipgloss.Color("#1F1F28")).Background(lipgloss.Color("#E6C384")).Padding(0, 1)
-	pageSty   = lipgloss.NewStyle().Padding(1, 2)
 )
 
 var (
-	keyNotMine   = key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "wrong version?"))
-	keyServer    = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "server mods"))
+	keyNotMine   = key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "not this one"))
+	keyServer    = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mods"))
 	keyOther     = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back"))
 	keySelfUpd   = key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "update me"))
 	keyShowOther = key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "all instances"))
+	keyNew       = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new instance"))
+	keyPick      = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "choose"))
+	keySwitch    = key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "switch"))
+	keyAllNew    = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "all new"))
+	keyDone      = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "done"))
 )
 
 type item struct{ title, desc, key string }
@@ -102,6 +116,7 @@ type model struct {
 	send func(tea.Msg)
 
 	screen  screen
+	scroll  int // body scroll of the current non-list screen; reset on screen change
 	width   int
 	height  int
 	spin    spinner.Model
@@ -134,6 +149,20 @@ type model struct {
 	err       error
 	errPhase  screen
 
+	// Create mode: making a new instance instead of updating m.inst.
+	creating bool
+	nameIn   textinput.Model
+	nameEr   string
+	nameUsed bool // cfg.Name was offered already
+	newName  string
+	creation *update.Creation
+	created  *update.CreateResult
+	// cancelCreate stops the running PrepareCreate; nil when none runs.
+	cancelCreate context.CancelFunc
+	// quitAfterCancel: the player quit during a create download; quit once PrepareCreate
+	// has returned (it removes the half-made folder before it does).
+	quitAfterCancel bool
+
 	newer    *selfupdate.Release
 	restart  bool
 	quitting bool
@@ -146,8 +175,10 @@ func newModel(cfg Config) *model {
 	ti := textinput.New()
 	ti.Placeholder = "https://…/custom_mods.zip"
 	ti.CharLimit = 500
+	ni := textinput.New()
+	ni.CharLimit = 100
 	return &model{
-		cfg: cfg, spin: sp, input: ti, width: 80, height: 24,
+		cfg: cfg, spin: sp, input: ti, nameIn: ni, width: 80, height: 24,
 		bar: progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
 	}
 }
@@ -162,6 +193,8 @@ type (
 	progressMsg struct{ done, total int64 }
 	warnMsg     string
 	preparedMsg struct{ s *update.Session }
+	createReady struct{ c *update.Creation }
+	createdMsg  struct{ r *update.CreateResult }
 	appliedMsg  struct{ r *update.Result }
 	errMsg      struct{ err error }
 	newerMsg    struct{ r *selfupdate.Release }
@@ -202,19 +235,25 @@ func (m *model) load() tea.Msg {
 			insts = append(insts, found...)
 		}
 	}
-	if len(insts) == 0 {
-		return errMsg{fmt.Errorf("Prism Launcher is installed, but it has no instances yet.\n\n"+
-			"Install GTNH in Prism first (looked in %s).", strings.Join(m.cfg.PrismDirs, ", "))}
-	}
-	return loadedMsg{man, insts}
+	return loadedMsg{man, insts} // no instances at all: afterLoad offers to create one
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	prev := m.screen
+	md, cmd := m.update(msg)
+	if m.screen != prev {
+		m.scroll = 0
+	}
+	return md, cmd
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.bar.Width = max(min(msg.Width-8, 64), 10)
 		m.input.Width = m.inputWidth()
+		m.nameIn.Width = m.inputWidth()
 		if m.hasList {
 			m.list.SetSize(m.listWidth(), m.listHeight())
 		}
@@ -246,14 +285,31 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case preparedMsg:
 		m.session, m.screen = msg.s, scConfirm
+		if msg.s.Plan.Count(update.Conflict) > 0 {
+			msg.s.Plan.ChooseAll(m.configsChoice()) // preselected on the next screen
+			return m.showConflicts()
+		}
 		return m, nil
 	case appliedMsg:
 		m.result, m.screen = msg.r, scDone
+		return m, nil
+	case createReady:
+		m.creation, m.screen = msg.c, scConfirm
+		if m.createDone() {
+			return m.quit() // finished just before the cancel landed; quit closes it
+		}
+		return m, nil
+	case createdMsg:
+		m.created, m.screen = msg.r, scDone
 		return m, nil
 	case selfDoneMsg:
 		m.screen = scSelfUpdated
 		return m, nil
 	case errMsg:
+		var leftover *update.LeftoverError
+		if m.createDone() && !errors.As(msg.err, &leftover) {
+			return m.quit() // the cancelled download cleaned up after itself
+		}
 		m.err, m.errPhase, m.screen = msg.err, m.screen, scError
 		return m, nil
 	case tea.KeyMsg:
@@ -268,12 +324,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) isListScreen() bool {
-	return m.screen == scInstance || m.screen == scInstalled || m.screen == scTarget
+	return m.screen == scInstance || m.screen == scInstalled || m.screen == scTarget || m.choosingConfigs()
+}
+
+// choosingConfigs reports whether a config-choice list is on screen; those belong to a
+// prepared session, so the self-update offer is hidden there.
+func (m *model) choosingConfigs() bool {
+	return m.screen == scConflicts || m.screen == scResolve
 }
 
 func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		return m.quit()
+	}
+	if m.scrollable() && m.scrollKey(k.String()) {
+		return m, nil
 	}
 	switch m.screen {
 	case scInstance, scInstalled, scTarget:
@@ -291,12 +356,16 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.startSelfUpdate()
 			}
 		case "esc":
-			if m.list.FilterState() == list.Unfiltered && m.screen != scInstance {
+			if m.list.FilterState() == list.Unfiltered && m.screen != scInstance && len(m.insts) > 0 {
 				return m.showInstances()
 			}
 		case "i":
-			if m.screen == scTarget {
+			if m.screen == scTarget && !m.creating {
 				return m.showInstalled()
+			}
+		case "n":
+			if m.screen == scInstance {
+				return m.startCreate()
 			}
 		case "m":
 			if m.screen == scTarget {
@@ -322,6 +391,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.serverMods, m.serverModsAsked, m.inputEr = v, true, ""
+			if m.modsThenPrepare && m.creating {
+				return m.askName()
+			}
 			if m.modsThenPrepare {
 				return m.prepare()
 			}
@@ -333,7 +405,35 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(k)
 		return m, cmd
+	case scName:
+		switch k.String() {
+		case "enter":
+			v := strings.TrimSpace(m.nameIn.Value())
+			if err := update.CheckInstanceName(m.instancesDir(), v); err != nil {
+				m.nameEr = err.Error()
+				return m, nil
+			}
+			m.newName, m.nameEr = v, ""
+			return m.prepareCreate()
+		case "esc":
+			m.nameEr = ""
+			return m.showTargets()
+		}
+		var cmd tea.Cmd
+		m.nameIn, cmd = m.nameIn.Update(k)
+		return m, cmd
+	case scConflicts, scResolve:
+		if m.list.FilterState() == list.Filtering {
+			break // typing into the filter: let the list have every key
+		}
+		if m.screen == scConflicts {
+			return m.conflictsKey(k)
+		}
+		return m.resolveKey(k)
 	case scConfirm:
+		if m.creating {
+			return m.confirmCreateKey(k)
+		}
 		switch k.String() {
 		case "enter", "y":
 			m.screen, m.warns, m.steps, m.step = scApplying, nil, nil, ""
@@ -346,9 +446,7 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return appliedMsg{r}
 			}
 		case "esc", "n", "q":
-			m.session.Close()
-			m.session = nil
-			return m.showTargets()
+			return m.dropSession()
 		}
 	case scError:
 		switch k.String() {
@@ -384,18 +482,162 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// dropSession closes the prepared update and returns to the version list.
+func (m *model) dropSession() (tea.Model, tea.Cmd) {
+	m.session.Close()
+	m.session = nil
+	return m.showTargets()
+}
+
+func (m *model) confirmCreateKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "enter", "y":
+		m.screen, m.warns, m.steps, m.step = scApplying, nil, nil, ""
+		c := m.creation
+		m.creation = nil // Apply always closes it
+		return m, func() tea.Msg {
+			r, err := c.Apply(m.reporter())
+			if err != nil {
+				return errMsg{err}
+			}
+			return createdMsg{r}
+		}
+	case "esc", "n", "q":
+		if err := m.closeCreation(); err != nil {
+			return m.showLeftover(err)
+		}
+		return m.showTargets()
+	}
+	return m, nil
+}
+
+func (m *model) conflictsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pl := m.session.Plan
+	switch k.String() {
+	case "enter":
+		sel, _ := m.list.SelectedItem().(item)
+		switch sel.key {
+		case "new":
+			pl.ChooseAll(update.TakeNew)
+		case "mine":
+			pl.ChooseAll(update.KeepMine)
+		case "pick":
+			return m.showResolve()
+		default:
+			return m, nil
+		}
+		m.screen = scConfirm
+		return m, nil
+	case "esc":
+		if m.list.FilterState() == list.Unfiltered {
+			return m.dropSession()
+		}
+	case "q":
+		return m.quit()
+	}
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(k)
+	return m, cmd
+}
+
+func (m *model) resolveKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pl := m.session.Plan
+	switch k.String() {
+	case " ":
+		if sel, ok := m.list.SelectedItem().(item); ok {
+			c := update.TakeNew
+			if pl.ChoiceOf(sel.key) == update.TakeNew {
+				c = update.KeepMine
+			}
+			pl.Choose(sel.key, c)
+			return m, m.list.SetItems(m.resolveItems())
+		}
+		return m, nil
+	case "n":
+		pl.ChooseAll(update.TakeNew)
+		return m, m.list.SetItems(m.resolveItems())
+	case "k":
+		pl.ChooseAll(update.KeepMine)
+		return m, m.list.SetItems(m.resolveItems())
+	case "enter":
+		m.screen = scConfirm
+		return m, nil
+	case "esc":
+		if m.list.FilterState() == list.Unfiltered {
+			return m.showConflicts()
+		}
+	case "q":
+		return m.quit()
+	}
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(k)
+	return m, cmd
+}
+
+// closeCreation throws away the prepared, unapplied creation, if any. The error is a
+// folder it couldn't remove.
+func (m *model) closeCreation() error {
+	c := m.creation
+	m.creation = nil
+	if c == nil {
+		return nil
+	}
+	return c.Close()
+}
+
+// showLeftover shows the error of a thrown-away creation whose folder is still there.
+// The creation never got past its download, hence the preparing phase.
+func (m *model) showLeftover(err error) (tea.Model, tea.Cmd) {
+	m.err, m.errPhase, m.screen = err, scPreparing, scError
+	return m, nil
+}
+
+// createDone marks the running PrepareCreate as returned and reports whether the
+// player is waiting for it to quit.
+func (m *model) createDone() bool {
+	if m.cancelCreate == nil {
+		return false
+	}
+	m.cancelCreate()
+	m.cancelCreate = nil
+	return m.quitAfterCancel
+}
+
 func (m *model) quit() (tea.Model, tea.Cmd) {
 	if m.screen == scApplying || m.screen == scSelfUpdate {
 		return m, nil // never abandon a half-applied update; rollback needs this process
 	}
+	if m.cancelCreate != nil {
+		// The download goroutine removes the new folder when it sees the cancel; quitting
+		// now would kill it first. Its errMsg (or createReady) quits.
+		m.cancelCreate()
+		m.quitAfterCancel = true
+		return m, nil
+	}
 	if m.session != nil {
 		m.session.Close()
+	}
+	if err := m.closeCreation(); err != nil {
+		return m.showLeftover(err)
 	}
 	m.quitting = true
 	return m, tea.Quit
 }
 
 func (m *model) afterLoad() (tea.Model, tea.Cmd) {
+	if m.cfg.Target != "" {
+		v, err := manifest.Resolve(m.manifest, m.cfg.Target)
+		if err != nil {
+			if m.cfg.Target != "latest-stable" {
+				err = fmt.Errorf("GTNH has no version called %q.", m.cfg.Target)
+			}
+			return m, errCmd(err)
+		}
+		m.cfg.Target = v
+	}
+	if m.cfg.Create {
+		return m.startCreate()
+	}
 	if m.cfg.Instance != "" {
 		for _, in := range m.insts {
 			if in.Name == m.cfg.Instance || sameDir(in.Dir, m.cfg.Instance) {
@@ -413,6 +655,9 @@ func (m *model) afterLoad() (tea.Model, tea.Cmd) {
 		if in.GTNH {
 			gtnh = append(gtnh, in)
 		}
+	}
+	if len(m.insts) == 0 {
+		return m.startCreate()
 	}
 	if len(gtnh) == 1 {
 		m.auto = true
@@ -448,13 +693,32 @@ func (m *model) choose(key string) (tea.Model, tea.Cmd) {
 		if !m.serverModsAsked {
 			return m.askServerMods(true)
 		}
+		if m.creating {
+			return m.askName()
+		}
 		return m.prepare()
 	}
 	return m, nil
 }
 
+// startCreate enters the create flow: pick a version, server mods, a name, then create.
+func (m *model) startCreate() (tea.Model, tea.Cmd) {
+	m.creating, m.inst, m.target, m.auto = true, prism.Instance{}, "", false
+	switch m.cfg.ServerMods {
+	case "":
+		m.serverMods, m.serverModsAsked = "", false
+	case "none":
+		m.serverMods, m.serverModsAsked = "", true
+	default:
+		m.serverMods, m.serverModsAsked = m.cfg.ServerMods, true
+	}
+	return m.showTargets()
+}
+
+func (m *model) instancesDir() string { return prism.InstancesDir(m.cfg.PrismDirs[0]) }
+
 func (m *model) pickInstance(in prism.Instance) (tea.Model, tea.Cmd) {
-	m.inst, m.target = in, ""
+	m.inst, m.target, m.creating = in, "", false
 	if prism.Running(in) {
 		return m, errCmd(fmt.Errorf("%s is running right now. Close Minecraft, then start me again.", in.Name))
 	}
@@ -498,7 +762,7 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("#98BB6C")).BorderForeground(accent)
 	l := list.New(items, d, 0, 0)
 	l.SetSize(m.listWidth(), m.listHeight()) // New doesn't size the help line, SetSize does
-	l.Title = title
+	l.Title = ansi.Truncate(title, m.listWidth()-2, "…")
 	l.Styles.Title = titleSty.Padding(0, 1)
 	l.SetStatusBarItemName("choice", "choices")
 	l.SetShowStatusBar(len(items) > 8)
@@ -509,7 +773,7 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	}
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		out := append([]key.Binding{}, help...)
-		if m.newer != nil {
+		if m.newer != nil && !m.choosingConfigs() {
 			out = append(out, keySelfUpd)
 		}
 		return out
@@ -518,7 +782,61 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	return m, nil
 }
 
+func (m *model) showConflicts() (tea.Model, tea.Cmd) {
+	n := m.session.Plan.Count(update.Conflict)
+	title := fmt.Sprintf("%d config %s changed both on your side and in the new version. What should I do?",
+		n, plural(n, "file was", "files were"))
+	items := []list.Item{
+		item{"Use the new versions", "Recommended. Your old copies go to the backup folder.", "new"},
+		item{"Keep mine", "The new ones are saved next to them with .mcnew at the end, so you can compare.", "mine"},
+		item{"Let me choose file by file", "You decide for each file.", "pick"},
+	}
+	return m.showList(scConflicts, title, items, choiceKey(m.configsChoice()), keyPick, keyOther)
+}
+
+// configsChoice is the conflict answer to preselect, from Config.Configs.
+func (m *model) configsChoice() update.Choice {
+	switch m.cfg.Configs {
+	case "new":
+		return update.TakeNew
+	case "mine":
+		return update.KeepMine
+	}
+	return update.Recommended
+}
+
+// choiceKey is the scConflicts item that stands for c.
+func choiceKey(c update.Choice) string {
+	if c == update.KeepMine {
+		return "mine"
+	}
+	return "new"
+}
+
+func (m *model) showResolve() (tea.Model, tea.Cmd) {
+	title := "Which version of each file do you want? Space switches, enter when you're done."
+	// k (keep all) works but stays out of the help: with it the line passes ~100 columns.
+	md, cmd := m.showList(scResolve, title, m.resolveItems(), "", keySwitch, keyAllNew, keyDone, keyOther)
+	// k means "keep all" here, so it no longer moves the cursor up.
+	m.list.KeyMap.CursorUp = key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up"))
+	return md, cmd
+}
+
+func (m *model) resolveItems() []list.Item {
+	pl := m.session.Plan
+	var items []list.Item
+	for _, p := range pl.Conflicts() {
+		desc := "keep mine"
+		if pl.ChoiceOf(p) == update.TakeNew {
+			desc = "new version"
+		}
+		items = append(items, item{strings.TrimPrefix(p, ".minecraft/"), desc, p})
+	}
+	return items
+}
+
 func (m *model) showInstances() (tea.Model, tea.Cmd) {
+	m.creating = false
 	var items []list.Item
 	sel, hidden := "", 0
 	for _, in := range m.insts {
@@ -550,7 +868,7 @@ func (m *model) showInstances() (tea.Model, tea.Cmd) {
 	if m.inst.Dir != "" {
 		sel = m.inst.Dir
 	}
-	var help []key.Binding
+	help := []key.Binding{keyNew}
 	if hidden > 0 || m.showAll {
 		help = append(help, keyShowOther)
 	}
@@ -599,7 +917,13 @@ func (m *model) showTargets() (tea.Model, tea.Cmd) {
 		if !m.serverModsAsked {
 			return m.askServerMods(true)
 		}
+		if m.creating {
+			return m.askName()
+		}
 		return m.prepare()
+	}
+	if m.creating {
+		return m.showCreateTargets()
 	}
 	flavor := update.FlavorOf(m.inst)
 	rec := defaultTarget(m.manifest, m.detect.Version)
@@ -622,10 +946,67 @@ func (m *model) showTargets() (tea.Model, tea.Cmd) {
 	}
 	title := fmt.Sprintf("%s is on GTNH %s. Which version do you want?", m.inst.Name, m.detect.Version)
 	help := []key.Binding{keyNotMine, keyServer}
-	if len(m.insts) > 1 {
+	if len(m.insts) > 0 {
 		help = append(help, keyOther)
 	}
 	return m.showList(scTarget, title, items, sel, help...)
+}
+
+// showCreateTargets is the version list of the create flow.
+func (m *model) showCreateTargets() (tea.Model, tea.Cmd) {
+	rec := defaultTarget(m.manifest, "")
+	items := m.releaseItems(func(r manifest.Release) []string {
+		var tags []string
+		if r.Version == rec {
+			tags = append(tags, "recommended")
+		}
+		if update.NewInstanceFlavor(r) == manifest.Java8 {
+			tags = append(tags, "Java 8 only")
+		}
+		return tags
+	})
+	sel := m.target
+	if sel == "" {
+		sel = rec
+	}
+	title := "Which GTNH version do you want to install?"
+	if len(m.insts) == 0 {
+		title = "Prism has no instances yet. " + title
+	}
+	help := []key.Binding{keyServer}
+	if len(m.insts) > 0 {
+		help = append(help, keyOther)
+	}
+	return m.showList(scTarget, title, items, sel, help...)
+}
+
+func (m *model) askName() (tea.Model, tea.Cmd) {
+	name := update.DefaultInstanceName(m.target)
+	if m.cfg.Name != "" && !m.nameUsed {
+		name, m.nameUsed = m.cfg.Name, true
+	}
+	m.nameIn.SetValue(name)
+	m.nameIn.CursorEnd()
+	m.nameIn.Width = m.inputWidth()
+	m.screen = scName
+	return m, m.nameIn.Focus()
+}
+
+func (m *model) prepareCreate() (tea.Model, tea.Cmd) {
+	m.screen, m.warns, m.steps, m.step = scPreparing, nil, nil, ""
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancelCreate, m.quitAfterCancel = cancel, false
+	opts := update.CreateOptions{
+		Context: ctx, Client: m.cfg.Client, Manifest: m.manifest, InstancesDir: m.instancesDir(), Name: m.newName,
+		Target: m.target, CustomModsURL: m.serverMods, CustomModsAsked: true,
+	}
+	return m, func() tea.Msg {
+		c, err := update.PrepareCreate(opts, m.reporter())
+		if err != nil {
+			return errMsg{err}
+		}
+		return createReady{c}
+	}
 }
 
 // defaultTarget preselects the newest stable release, unless the player already runs
@@ -706,27 +1087,89 @@ func (m *model) View() string {
 	if m.quitting {
 		return ""
 	}
-	var body string
 	switch m.screen {
 	case scInstance, scInstalled, scTarget:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
-	case scLoading:
-		body = m.spin.View() + " Looking for your GTNH instances…"
-	case scServerMods:
-		body = m.serverModsView()
-	case scPreparing, scApplying, scSelfUpdate:
-		body = m.busyView()
-	case scConfirm:
-		body = m.confirmView()
-	case scDone:
-		body = m.doneView()
-	case scError:
-		body = m.errorView()
-	case scSelfUpdated:
-		body = okSty.Bold(true).Render("gtnh-update is now version "+m.newer.Version+".") +
-			"\n\n" + hint("enter", "restart it now", "q", "quit")
+	case scConflicts, scResolve:
+		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.list.View())
 	}
-	return pageSty.Render(m.header() + body)
+	header, body, footer, scroll := m.page()
+	return frame(header, body, footer, m.width, m.height, scroll)
+}
+
+// page builds a non-list screen for frame: header, body, the pinned footer and the
+// scroll offset to show.
+func (m *model) page() (header, body, footer string, scroll int) {
+	scroll = m.scroll
+	switch m.screen {
+	case scLoading:
+		body, scroll = m.spin.View()+" Looking for your GTNH instances…", math.MaxInt32
+	case scServerMods:
+		body, footer = m.serverModsView()
+	case scName:
+		body, footer = m.nameView()
+	case scPreparing, scApplying, scSelfUpdate:
+		body, footer = m.busyView()
+		scroll = math.MaxInt32 // keep the newest step in view
+	case scConfirm:
+		if m.creating {
+			body, footer = m.confirmCreateView()
+		} else {
+			body, footer = m.confirmView()
+		}
+	case scDone:
+		if m.creating {
+			body, footer = m.createdView()
+		} else {
+			body, footer = m.doneView()
+		}
+	case scError:
+		body, footer = m.errorView()
+	case scSelfUpdated:
+		body = okSty.Bold(true).Render(wrap("gtnh-update is now version "+m.newer.Version+".", m.width-4))
+		footer = hint("enter", "restart it now", "q", "quit")
+	}
+	if footer != "" {
+		footer = "\n" + footer // a blank line between body and keys
+	}
+	return strings.TrimSuffix(m.header(), "\n"), strings.TrimRight(body, "\n"), footer, scroll
+}
+
+// scrollable reports whether the current screen scrolls with the arrow keys.
+func (m *model) scrollable() bool {
+	switch m.screen {
+	case scConfirm, scDone, scError, scServerMods, scName:
+		return true
+	}
+	return false
+}
+
+// scrollKey moves the body of a scrollable screen; ok is false for other keys.
+// Home and end stay with the text field on the input screens.
+func (m *model) scrollKey(k string) (ok bool) {
+	header, body, footer, _ := m.page()
+	lines := len(strings.Split(body, "\n"))
+	rows := fitBodyRows(m.height, len(strings.Split(header, "\n")), len(strings.Split(footer, "\n")))
+	page := max(rows/2, 1)
+	input := m.screen == scServerMods || m.screen == scName
+	switch {
+	case k == "up":
+		m.scroll--
+	case k == "down":
+		m.scroll++
+	case k == "pgup":
+		m.scroll -= page
+	case k == "pgdown":
+		m.scroll += page
+	case k == "home" && !input:
+		m.scroll = 0
+	case k == "end" && !input:
+		m.scroll = lines
+	default:
+		return false
+	}
+	m.scroll = max(min(m.scroll, max(lines-rows, 0)), 0)
+	return true
 }
 
 func (m *model) header() string {
@@ -740,6 +1183,50 @@ func (m *model) banner() string {
 	return bannerSty.Render(fmt.Sprintf("A new version of this updater is out (%s) — press u to get it", m.newer.Version)) + "\n\n"
 }
 
+// fitBodyRows is how many body lines fit under the blank top line, header and footer.
+func fitBodyRows(height, headerLines, footerLines int) int {
+	return max(height-1-headerLines-footerLines, 1)
+}
+
+// bodyWindow picks the rows of body that fit on screen, scrolled to scroll (clamped).
+// When body overflows, the first/last visible row is replaced by a "more" marker.
+func bodyWindow(body []string, rows, scroll int) (visible []string, offset int) {
+	rows = max(rows, 1)
+	if len(body) <= rows {
+		return body, 0
+	}
+	maxOff := len(body) - rows
+	offset = max(min(scroll, maxOff), 0)
+	visible = append([]string{}, body[offset:offset+rows]...)
+	if offset < maxOff {
+		visible[rows-1] = dimSty.Render(fmt.Sprintf("↓ %d more (↑/↓ to scroll)", maxOff-offset))
+	}
+	if offset > 0 {
+		visible[0] = dimSty.Render(fmt.Sprintf("↑ %d more", offset))
+	}
+	return visible, offset
+}
+
+// frame lays out a non-list screen: header on top, footer pinned at the bottom, body
+// scrolled in between, every line indented and clipped to width.
+func frame(header, body, footer string, width, height, scroll int) string {
+	split := func(s string) []string {
+		if s == "" {
+			return nil
+		}
+		return strings.Split(s, "\n")
+	}
+	head, foot := split(header), split(footer)
+	visible, _ := bodyWindow(split(body), fitBodyRows(height, len(head), len(foot)), scroll)
+	out := []string{""}
+	for _, part := range [][]string{head, visible, foot} {
+		for _, l := range part {
+			out = append(out, ansi.Truncate("  "+l, width, "…"))
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
 func hint(pairs ...string) string {
 	var parts []string
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -748,47 +1235,68 @@ func hint(pairs ...string) string {
 	return strings.Join(parts, "    ")
 }
 
-func (m *model) serverModsView() string {
+func (m *model) serverModsView() (body, footer string) {
 	var b strings.Builder
 	b.WriteString(titleSty.Render("Does your server have its own extra mods?") + "\n\n")
 	b.WriteString(wrap("Some servers add a few mods on top of GTNH. If the server owner gave you a link for "+
-		"them, paste it here — I'll install them now and keep them in sync every time you update.", m.width-6) + "\n\n")
+		"them, paste it here — I'll install them now and keep them in sync every time you update.", m.width-4) + "\n\n")
 	b.WriteString(m.input.View() + "\n")
 	if m.inputEr != "" {
-		b.WriteString(badSty.Render(m.inputEr) + "\n")
+		b.WriteString(badSty.Render(wrap(m.inputEr, m.width-4)) + "\n")
 	}
-	b.WriteString("\n" + dimSty.Render("No link? Leave it empty — you can add one later with m on the version list.") + "\n\n")
-	b.WriteString(hint("enter", "continue", "esc", "back"))
-	return b.String()
+	b.WriteString("\n" + dimSty.Render(wrap("No link? Leave it empty — you can add one later with m on the version list.", m.width-4)))
+	return b.String(), hint("enter", "continue", "esc", "back")
 }
 
-func (m *model) busyView() string {
+func (m *model) nameView() (body, footer string) {
 	var b strings.Builder
-	switch m.screen {
-	case scApplying:
-		b.WriteString(titleSty.Render(fmt.Sprintf("Updating %s to GTNH %s", m.inst.Name, m.target)) + "\n\n")
-	case scSelfUpdate:
-		b.WriteString(titleSty.Render("Updating gtnh-update itself") + "\n\n")
+	b.WriteString(titleSty.Render("What should the new instance be called?") + "\n\n")
+	b.WriteString(wrap("That's the name you'll see in Prism; it's also the folder name.", m.width-4) + "\n\n")
+	b.WriteString(m.nameIn.View() + "\n")
+	if m.nameEr != "" {
+		b.WriteString(badSty.Render(wrap(m.nameEr, m.width-4)) + "\n")
+	}
+	b.WriteString("\n" + dimSty.Render(wrap("It'll be created in "+m.instancesDir(), m.width-4)))
+	return b.String(), hint("enter", "continue", "esc", "back")
+}
+
+func (m *model) busyView() (body, footer string) {
+	var b strings.Builder
+	title := func(s string) { b.WriteString(titleSty.Render(wrap(s, m.width-4)) + "\n\n") }
+	switch {
+	case m.screen == scSelfUpdate:
+		title("Updating gtnh-update itself")
+	case m.creating && m.screen == scApplying:
+		title("Creating " + m.newName)
+	case m.creating:
+		title("Getting GTNH " + m.target + " ready")
+	case m.screen == scApplying:
+		title(fmt.Sprintf("Updating %s to GTNH %s", m.inst.Name, m.target))
 	default:
-		b.WriteString(titleSty.Render(fmt.Sprintf("Getting GTNH %s ready for %s", m.target, m.inst.Name)) + "\n\n")
+		title(fmt.Sprintf("Getting GTNH %s ready for %s", m.target, m.inst.Name))
 	}
 	for _, s := range m.steps {
-		b.WriteString(okSty.Render("  ✓ ") + dimSty.Render(s) + "\n")
+		b.WriteString(okSty.Render("  ✓ ") + dimSty.Render(indentWrap(s, m.width-8, 4)) + "\n")
 	}
 	if m.step != "" {
-		b.WriteString("  " + m.spin.View() + m.step + "\n")
+		b.WriteString("  " + m.spin.View() + indentWrap(m.step, m.width-8, 4) + "\n")
 	}
 	if m.total > 0 {
 		pct := float64(m.done) / float64(m.total)
 		b.WriteString("\n    " + m.bar.ViewAs(pct) + "\n    " + dimSty.Render(m.progressDetail()) + "\n")
 	}
 	for _, w := range m.warns {
-		b.WriteString("\n" + warnSty.Render("  Heads up: "+w))
+		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)))
 	}
-	if m.screen != scPreparing {
-		b.WriteString("\n\n" + warnSty.Render("  Please don't close this window until I'm done."))
+	switch {
+	case m.screen != scPreparing:
+		footer = warnSty.Render(wrap("  Please don't close this window until I'm done.", m.width-4))
+	case m.quitAfterCancel:
+		footer = dimSty.Render(wrap("Stopping and cleaning up…", m.width-4))
+	default:
+		footer = hint("ctrl+c", "cancel")
 	}
-	return b.String()
+	return b.String(), footer
 }
 
 func (m *model) progressDetail() string {
@@ -804,13 +1312,13 @@ func (m *model) progressDetail() string {
 	return s
 }
 
-func (m *model) confirmView() string {
+func (m *model) confirmView() (body, footer string) {
 	s, pl := m.session, m.session.Plan
 	var b strings.Builder
 	if m.target == m.detect.Version {
-		b.WriteString(titleSty.Render(fmt.Sprintf("Ready to refresh %s on GTNH %s", m.inst.Name, m.target)) + "\n\n")
+		b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to refresh %s on GTNH %s", m.inst.Name, m.target), m.width-4)) + "\n\n")
 	} else {
-		b.WriteString(titleSty.Render(fmt.Sprintf("Ready to update %s from %s to %s", m.inst.Name, m.detect.Version, m.target)) + "\n\n")
+		b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to update %s from %s to %s", m.inst.Name, m.detect.Version, m.target), m.width-4)) + "\n\n")
 	}
 
 	var bad []string
@@ -824,7 +1332,7 @@ func (m *model) confirmView() string {
 			pl.BaselineMatch*100, m.detect.Version, m.detect.Version))
 	}
 	for _, w := range bad {
-		b.WriteString(badSty.Render(wrap("! "+w, m.width-6)) + "\n\n")
+		b.WriteString(badSty.Render(wrap("! "+w, m.width-4)) + "\n\n")
 	}
 
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
@@ -837,14 +1345,18 @@ func (m *model) confirmView() string {
 	if n := len(pl.Kept); n > 0 {
 		bullet(fmt.Sprintf("%s config %s you changed will be kept as you have %s.", num(int64(n)), plural(n, "file", "files"), plural(n, "it", "them")))
 	}
-	if n := pl.Count(update.Conflict); n > 0 {
-		bullet(fmt.Sprintf("%d config %s changed both on your side and in the new version. Yours stay; the new "+
-			"%s saved next to %s with .mcnew at the end, so you can compare.",
-			n, plural(n, "file was", "files were"), plural(n, "one is", "ones are"), plural(n, "it", "them")))
+	if n := len(pl.Chosen(update.TakeNew)); n > 0 {
+		bullet(fmt.Sprintf("%d config %s you changed %s the new version. Your old %s %s to the backup folder.",
+			n, plural(n, "file", "files"), plural(n, "gets", "get"), plural(n, "one", "ones"), plural(n, "goes", "go")))
+	}
+	if n := len(pl.Chosen(update.KeepMine)); n > 0 {
+		bullet(fmt.Sprintf("%d config %s you changed %s as you have %s; the new %s saved next to %s with .mcnew at the end.",
+			n, plural(n, "file", "files"), plural(n, "stays", "stay"), plural(n, "it", "them"),
+			plural(n, "one is", "ones are"), plural(n, "it", "them")))
 	}
 	if len(pl.ExtraMods) > 0 {
 		bullet(fmt.Sprintf("Mods you added yourself stay: %s. Make sure they work with %s.",
-			clip(strings.Join(pl.ExtraMods, ", "), 120), m.target))
+			ansi.Truncate(strings.Join(pl.ExtraMods, ", "), 120, "…"), m.target))
 	}
 	if m.serverMods != "" {
 		bullet("Your server's extra mods will be synced from " + hostOf(m.serverMods) + ".")
@@ -858,16 +1370,15 @@ func (m *model) confirmView() string {
 		b.WriteString("\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n")
 	}
 	for _, w := range m.warns {
-		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-6)) + "\n")
+		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)) + "\n")
 	}
-	b.WriteString("\n" + hint("enter", "update now", "esc", "go back"))
-	return b.String()
+	return b.String(), hint("enter", "update now", "esc", "go back")
 }
 
-func (m *model) doneView() string {
+func (m *model) doneView() (body, footer string) {
 	r, pl := m.result, m.session.Plan
 	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To)) + "\n\n")
+	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To), m.width-4)) + "\n\n")
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
 	if n := pl.Count(update.Install) + pl.Count(update.Remove); n == 0 {
 		bullet("Your GTNH files were already up to date.")
@@ -877,7 +1388,40 @@ func (m *model) doneView() string {
 	if r.Renamed != "" {
 		bullet("Renamed the instance in Prism to \"" + r.Renamed + "\".")
 	}
-	if cm := r.CustomMods; cm != nil {
+	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
+	if n := len(pl.Chosen(update.TakeNew)); n > 0 {
+		bullet(fmt.Sprintf("%d config %s you had changed %s replaced with the new version; the old %s in the backup folder.",
+			n, plural(n, "file", "files"), plural(n, "was", "were"), plural(n, "one is", "ones are")))
+	}
+	if c := pl.Chosen(update.KeepMine); len(c) > 0 {
+		b.WriteString("\n" + wrap(fmt.Sprintf("%d config %s changed on your side and in the new version. "+
+			"I kept yours and saved the new %s next to %s as .mcnew. It's usually fine to ignore this — "+
+			"many mods rewrite their own config when the game starts.",
+			len(c), plural(len(c), "file was", "files were"), plural(len(c), "one", "ones"), plural(len(c), "it", "them")), m.width-4) + "\n")
+		const limit = 20
+		for i, p := range c {
+			if i == limit {
+				b.WriteString(dimSty.Render(fmt.Sprintf("    … and %d more", len(c)-limit)) + "\n")
+				break
+			}
+			b.WriteString(dimSty.Render("    "+strings.TrimPrefix(p, ".minecraft/")) + "\n")
+		}
+	}
+	if r.BackupDir != "" {
+		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.width-4)) + "\n")
+	}
+	for _, w := range m.warns {
+		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)))
+	}
+	b.WriteString("\nYou can start the game from Prism now. Have fun!")
+	return b.String(), hint("enter", "exit")
+}
+
+// customModsSummary describes what the server-mods sync did (cm nil = it didn't run).
+func (m *model) customModsSummary(cm *update.CustomModsResult, cerr error) string {
+	var b strings.Builder
+	bullet := func(s string) { b.WriteString(m.bullet(s)) }
+	if cm != nil {
 		switch {
 		case m.serverMods == "" && len(cm.Removed) > 0:
 			bullet(fmt.Sprintf("Removed %d extra %s from your old server.", len(cm.Removed), plural(len(cm.Removed), "mod", "mods")))
@@ -894,53 +1438,71 @@ func (m *model) doneView() string {
 			bullet("Skipped " + strings.Join(cm.Skipped, ", ") + " — GTNH already ships a mod with that name.")
 		}
 	}
-	if r.CustomErr != nil {
-		b.WriteString(warnSty.Render(m.bullet("Your server's extra mods couldn't be synced this time (" + r.CustomErr.Error() + "). Run me again later to retry.")))
+	if cerr != nil {
+		b.WriteString(warnSty.Render(m.bullet("Your server's extra mods couldn't be synced this time (" + cerr.Error() + "). Run me again later to retry.")))
 	}
-	if c := pl.Conflicts(); len(c) > 0 {
-		b.WriteString("\n" + wrap(fmt.Sprintf("%d config %s changed on your side and in the new version. "+
-			"I kept yours and saved the new %s next to %s as .mcnew. It's usually fine to ignore this — "+
-			"many mods rewrite their own config when the game starts.",
-			len(c), plural(len(c), "file was", "files were"), plural(len(c), "one", "ones"), plural(len(c), "it", "them")), m.width-6) + "\n")
-		sort.Strings(c)
-		limit := max(m.height-24, 3)
-		for i, p := range c {
-			if i == limit {
-				b.WriteString(dimSty.Render(fmt.Sprintf("    … and %d more", len(c)-limit)) + "\n")
-				break
-			}
-			b.WriteString(dimSty.Render("    "+strings.TrimPrefix(p, ".minecraft/")) + "\n")
-		}
-	}
-	if r.BackupDir != "" {
-		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.width-6)) + "\n")
-	}
-	for _, w := range m.warns {
-		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-6)))
-	}
-	b.WriteString("\nYou can start the game from Prism now. Have fun!\n\n")
-	b.WriteString(hint("enter", "exit"))
 	return b.String()
 }
 
-func (m *model) errorView() string {
+func (m *model) confirmCreateView() (body, footer string) {
+	c := m.creation
+	var b strings.Builder
+	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to create %s with GTNH %s", m.newName, m.target), m.width-4)) + "\n\n")
+	bullet := func(s string) { b.WriteString(m.bullet(s)) }
+	bullet("It'll be a new instance in Prism, in " + c.Dir + ".")
+	bullet(num(int64(c.Files)) + " files will be installed.")
+	bullet("Your other instances aren't touched.")
+	if m.serverMods != "" {
+		bullet("Your server's extra mods will be installed from " + hostOf(m.serverMods) + ".")
+	}
+	if c.Flavor == manifest.Java8 {
+		bullet("This version only comes as a Java 8 pack, so that's what you'll get.")
+	} else {
+		bullet("It uses the Java 17+ version of the pack.")
+	}
+	for _, w := range m.warns {
+		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)) + "\n")
+	}
+	return b.String(), hint("enter", "create it", "esc", "go back")
+}
+
+func (m *model) createdView() (body, footer string) {
+	r := m.created
+	var b strings.Builder
+	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is ready in Prism.", r.Instance.Name), m.width-4)) + "\n\n")
+	b.WriteString(m.bullet(num(int64(r.Files)) + " files installed."))
+	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
+	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
+	for _, w := range m.warns {
+		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)))
+	}
+	b.WriteString("\nYou can start the game from Prism now. Have fun!")
+	return b.String(), hint("enter", "exit")
+}
+
+func (m *model) errorView() (body, footer string) {
 	var b strings.Builder
 	b.WriteString(badSty.Render("Something went wrong") + "\n\n")
-	b.WriteString(wrap(m.err.Error(), m.width-6) + "\n\n")
+	b.WriteString(wrap(m.err.Error(), m.width-4) + "\n\n")
+	var leftover *update.LeftoverError
 	switch {
+	case m.creating && (m.errPhase == scPreparing || m.errPhase == scApplying) && errors.As(m.err, &leftover):
+		// The error itself says the folder is still there and what to do.
+	case m.creating && m.errPhase == scPreparing:
+		b.WriteString(okSty.Render(wrap("Nothing was created.", m.width-4)) + "\n\n")
+	case m.creating && m.errPhase == scApplying:
+		b.WriteString(okSty.Render(wrap("I removed the half-made instance, so there's nothing to clean up.", m.width-4)) + "\n\n")
 	case m.errPhase == scPreparing:
-		b.WriteString(okSty.Render("Nothing in your instance was changed.") + "\n\n")
+		b.WriteString(okSty.Render(wrap("Nothing in your instance was changed.", m.width-4)) + "\n\n")
 	case m.errPhase == scApplying && strings.Contains(m.err.Error(), "rolled back"):
-		b.WriteString(okSty.Render("Everything was put back the way it was, so your instance is exactly as before.") + "\n\n")
+		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.width-4)) + "\n\n")
 	case m.errPhase == scApplying:
-		b.WriteString(badSty.Render("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.") + "\n\n")
+		b.WriteString(badSty.Render(wrap("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.", m.width-4)) + "\n\n")
 	}
 	if m.canGoBack() {
-		b.WriteString(hint("esc", "go back", "enter", "exit"))
-	} else {
-		b.WriteString(hint("enter", "exit"))
+		return b.String(), hint("esc", "go back", "enter", "exit")
 	}
-	return b.String()
+	return b.String(), hint("enter", "exit")
 }
 
 // canGoBack reports whether the error screen may return to a list: not after a failed
@@ -952,7 +1514,7 @@ func (m *model) canGoBack() bool {
 // goBackFromError returns to the version list after a failed download or self-update,
 // otherwise to the instance list (e.g. the picked instance was running).
 func (m *model) goBackFromError() (tea.Model, tea.Cmd) {
-	if m.inst.Dir != "" && (m.errPhase == scPreparing || m.errPhase == scSelfUpdate) {
+	if (m.inst.Dir != "" || m.creating) && (m.errPhase == scPreparing || m.errPhase == scSelfUpdate) {
 		return m.showTargets()
 	}
 	return m.showInstances()
@@ -960,7 +1522,7 @@ func (m *model) goBackFromError() (tea.Model, tea.Cmd) {
 
 // bullet renders "  • text" with wrapped lines indented under the text.
 func (m *model) bullet(s string) string {
-	lines := strings.Split(wrap(s, m.width-10), "\n")
+	lines := strings.Split(wrap(s, m.width-8), "\n")
 	for i, l := range lines {
 		prefix := "    "
 		if i == 0 {
@@ -1048,11 +1610,9 @@ func hostOf(u string) string {
 	return u
 }
 
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
+// indentWrap wraps s to width and indents the continuation lines by indent spaces.
+func indentWrap(s string, width, indent int) string {
+	return strings.ReplaceAll(strings.TrimRight(wrap(s, width), " "), "\n", "\n"+strings.Repeat(" ", indent))
 }
 
 func wrap(s string, width int) string {

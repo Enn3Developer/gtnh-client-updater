@@ -16,10 +16,17 @@ var StallTimeout = 60 * time.Second
 
 var errStalled = errors.New("the connection stopped sending data")
 
-// Download fetches url into dest (created or truncated). progress, if not nil, is called
-// with bytes received so far and the total (-1 when the server sends no length).
+// Download is DownloadContext without cancellation.
 func Download(client *http.Client, url, dest string, progress func(done, total int64)) error {
-	ctx, cancel := context.WithCancelCause(context.Background())
+	return DownloadContext(context.Background(), client, url, dest, progress)
+}
+
+// DownloadContext fetches url into dest (created or truncated). progress, if not nil, is
+// called with bytes received so far and the total (-1 when the server sends no length).
+// Cancelling parent aborts the download with an error wrapping its ctx.Err(); a partial
+// dest is removed.
+func DownloadContext(parent context.Context, client *http.Client, url, dest string, progress func(done, total int64)) error {
+	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	watchdog := time.AfterFunc(StallTimeout, func() { cancel(errStalled) })
 	defer watchdog.Stop()
@@ -30,7 +37,7 @@ func Download(client *http.Client, url, dest string, progress func(done, total i
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("download failed: %w", stallCause(ctx, err))
+		return fmt.Errorf("download failed: %w", stallCause(parent, ctx, err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -52,7 +59,7 @@ func Download(client *http.Client, url, dest string, progress func(done, total i
 	}
 	if err != nil {
 		os.Remove(dest)
-		return fmt.Errorf("download failed: %w", stallCause(ctx, err))
+		return fmt.Errorf("download failed: %w", stallCause(parent, ctx, err))
 	}
 	if resp.ContentLength > 0 && w.done != resp.ContentLength {
 		os.Remove(dest)
@@ -61,8 +68,12 @@ func Download(client *http.Client, url, dest string, progress func(done, total i
 	return nil
 }
 
-// stallCause reports the watchdog's reason instead of a bare "context canceled".
-func stallCause(ctx context.Context, err error) error {
+// stallCause reports why the download stopped: the caller's cancellation, or the
+// watchdog's reason instead of a bare "context canceled".
+func stallCause(parent, ctx context.Context, err error) error {
+	if perr := parent.Err(); perr != nil {
+		return perr
+	}
 	if cause := context.Cause(ctx); errors.Is(cause, errStalled) {
 		return fmt.Errorf("%w for %s -- check your internet connection and try again", cause, StallTimeout)
 	}

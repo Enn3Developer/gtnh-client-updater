@@ -57,3 +57,46 @@ func TestInstancesDir(t *testing.T) {
 		t.Errorf("default: %s", got)
 	}
 }
+
+// C8
+func TestSetName(t *testing.T) {
+	for _, tc := range []struct{ name, cfg, want string }{
+		{"replaces existing name line",
+			"[General]\nname=Old\nJavaPath=java\n",
+			"[General]\nname=New\nJavaPath=java\n"},
+		{"replaces only the first name line",
+			"name=A\nname=B\n",
+			"name=New\nname=B\n"},
+		{"keeps CRLF on the replaced line",
+			"[General]\r\nname=Old\r\nJavaPath=java\r\n",
+			"[General]\r\nname=New\r\nJavaPath=java\r\n"},
+		{"name line without trailing newline",
+			"[General]\nname=Old",
+			"[General]\nname=New"},
+		{"does not match a key that merely contains name=",
+			"[General]\nxname=Old\n",
+			"[General]\nname=New\nxname=Old\n"},
+		{"inserts after leading General",
+			"[General]\nJavaPath=java\n",
+			"[General]\nname=New\nJavaPath=java\n"},
+		{"General alone without newline",
+			"[General]",
+			"[General]\nname=New\n"},
+		{"appends when no General header",
+			"JavaPath=java\n",
+			"JavaPath=java\nname=New\n"},
+		{"appends with newline when last line unterminated",
+			"JavaPath=java",
+			"JavaPath=java\nname=New\n"},
+		{"General not first line appends at end",
+			"x=1\n[General]\n",
+			"x=1\n[General]\nname=New\n"},
+		{"empty cfg", "", "name=New\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SetName(tc.cfg, "New"); got != tc.want {
+				t.Errorf("SetName(%q) = %q, want %q", tc.cfg, got, tc.want)
+			}
+		})
+	}
+}

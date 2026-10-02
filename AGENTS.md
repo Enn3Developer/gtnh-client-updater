@@ -20,13 +20,19 @@ from a terminal; it is a bubbletea TUI with a scriptable `-yes` mode.
 ## Layout
 
 ```
-cmd/gtnh-update/main.go      flags, headless (-yes) mode, -list, -self-update; launches TUI
-internal/manifest/           fetch/parse versions.json, version ordering, URL pinning
-internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download
+cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -list,
+                             -self-update; launches TUI
+internal/manifest/           fetch/parse versions.json, version ordering, URL pinning,
+                             manifest.Resolve (latest / latest-stable / exact key)
+internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download,
+                             DownloadContext (cancellable)
 internal/prism/              find Prism data dirs, list/load instances, instance.cfg edits,
-                             "is the game running" (Linux only; other OSes return false)
+                             prism.SetName (name= of a new instance), "is the game running"
+                             (Linux only; other OSes return false)
 internal/update/             the engine: state, version detection, plan, apply, server mods,
                              Session (Prepare -> Apply)
+internal/update/create.go    new instance: download into the new folder, extract, server
+                             mods, state; instance.cfg written last
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
@@ -62,7 +68,11 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
    - everything else under `.minecraft/` (configs, journeymap/config, resourcepacks,
      serverutilities, lang files, changelog): **dpkg conffile rules**, identical to the
      server script — `C == B` → take N (or Remove); `N == C` → nothing; `N == B` → keep
-     player's; both changed → **Conflict**: write N as `<file>.mcnew`, keep C.
+     player's; both changed → **Conflict**, resolved by the player's `Choice`
+     (`Plan.Choose`/`ChooseAll`, unset = KeepMine): TakeNew replaces C with N (C goes to
+     the backup dir), KeepMine writes N as `<file>.mcnew` and keeps C. The TUI asks after
+     Prepare (screens `scConflicts`/`scResolve`; preselected: `-configs` if given, else
+     `update.Recommended` = new); `-yes` uses `-configs new|mine` (default new).
    - `instance.cfg` is never reconciled (player's Java/memory/JVM args). Only its
      `name=` line gets the version string swapped (`prism.RenameVersion`).
 5. **Apply** (`update.Apply`): journaled. Every replaced/removed file is *moved* into
@@ -72,8 +82,28 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
 6. Server extra mods sync, save state (N becomes the new baseline), prune older backups
    (only if this run made a backup).
 
+**Creating an instance** follows the same download/verify path but has no B or C:
+`PrepareCreate` creates `<InstancesDir>/<name>/` (and `<InstancesDir>` itself if missing,
+one level only) and downloads + verifies into its `.gtnh-updater/`; `Creation.Apply`
+writes pack files → server mods → `state.json` → `instance.cfg` last. Any failure, or
+ctrl+c during the download, removes the folder; a folder with `instance.cfg` is never
+deleted.
+
 Fingerprint = size + CRC-32 (`pack.Fingerprint`). It is a change detector, not a security
 hash; download integrity comes from HTTPS to the pinned host + zip CRC checks.
+
+## Creating an instance
+
+Order of writes: see "How an update works" above. `update.PrepareCreate` checks the name
+(`CheckInstanceName`: player-facing sentences) and picks the flavor with
+`update.NewInstanceFlavor` (Java 17+ pack when the version has one, else Java 8). The
+saved state makes the pack the baseline; `instance.cfg` gets the chosen name
+(`prism.SetName`) and its presence marks the instance finished. On any error, or `Close`
+without a finished Apply, the folder is removed. The TUI enters this flow with `n` on the
+instance list, `-create`, or when Prism has no instances, and passes a cancellable
+`CreateOptions.Context` to the download; headless is
+`-create -version … [-name …] [-server-mods …] -yes`. Instances dir =
+`prism.InstancesDir(PrismDirs[0])`.
 
 ## Invariants (do not break)
 
@@ -97,9 +127,15 @@ hash; download integrity comes from HTTPS to the pinned host + zip CRC checks.
   There is **no default server-mods URL** in the public build; it's asked once per
   instance and stored as `State.CustomModsURL` / `CustomModsAsked`.
 - **Prepare never writes to the instance** except `.gtnh-updater/` (download, state dir).
-- **Never quit mid-apply**: the TUI ignores ctrl+c during `scApplying`/`scSelfUpdate`.
-  If killed anyway, rerunning self-heals (already-updated files match N, the rest still
-  match B).
+- **Never quit mid-apply**: the TUI ignores ctrl+c during `scApplying`/`scSelfUpdate`;
+  during a create download ctrl+c cancels and waits for cleanup before quitting.
+  If killed anyway, an update self-heals on rerun: already-updated files match N, the rest
+  still match B. ctrl+c during a creation cancels and removes the folder; a *killed*
+  process leaves `<InstancesDir>/<name>/` without instance.cfg, which blocks the name
+  until the player deletes it (we never adopt existing folders).
+- **Creation writes only under `<InstancesDir>/<name>`** (plus `<InstancesDir>` itself). A
+  leftover folder without `instance.cfg` is ours only if we created it in this run — never
+  adopt existing folders.
 - **A run that changed nothing must not prune the previous backup.**
 - **Never preselect a downgrade** (`tui.defaultTarget`); downgrades get a red warning.
 - `state.json` is persisted on players' machines: **add fields backward-compatibly**
@@ -122,8 +158,10 @@ hash; download integrity comes from HTTPS to the pinned host + zip CRC checks.
   `changelog from X to Y.md` the pack ships in the game dir → manifest key in the instance
   name/dir (token match, so `2.8.1` doesn't match `2.8.10`). `Plan.BaselineMatch < 0.8`
   means the guess is probably wrong (TUI warns, `-yes` refuses).
-- Many GTNH mods rewrite their config on game start, so a few `.mcnew` files after an
-  update are normal; the UI says so.
+- Many GTNH mods rewrite their config on game start, so a few configs "changed on both
+  sides" after an update are normal (hence TakeNew is the recommended choice,
+  `update.Recommended`; with KeepMine they show up as `.mcnew` files, and the UI says it's
+  usually fine).
 - Prism: `prismlauncher.cfg` `InstanceDir=` may be relative or absolute;
   `instance.cfg` `lastLaunchTime` is epoch ms (used to preselect the last-played instance).
 - Windows can't overwrite a running exe: self-update renames it to `<exe>.old`

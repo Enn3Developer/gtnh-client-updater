@@ -236,6 +236,31 @@ func RenameVersion(dir, oldVer, newVer string) (string, bool, error) {
 	return newName, true, nil
 }
 
+// SetName returns cfg (an instance.cfg) with its first name= line set to name, keeping
+// line endings and every other line. Without a name= line, one is added after a leading
+// [General] line, else at the end.
+func SetName(cfg, name string) string {
+	lines := strings.SplitAfter(cfg, "\n")
+	for i, l := range lines {
+		body := strings.TrimRight(l, "\r\n")
+		if strings.HasPrefix(body, "name=") {
+			lines[i] = "name=" + name + l[len(body):]
+			return strings.Join(lines, "")
+		}
+	}
+	line := "name=" + name + "\n"
+	if strings.TrimRight(lines[0], "\r\n") == "[General]" {
+		if !strings.HasSuffix(lines[0], "\n") {
+			lines[0] += "\n"
+		}
+		return lines[0] + line + strings.Join(lines[1:], "")
+	}
+	if cfg != "" && !strings.HasSuffix(cfg, "\n") {
+		cfg += "\n"
+	}
+	return cfg + line
+}
+
 func isFile(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.Mode().IsRegular()

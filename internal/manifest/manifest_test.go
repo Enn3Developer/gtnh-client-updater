@@ -1,6 +1,9 @@
 package manifest
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const sample = `{
   "2.8.4": {"title": "Stable release", "releaseDate": "2025/12/23",
@@ -93,5 +96,54 @@ func TestSameDayOrderedByVersion(t *testing.T) {
 	}
 	if m.Releases[0].Version != "2.9.0-RC-1" {
 		t.Errorf("newest is %s, want 2.9.0-RC-1", m.Releases[0].Version)
+	}
+}
+
+func resolveManifest(t *testing.T, raw string) *Manifest {
+	t.Helper()
+	m, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// C10
+func TestResolve(t *testing.T) {
+	m := resolveManifest(t, sample) // newest: 2.9.0-RC-1 (beta); newest stable: 2.8.4
+	for _, tc := range []struct{ name, in, want string }{
+		{"latest is the newest release", "latest", "2.9.0-RC-1"},
+		{"latest-stable skips betas", "latest-stable", "2.8.4"},
+		{"exact key", "2.8.4", "2.8.4"},
+		{"exact key that is not newest", "April fools 2025", "April fools 2025"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Resolve(m, tc.in)
+			if err != nil || got != tc.want {
+				t.Errorf("Resolve(%q) = %q, %v, want %q, nil", tc.in, got, err, tc.want)
+			}
+		})
+	}
+}
+
+// C10
+func TestResolveUnknownNamesTheKey(t *testing.T) {
+	m := resolveManifest(t, sample)
+	got, err := Resolve(m, "9.9.9")
+	if err == nil || !strings.Contains(err.Error(), `"9.9.9"`) {
+		t.Fatalf("Resolve(9.9.9) = %q, %v, want an error naming \"9.9.9\"", got, err)
+	}
+	if got != "" {
+		t.Errorf("Resolve(9.9.9) value = %q, want empty", got)
+	}
+}
+
+// C10
+func TestResolveLatestStableWithoutStableRelease(t *testing.T) {
+	m := resolveManifest(t, `{"2.9.0-beta-1": {"title": "Beta release", "releaseDate": "2026/09/24",
+	  "mmc": {"java17_2XUrl": "https://downloads.gtnewhorizons.com/b.zip"}}}`)
+	got, err := Resolve(m, "latest-stable")
+	if err == nil || !strings.Contains(err.Error(), "no stable release") {
+		t.Fatalf("Resolve(latest-stable) = %q, %v, want the no stable release error", got, err)
 	}
 }
