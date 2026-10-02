@@ -1,0 +1,28 @@
+{
+  "lang": "go",
+  "src_globs": ["**/*.go"],
+  "test_globs": ["**/*_test.go", "**/testdata/**"],
+  "build": "go build ./... && go vet ./...",
+  "build_tests": "go test -count=1 -run '^$' ./...",
+  "test": "go test -json -count=1 ./...",
+  "test_filtered": "go test -json -count=1 -run '^({names})$' ./...",
+  "test_adapter": "go",
+  "names_sep": "|",
+  "red_isolated": true,
+  "stub_src_regex": "panic\\(\"not yet implemented\"\\)",
+  "stub_fail_regex": "not yet implemented",
+  "test_fn_regex": "func\\s+((?:Test|Fuzz)\\w+)\\s*\\(",
+  "test_marker_regex": "^func\\s+(Test|Fuzz)\\w*\\s*\\(",
+  "assert_regex": "\\bt\\.(Error|Errorf|Fatal|Fatalf|Fail|FailNow)\\b|\\b(assert|require)\\.\\w+\\(|\\bf\\.Fuzz\\(|\\brapid\\.Check\\(",
+  "banned_regex": [
+    "\\bt\\.Skip(f|Now)?\\(",
+    "\\b(assert|require)\\.True\\(\\s*t\\s*,\\s*true\\s*\\)"
+  ],
+  "checks": ["test -z \"$(gofmt -l .)\" || { echo 'gofmt needed:'; gofmt -l .; exit 1; }"],
+  "mutate": "gremlins unleash --diff {base} -o {out}/gremlins.json",
+  "mutate_adapter": "gremlins",
+  "mutation_threshold": 0.75,
+  "flaky_runs": 2,
+  "max_blocks": 3,
+  "env": {}
+}
