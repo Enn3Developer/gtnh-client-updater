@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -161,7 +162,7 @@ func (m *model) focusInput(ti *textinput.Model, value string) tea.Cmd {
 // apply or restore (the player must read what happened) and not before anything was
 // loaded. A restore refused because the game runs changed nothing, so that one may.
 func (m *model) canGoBack() bool {
-	if m.errPhase == scRestoring && !isGameRunningErr(m.err) {
+	if m.errPhase == scRestoring && !errors.Is(m.err, update.ErrGameRunning) {
 		return false
 	}
 	return m.manifest != nil && m.errPhase != scApplying && m.errPhase != scLoading

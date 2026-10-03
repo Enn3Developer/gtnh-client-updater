@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -648,7 +649,7 @@ func TestUndoRestoreFailureEscQuits(t *testing.T) { // C6
 }
 
 func TestUndoRestoreRefusedWhileGameRunsChangedNothing(t *testing.T) { // C6, C7, K2
-	m, bdir := failedRestoreModel(t, errors.New(gameRunningText))
+	m, bdir := failedRestoreModel(t, update.ErrGameRunning)
 	body := pageBody(m)
 	if m.screen != scError || m.errPhase != scRestoring || !strings.Contains(body, gameRunningText+" Nothing was changed.") ||
 		strings.Contains(body, "Some files may have changed") || strings.Contains(body, bdir) {
@@ -661,18 +662,57 @@ func TestUndoRestoreRefusedWhileGameRunsChangedNothing(t *testing.T) { // C6, C7
 }
 
 func TestUndoRestoreRefusedWhileGameRunsEscGoesHome(t *testing.T) { // C6, C7
-	m, _ := failedRestoreModel(t, errors.New(gameRunningText))
+	m, _ := failedRestoreModel(t, update.ErrGameRunning)
 	press(m, keyEsc)
 	if m.screen != scHome || m.quitting {
 		t.Errorf("esc after the game-running error: screen %d, quitting %v; want scHome (%d), false", m.screen, m.quitting, scHome)
 	}
 }
 
-func TestIsGameRunningErrMatchesOnText(t *testing.T) { // C6
-	wrapped := errors.New("restore: " + gameRunningText)
-	other := errors.New("disk full")
-	if !isGameRunningErr(errors.New(gameRunningText)) || !isGameRunningErr(wrapped) || isGameRunningErr(other) {
-		t.Errorf("isGameRunningErr: exact %v, prefixed %v, disk full %v; want true, true, false",
-			isGameRunningErr(errors.New(gameRunningText)), isGameRunningErr(wrapped), isGameRunningErr(other))
+func TestUndoRestoreRefusedWhileGameRunsWrappedChangedNothing(t *testing.T) { // polish C2: errors.Is sees through wrapping
+	m, bdir := failedRestoreModel(t, fmt.Errorf("restore: %w", update.ErrGameRunning))
+	body := pageBody(m)
+	if !strings.Contains(body, gameRunningText+" Nothing was changed.") || strings.Contains(body, "Some files may have changed") || strings.Contains(body, bdir) {
+		t.Errorf("restore refused (wrapped ErrGameRunning): body %q; want \"Nothing was changed.\" and no backup path", body)
+	}
+	if f := pageFooter(m); f != "esc go back enter exit" {
+		t.Errorf("wrapped game-running footer = %q, want %q", f, "esc go back enter exit")
+	}
+}
+
+func TestUndoRestoreLookAlikeErrorIsNotGameRunning(t *testing.T) { // polish C2: matched by identity, not by text
+	m, bdir := failedRestoreModel(t, errors.New(gameRunningText))
+	body := pageBody(m)
+	want := "Some files may have changed. The backup folder is still there, so you can try again: " + bdir
+	if !strings.Contains(body, want) || strings.Contains(body, "Nothing was changed.") {
+		t.Errorf("restore failed with a look-alike error: body %q; want %q and no \"Nothing was changed.\"", body, want)
+	}
+	if f := pageFooter(m); f != "enter exit" {
+		t.Errorf("look-alike error footer = %q, want %q", f, "enter exit")
+	}
+}
+
+func TestRestoreErrorNoteMatchesGameRunningWithErrorsIs(t *testing.T) { // polish C2
+	cases := []struct {
+		name    string
+		err     error
+		nothing bool // the note says "Nothing was changed." rather than "Some files may have changed"
+	}{
+		{"ErrGameRunning", update.ErrGameRunning, true},
+		{"wrapped ErrGameRunning", fmt.Errorf("restore: %w", update.ErrGameRunning), true},
+		{"same text, different error", errors.New(gameRunningText), false},
+		{"disk full", errors.New("disk full"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, _ := failedRestoreModel(t, c.err)
+			note := m.restoreErrorNote()
+			nothing := strings.Contains(note, "Nothing was changed.")
+			some := strings.Contains(note, "Some files may have changed")
+			if nothing != c.nothing || some == c.nothing {
+				t.Errorf("restoreErrorNote() = %q; has \"Nothing was changed.\" %v, has \"Some files may have changed\" %v; want %v, %v",
+					note, nothing, some, c.nothing, !c.nothing)
+			}
+		})
 	}
 }

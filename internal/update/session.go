@@ -187,7 +187,8 @@ func (s *Session) loadBaseline(rep Reporter) error {
 	return nil
 }
 
-var errGameRunning = errors.New("the game is still running from this instance -- close Minecraft and try again")
+// ErrGameRunning is returned by Apply and Restore when the game still runs from the instance.
+var ErrGameRunning = errors.New("the game is still running from this instance -- close Minecraft and try again")
 
 // Apply executes the plan, then renames the instance, syncs custom mods, saves the new
 // baseline and prunes older backups. If the pack changes fail, everything is rolled
@@ -197,7 +198,7 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	defer s.Close()
 	inst := s.opts.Instance
 	if prism.Running(inst) {
-		return nil, errGameRunning
+		return nil, ErrGameRunning
 	}
 	ts := time.Now().Format("20060102-150405")
 	backupDir := filepath.Join(inst.Dir, StateDir, "backup-"+ts)

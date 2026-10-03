@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -187,7 +186,7 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 		return err
 	}
 	cfg, _ := appcfg.Load() // an unreadable settings file just means: find Prism automatically
-	dataDir := dataDirOf(dirs, inst)
+	dataDir := prism.DataDirOf(dirs, inst)
 	l, err := prism.FindLauncher(dataDir, cfg.PrismExe)
 	if errors.Is(err, prism.ErrLauncherNotFound) {
 		return errors.New("Prism Launcher not found -- set its path in the launcher settings or pass -prism-dir")
@@ -200,20 +199,6 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 	}
 	fmt.Printf("Started %s in Prism Launcher.\n", inst.Name)
 	return nil
-}
-
-// dataDirOf is the Prism data dir whose instances folder holds inst, else the first one.
-func dataDirOf(dirs []string, inst prism.Instance) string {
-	for _, d := range dirs {
-		rel, err := filepath.Rel(prism.InstancesDir(d), inst.Dir)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "." {
-			return d
-		}
-	}
-	if len(dirs) == 0 {
-		return ""
-	}
-	return dirs[0]
 }
 
 func selfUpdate(client *http.Client) error {

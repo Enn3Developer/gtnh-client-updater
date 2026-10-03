@@ -92,7 +92,7 @@ func writeBackupInfo(backupDir string, info BackupInfo) error {
 // the backup dir stays so the player can retry.
 func Restore(inst prism.Instance, b Backup, rep Reporter) (*RestoreResult, error) {
 	if prism.Running(inst) {
-		return nil, errGameRunning
+		return nil, ErrGameRunning
 	}
 	res := &RestoreResult{From: b.Info.To, To: b.Info.From}
 

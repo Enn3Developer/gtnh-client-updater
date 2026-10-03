@@ -3,6 +3,7 @@ package tui
 // The undo screens: list an instance's update backups, confirm one, put it back.
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -161,16 +162,10 @@ func (m *model) restoredView() (body, footer string) {
 // restoreErrorNote is what the error screen adds after a failed restore: what state the
 // instance is in and what to do next.
 func (m *model) restoreErrorNote() string {
-	if isGameRunningErr(m.err) {
+	if errors.Is(m.err, update.ErrGameRunning) {
 		return okSty.Render(wrap("Nothing was changed.", m.width-4)) + "\n\n"
 	}
 	return badSty.Render(wrap("Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir, m.width-4)) + "\n\n"
-}
-
-// isGameRunningErr reports whether err is the restore refusing because the game still
-// runs from the instance. update keeps that error unexported, so it's matched by text.
-func isGameRunningErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "the game is still running")
 }
 
 // backupDesc is the line under a backup on the list: which update it undoes and when

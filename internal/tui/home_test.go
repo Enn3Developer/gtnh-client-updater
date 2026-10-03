@@ -519,3 +519,109 @@ func TestConfirmCloseMinecraftLineOnlyWhenRunUnknown(t *testing.T) { // C12
 		t.Errorf("confirm page: runUnknown=true\n%s\nrunUnknown=false\n%s\nwant the line after the backup bullet only in the first", withLine, without)
 	}
 }
+
+// ---- polish C3: wrapped home help ----
+// Pair widths below: "a 123456" and "b 123456" are 8 columns, "b 1234567" is 9, "c x" is 3.
+
+func TestHintRowsKeepsPairThatExactlyFillsTheRow(t *testing.T) { // polish C3, kill: > -> >=
+	// 8 + 4 + 8 = 20 == limit: b stays on the first row; c (20 + 4 + 3) starts a new one.
+	got := hintRows(20, "a", "123456", "b", "123456", "c", "x")
+	want := hint("a", "123456", "b", "123456") + "\n" + hint("c", "x")
+	if got != want {
+		t.Errorf("hintRows(20, ...) = %q, want %q", got, want)
+	}
+}
+
+func TestHintRowsWrapsPairOneColumnTooWide(t *testing.T) { // polish C3
+	// 8 + 4 + 9 = 21 > 20: b starts a new row.
+	got := hintRows(20, "a", "123456", "b", "1234567")
+	want := hint("a", "123456") + "\n" + hint("b", "1234567")
+	if got != want {
+		t.Errorf("hintRows(20, ...) = %q, want %q", got, want)
+	}
+}
+
+func TestHintRowsBelowTwentyIsOneRow(t *testing.T) { // polish C3: limit < 20 -> a single row
+	got := hintRows(19, "a", "123456", "b", "1234567", "c", "x")
+	want := hint("a", "123456", "b", "1234567", "c", "x")
+	if got != want {
+		t.Errorf("hintRows(19, ...) = %q, want the single row %q", got, want)
+	}
+}
+
+func TestHintRowsFillsRowsLeftToRight(t *testing.T) { // polish C3
+	got := hintRows(20, "a", "123456", "b", "123456", "c", "123456", "d", "123456", "e", "123456")
+	want := hint("a", "123456", "b", "123456") + "\n" + hint("c", "123456", "d", "123456") + "\n" + hint("e", "123456")
+	if got != want {
+		t.Errorf("hintRows(20, five 8-column pairs) = %q, want %q", got, want)
+	}
+}
+
+func TestHintRowsDropsTrailingUnpairedKeyLikeHint(t *testing.T) { // polish C3: renders pairs exactly like hint()
+	got := hintRows(20, "a", "123456", "z")
+	want := hint("a", "123456")
+	if got != want {
+		t.Errorf("hintRows(20, a, 123456, z) = %q, want %q (hint ignores a key without a label)", got, want)
+	}
+}
+
+func TestHintRowsPlacesOverwidePairAloneOnItsRow(t *testing.T) { // polish C3: never split a pair; the first pair of a row always fits
+	wide := "abcdefghijklmnopqrstuvwxyz" // "k " + 26 = 28 columns > 20
+	got := hintRows(20, "a", "123456", "k", wide, "c", "x")
+	want := hint("a", "123456") + "\n" + hint("k", wide) + "\n" + hint("c", "x")
+	if got != want {
+		t.Errorf("hintRows(20, ... over-wide pair ...) = %q, want %q", got, want)
+	}
+}
+
+// fullHome is the home screen with every optional key: j (the selected instance has a
+// server), a (a non-GTNH instance) and v (a newer launcher).
+func fullHome(t *testing.T, width int) *home {
+	t.Helper()
+	h := newHome(t, width, update.State{ServerAddress: "mc.x:1"})
+	h.m.insts = append(h.m.insts, prism.Instance{Dir: t.TempDir(), Name: "Vanilla"})
+	h.m.newer = &selfupdate.Release{Version: "9.9.9"}
+	h.m.showHome()
+	return h
+}
+
+func TestHomeHelpWrapsAtWidth100(t *testing.T) { // polish C3: the full line is 101 columns, limit 94
+	h := fullHome(t, 100)
+	want := hint("enter", "play", "j", "join", "u", "update", "s", "settings", "b", "undo", "n", "new", "a", "all", "q", "quit") +
+		"\n" + hint("v", "new version")
+	if got := h.m.homeHelp(); got != want {
+		t.Errorf("homeHelp() at width 100 = %q, want %q", got, want)
+	}
+}
+
+func TestHomeHelpOneRowAtWidth120(t *testing.T) { // polish C3
+	h := fullHome(t, 120)
+	want := hint("enter", "play", "j", "join", "u", "update", "s", "settings", "b", "undo", "n", "new", "a", "all", "q", "quit", "v", "new version")
+	if got := h.m.homeHelp(); got != want {
+		t.Errorf("homeHelp() at width 120 = %q, want %q", got, want)
+	}
+}
+
+func TestHomeListGivesARowToTheWrappedHelp(t *testing.T) { // polish C3: 30 - 5 - 2 (newer) - 2 (help) - 1 (extra help row)
+	h := fullHome(t, 100)
+	if got := h.m.listHeightFor(scHome); got != 20 {
+		t.Errorf("listHeightFor(scHome) at 100x30 with a two-row help = %d, want 20", got)
+	}
+	if got := h.m.list.Height(); got != 20 {
+		t.Errorf("home list height after showHome at 100x30 = %d, want 20 (size re-applied with the j key counted)", got)
+	}
+}
+
+func TestHomeListHeightUnchangedWithOneRowHelp(t *testing.T) { // polish C3
+	h := fullHome(t, 120)
+	if got := h.m.list.Height(); got != 21 {
+		t.Errorf("home list height at 120x30 with a one-row help = %d, want 21", got)
+	}
+}
+
+func TestHomeViewWithWrappedHelpFitsTheTerminal(t *testing.T) { // polish C3
+	h := fullHome(t, 100)
+	if n := strings.Count(h.m.View(), "\n") + 1; n > 30 {
+		t.Errorf("home view at 100x30 with every optional key is %d lines, want at most 30", n)
+	}
+}

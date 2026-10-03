@@ -3,8 +3,6 @@ package tui
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,23 +15,9 @@ import (
 // at Prism.
 const slowStart = 90 * time.Second
 
-// dataDirOf is the Prism data dir whose instances folder holds inst, else the first one.
-func (m *model) dataDirOf(inst prism.Instance) string {
-	for _, d := range m.cfg.PrismDirs {
-		rel, err := filepath.Rel(prism.InstancesDir(d), inst.Dir)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "." {
-			return d
-		}
-	}
-	if len(m.cfg.PrismDirs) == 0 {
-		return ""
-	}
-	return m.cfg.PrismDirs[0]
-}
-
 // play starts m.inst through Prism Launcher, joining its saved server when join is set.
 func (m *model) play(join bool) (tea.Model, tea.Cmd) {
-	dataDir := m.dataDirOf(m.inst)
+	dataDir := prism.DataDirOf(m.cfg.PrismDirs, m.inst)
 	server := ""
 	if join {
 		if st, _ := update.LoadState(m.inst.Dir); st != nil {

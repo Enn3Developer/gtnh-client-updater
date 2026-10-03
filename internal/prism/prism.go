@@ -67,6 +67,21 @@ func InstancesDir(dataDir string) string {
 	return dir
 }
 
+// DataDirOf returns the data dir whose instances dir strictly contains inst.Dir,
+// falling back to dataDirs[0] ("" when dataDirs is empty).
+func DataDirOf(dataDirs []string, inst Instance) string {
+	for _, d := range dataDirs {
+		rel, err := filepath.Rel(InstancesDir(d), inst.Dir)
+		if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return d
+		}
+	}
+	if len(dataDirs) == 0 {
+		return ""
+	}
+	return dataDirs[0]
+}
+
 // Instance is one Prism instance directory.
 type Instance struct {
 	Dir     string // instance root (holds instance.cfg)

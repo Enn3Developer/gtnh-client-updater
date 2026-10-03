@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
-	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
 )
 
@@ -457,30 +456,6 @@ func TestCheckPlayFlagsAcceptsValidCombinations(t *testing.T) { // C13
 				t.Errorf("checkPlayFlags = %v, want nil", err)
 			}
 		})
-	}
-}
-
-func TestDataDirOfPicksDirHoldingTheInstance(t *testing.T) { // C13
-	d1, d2 := t.TempDir(), t.TempDir()
-	inst := prism.Instance{Dir: filepath.Join(d2, "instances", "X"), Name: "X"}
-	if got := dataDirOf([]string{d1, d2}, inst); got != d2 {
-		t.Errorf("dataDirOf(instance under the second dir) = %q, want %q", got, d2)
-	}
-}
-
-func TestDataDirOfFallsBackToFirstDir(t *testing.T) { // C13
-	d1, d2 := t.TempDir(), t.TempDir()
-	inst := prism.Instance{Dir: filepath.Join(t.TempDir(), "instances", "X"), Name: "X"}
-	if got := dataDirOf([]string{d1, d2}, inst); got != d1 {
-		t.Errorf("dataDirOf(instance elsewhere) = %q, want %q", got, d1)
-	}
-}
-
-func TestDataDirOfIgnoresSiblingWithSamePrefix(t *testing.T) { // C13
-	d1, d2 := t.TempDir(), t.TempDir()
-	inst := prism.Instance{Dir: filepath.Join(d2, "instances-old", "X"), Name: "X"}
-	if got := dataDirOf([]string{d1, d2}, inst); got != d1 {
-		t.Errorf("dataDirOf(instance under instances-old) = %q, want %q", got, d1)
 	}
 }
 

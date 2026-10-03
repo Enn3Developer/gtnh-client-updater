@@ -41,7 +41,7 @@ func (m *model) listHeightFor(sc screen) int {
 		h -= 2
 	}
 	if sc == scHome {
-		h -= 2
+		h -= 2 + strings.Count(m.homeHelp(), "\n")
 	}
 	return max(h, 5)
 }
