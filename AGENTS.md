@@ -382,7 +382,7 @@ reads what the page shows about each instance into `m.home`.
     "Play and join <server>" (hint `j`).
   - Update section (GTNH only, rows_update.go): bold "Update" heading, the last job's
     notice lines (ok/warn/info), then the update row: "GTNH <rec> is out · <kind> · <ago>"
-    (hint `u`), "I'm not sure which version this is — tell me and I'll check for updates"
+    (hint `u`), "Which version is this? Tell me and I'll check for updates"
     for an unknown version, or the dim info line "You have the newest stable version.";
     "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
     exists, "Last update A → B, <ago> · undo" (hint `b`).

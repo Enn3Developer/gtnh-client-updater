@@ -42,7 +42,7 @@ func (m *model) updateEntries() []entry {
 	switch {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
-			"I'm not sure which version this is — tell me and I'll check for updates",
+			"Which version is this? Tell me and I'll check for updates",
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
 	case info.rec != info.version:
 		text := "GTNH " + info.rec + " is out"
