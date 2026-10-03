@@ -20,11 +20,11 @@ func (m *model) closeCreation() error {
 	return c.Close()
 }
 
-// showLeftover shows the error of a thrown-away creation whose folder is still there.
-// The creation never got past its download, hence the preparing phase.
-func (m *model) showLeftover(err error) (tea.Model, tea.Cmd) {
-	m.fail(err, scPreparing)
-	return m, nil
+// showLeftover tells the player about a thrown-away creation whose folder is still
+// there. Unused until slice "flows2".
+func (m *model) showLeftover(err error) tea.Cmd {
+	m.notify("Something went wrong", err.Error())
+	return nil
 }
 
 // createDone marks the running PrepareCreate as returned and reports whether the
@@ -38,24 +38,29 @@ func (m *model) createDone() bool {
 	return m.quitAfterCancel
 }
 
-// startCreate enters the create flow: pick a version, server mods, a name, then create.
-func (m *model) startCreate() (tea.Model, tea.Cmd) {
-	m.creating, m.inst, m.target = true, prism.Instance{}, ""
+// startCreate resets the job for a new instance. Unused until slice "flows2".
+func (m *model) startCreate() tea.Cmd {
+	m.target = ""
 	m.serverMods, m.serverModsAsked = serverModsSetting(m.cfg.ServerMods, nil)
-	return m.showTargets()
+	return nil
 }
 
-func (m *model) askName() (tea.Model, tea.Cmd) {
+// askName offers the name of the new instance: cfg.Name once, else the default for
+// m.target. Unused until slice "flows2".
+func (m *model) askName() tea.Cmd {
 	name := update.DefaultInstanceName(m.target)
 	if m.cfg.Name != "" && !m.nameUsed {
 		name, m.nameUsed = m.cfg.Name, true
 	}
-	m.screen = scName
-	return m, m.focusInput(&m.nameIn, name)
+	m.newName = name
+	return nil
 }
 
-func (m *model) prepareCreate() (tea.Model, tea.Cmd) {
-	m.startBusy(scPreparing)
+func (m *model) instancesDir() string { return prism.InstancesDir(m.cfg.PrismDirs[0]) }
+
+// prepareCreate downloads the new instance. Unused until slice "flows2".
+func (m *model) prepareCreate() tea.Cmd {
+	m.startBusy()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelCreate, m.quitAfterCancel = cancel, false
 	opts := update.CreateOptions{
@@ -63,18 +68,18 @@ func (m *model) prepareCreate() (tea.Model, tea.Cmd) {
 		Target: m.target, CustomModsURL: m.serverMods, CustomModsAsked: true,
 	}
 	rep := m.reporter()
-	return m, func() tea.Msg {
+	return func() tea.Msg {
 		c, err := update.PrepareCreate(opts, rep)
 		return orErr(err, createReady{c})
 	}
 }
 
-// applyCreate creates the prepared instance.
-func (m *model) applyCreate() (tea.Model, tea.Cmd) {
-	m.startBusy(scApplying)
+// applyCreate creates the prepared instance. Unused until slice "flows2".
+func (m *model) applyCreate() tea.Cmd {
+	m.startBusy()
 	c, rep := m.creation, m.reporter()
 	m.creation = nil // Apply always closes it
-	return m, func() tea.Msg {
+	return func() tea.Msg {
 		r, err := c.Apply(rep)
 		return orErr(err, createdMsg{r})
 	}

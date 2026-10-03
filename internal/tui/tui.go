@@ -1,21 +1,19 @@
-// Package tui is the interactive bubbletea front end: pick an instance, pick a version,
-// review what will happen, apply. It talks to players, not developers: plain sentences,
-// no jargon, and always a clear next key.
+// Package tui is the interactive bubbletea front end: one persistent workspace with the
+// instances in a sidebar, the selected instance's page of rows (play, update, settings,
+// launcher), a status bar of keys and dialogs drawn over it. It talks to players, not
+// developers: plain sentences, no jargon, and always a clear next key.
 package tui
 
 import (
 	"context"
-	"errors"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/appcfg"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
@@ -25,6 +23,8 @@ import (
 )
 
 // Config is what the command line pre-selects. Empty fields are asked interactively.
+// Create, Target, Installed, ServerMods and Configs are accepted but unused until
+// slices "updateflow" and "flows2" wire them.
 type Config struct {
 	Client     *http.Client
 	AppVersion string
@@ -57,129 +57,89 @@ func Run(cfg Config) (Outcome, error) {
 	return Outcome{Restart: m.restart}, err
 }
 
-type screen int
+// focus is the part of the workspace the arrow keys move in.
+type focus int
 
 const (
-	scLoading screen = iota
-	scHome
-	scLaunching
-	scPlaying
-	scInstalled
-	scTarget
-	scServerMods
-	scName // name of a new instance
-	scPreparing
-	scConflicts // what to do with config files the player and the new version both changed
-	scResolve   // the same, decided file by file
-	scConfirm
-	scApplying
-	scDone
-	scError
-	scSelfUpdate
-	scSelfUpdated
-	scSettings       // per-instance and launcher-wide settings list
-	scSettingEdit    // text field for one setting
-	scBackups        // backups of the instance that can be restored
-	scRestoreConfirm // what restoring the chosen backup will do
-	scRestoring
-	scRestored
+	focusSidebar focus = iota
+	focusPage
 )
+
+// playMonitor watches the game started from the launcher.
+type playMonitor struct {
+	gen   int    // generation of the current watch; stale polls carry an older one
+	dir   string // Dir of the launched instance
+	state string // "" none | "starting" | "slow" | "running" | "closed" | "unknown"
+	start time.Time
+	since time.Time // when the game was first seen running
+}
+
+// homeInfo is what the page shows about one instance, read once by refresh so the view
+// never does I/O.
+type homeInfo struct {
+	gtnh                                  bool
+	version, rec, played, server, modsURL string // played = ago(LastLaunch, now); "" = never
+	flavor                                manifest.Flavor
+	backup                                *update.Backup // newest restorable backup; nil = nothing to undo
+	settings                              prism.Settings
+	settingsErr                           error
+}
 
 type model struct {
 	cfg  Config
 	send func(tea.Msg)
 
-	screen  screen
-	scroll  int // body scroll of the current non-list screen; reset on screen change
-	btn     int // selected button of the current screen; reset on screen change
-	width   int
-	height  int
-	spin    spinner.Model
-	bar     progress.Model
-	list    list.Model
-	hasList bool
-	// listKeys are the help bindings of the list on screen, for its key bar.
-	listKeys  []key.Binding
-	listTitle string // unwrapped title of the list on screen; re-wrapped on resize
-	input     textinput.Model
-	inputEr   string
+	width, height int
+	spin          spinner.Model
 
-	manifest *manifest.Manifest
-	insts    []prism.Instance
-	showAll  bool
-	inst     prism.Instance
-	detect   update.Detection
-	target   string
+	manifest   *manifest.Manifest
+	insts      []prism.Instance
+	showAll    bool
+	sel        int // index into visible()
+	focus      focus
+	row        int // index into rows()
+	pageScroll int
+	newer      *selfupdate.Release
+	app        appcfg.Config
+	dialog     *dialog
+	play       playMonitor
+	launchDir  string // Dir of the instance whose launch is under way
+	loaded     bool
+	loadErr    error
+	quitting   bool
+	restart    bool
+	home       map[string]homeInfo // per instance Dir, filled by refresh
 
-	serverMods      string // URL, "" = none
-	serverModsAsked bool
-	modsThenPrepare bool // server-mods screen continues into the update (vs. back to the list)
-
-	steps     []string // finished steps of the current busy screen
-	step      string
-	stepStart time.Time
-	done      int64
-	total     int64
-	warns     []string
-	session   *update.Session
-	result    *update.Result
-	err       error
-	errPhase  screen
-
-	// Create mode: making a new instance instead of updating m.inst.
-	creating bool
-	nameIn   textinput.Model
-	nameEr   string
-	nameUsed bool // cfg.Name was offered already
-	newName  string
-	creation *update.Creation
-	created  *update.CreateResult
-	// cancelCreate stops the running PrepareCreate; nil when none runs.
-	cancelCreate context.CancelFunc
-	// quitAfterCancel: the player quit during a create download; quit once PrepareCreate
-	// has returned (it removes the half-made folder before it does).
-	quitAfterCancel bool
-
-	newer    *selfupdate.Release
-	restart  bool
-	quitting bool
-
-	app          appcfg.Config
-	saveApp      func(appcfg.Config) error
-	setting      string          // key of the settings row being edited or last chosen
-	setIn        textinput.Model // value of the setting being edited
-	setEr        string          // why the typed setting was rejected
-	savedRow     string          // key of the row whose value shows "✓ saved"; "" = none
 	findLauncher func(dataDir, override string) (prism.Launcher, error)
 	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
 	isRunning    func(inst prism.Instance) (bool, error)
-	runUnknown   bool                // pickInstance couldn't tell whether the game runs
-	home         map[string]homeInfo // card data per instance Dir, filled by showHome
-	playGen      int
-	playState    string // "starting" | "slow" | "running" | "closed" | "unknown"
-	playStart    time.Time
-	runningSince time.Time
+	saveApp      func(appcfg.Config) error
+	restore      func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
 
-	backups  []update.Backup       // restorable backups of m.inst, newest first
-	backup   update.Backup         // the backup being restored
-	restored *update.RestoreResult // what the last restore did
-	restore  func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
+	// job state; used by the next slices (updateflow, flows2)
+	steps           []string // finished steps of the current job
+	step            string
+	stepStart       time.Time
+	done, total     int64
+	warns           []string
+	session         *update.Session
+	creation        *update.Creation
+	cancelCreate    context.CancelFunc // stops the running PrepareCreate; nil when none runs
+	quitAfterCancel bool               // quit once the cancelled PrepareCreate has returned
+	target          string
+	serverMods      string // URL, "" = none
+	serverModsAsked bool
+	newName         string
+	detect          update.Detection
+	nameUsed        bool // cfg.Name was offered already
 }
 
 func newModel(cfg Config) *model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(accent)
-	ti := textinput.New()
-	ti.Placeholder = "https://…/custom_mods.zip"
-	ti.CharLimit = 500
-	ni := textinput.New()
-	ni.CharLimit = 100
-	si := textinput.New()
-	si.CharLimit = 500
 	return &model{
-		cfg: cfg, spin: sp, input: ti, nameIn: ni, setIn: si, width: 80, height: 24,
-		bar:          progress.New(progress.WithGradient(string(accent), string(okColor))),
+		cfg: cfg, spin: sp, width: 80, height: 24,
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore,
 	}
@@ -208,8 +168,10 @@ type (
 		running bool
 		err     error
 	}
-	reloadedMsg struct{ insts []prism.Instance }
-	restoredMsg struct{ r *update.RestoreResult }
+	// launchFailedMsg: Prism Launcher couldn't be started for the game.
+	launchFailedMsg struct{ err error }
+	reloadedMsg     struct{ insts []prism.Instance }
+	restoredMsg     struct{ r *update.RestoreResult }
 )
 
 func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }
@@ -222,8 +184,10 @@ func orErr(err error, msg tea.Msg) tea.Msg {
 	return msg
 }
 
+// Init sets the window title, starts the spinner, the load and (when asked) the
+// self-update check, and loads the launcher settings into m.app.
 func (m *model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.spin.Tick, m.load}
+	cmds := []tea.Cmd{tea.SetWindowTitle("GTNH Launcher"), m.spin.Tick, m.load}
 	if m.cfg.UpdateCheck {
 		cmds = append(cmds, m.checkSelf)
 	}
@@ -233,159 +197,316 @@ func (m *model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Update routes messages: background results, window size, keys (a dialog takes every
+// key while open, C8; otherwise C5). An errMsg before load sets loadErr, after load it
+// becomes notify("Something went wrong", err).
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	prev := m.screen
-	md, cmd := m.update(msg)
-	if m.screen != prev {
-		m.scroll, m.btn = 0, 0
-	}
-	return md, cmd
-}
-
-func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		return m.onResize(msg)
+		m.width, m.height = msg.Width, msg.Height
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case loadedMsg:
 		m.manifest, m.insts = msg.m, msg.insts
-		return m.afterLoad()
+		return m, m.afterLoad()
 	case newerMsg:
-		return m.onNewer(msg)
+		m.newer = msg.r
 	case stepMsg:
-		return m.onStep(msg)
+		m.onStep(msg)
 	case progressMsg:
 		m.done, m.total = msg.done, msg.total
-		return m, nil
 	case warnMsg:
 		m.warns = append(m.warns, string(msg))
-		return m, nil
-	case preparedMsg:
-		return m.onPrepared(msg)
-	case appliedMsg:
-		m.result, m.screen = msg.r, scDone
-		return m, nil
-	case createReady:
-		return m.onCreateReady(msg)
-	case createdMsg:
-		m.created, m.screen = msg.r, scDone
-		return m, nil
-	case restoredMsg:
-		m.restored, m.screen = msg.r, scRestored
-		return m, nil
-	case selfDoneMsg:
-		m.screen = scSelfUpdated
-		return m, nil
 	case launchedMsg:
-		return m.onLaunched()
+		return m, m.onLaunched()
+	case launchFailedMsg:
+		m.notify(launchFailedTitle, "I couldn't start Prism Launcher: "+msg.err.Error())
 	case pollTick:
-		return m.onPollTick(msg)
+		return m, m.onPollTick(msg)
 	case pollMsg:
-		return m.onPoll(msg)
+		return m, m.onPoll(msg)
 	case reloadedMsg:
-		return m.onReloaded(msg)
+		m.onReloaded(msg)
 	case errMsg:
-		return m.onError(msg)
+		if !m.loaded {
+			m.loadErr = msg.err
+			return m, nil
+		}
+		m.notify("Something went wrong", msg.err.Error())
 	case tea.KeyMsg:
+		if cmd, ok := m.keyDialog(msg); ok {
+			return m, cmd
+		}
 		return m.key(msg)
 	}
-	if m.isListScreen() {
-		return m.updateList(msg)
+	return m, nil
+}
+
+// View is the title bar, a blank line, the workspace (sidebar | page) and the status
+// bar: exactly height lines, none wider than width, with the dialog overlaid (C1, C8).
+func (m *model) View() string {
+	right := ""
+	if m.newer != nil {
+		right = "v  launcher " + m.newer.Version + " is out"
 	}
-	return m, nil
-}
-
-func (m *model) onResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
-	m.width, m.height = msg.Width, msg.Height
-	m.bar.Width = max(min(msg.Width-8, 64), 10)
-	m.input.Width = m.inputWidth()
-	m.nameIn.Width = m.inputWidth()
-	m.setIn.Width = m.inputWidth()
-	m.resizeList()
-	return m, nil
-}
-
-func (m *model) onNewer(msg newerMsg) (tea.Model, tea.Cmd) {
-	m.newer = msg.r
-	m.resizeList() // make room for the banner
-	return m, nil
-}
-
-func (m *model) onStep(msg stepMsg) (tea.Model, tea.Cmd) {
-	if m.step != "" {
-		m.steps = append(m.steps, m.step)
+	out := []string{titleBar("GTNH Launcher "+m.cfg.AppVersion, right, m.width), ""}
+	out = append(out, m.workspace(m.height-3)...)
+	out = append(out, statusBar(m.width, m.statusPairs()...))
+	for i, l := range out {
+		out[i] = ansi.Truncate(l, m.width, "")
 	}
-	m.step, m.stepStart, m.done, m.total = string(msg), time.Now(), 0, 0
-	return m, nil
-}
-
-func (m *model) onPrepared(msg preparedMsg) (tea.Model, tea.Cmd) {
-	m.session, m.screen = msg.s, scConfirm
-	if msg.s.Plan.Count(update.Conflict) > 0 {
-		msg.s.Plan.ChooseAll(m.configsChoice()) // preselected on the next screen
-		return m.showConflicts()
+	view := strings.Join(out, "\n")
+	if m.dialog != nil {
+		view = overlay(view, m.dialogView(), m.width, m.height)
 	}
-	return m, nil
+	return view
 }
 
-func (m *model) onCreateReady(msg createReady) (tea.Model, tea.Cmd) {
-	m.creation, m.screen = msg.c, scConfirm
-	if m.createDone() {
-		return m.quit() // finished just before the cancel landed; quit closes it
+// workspace is the h lines between the title and the status bar: the sidebar, its rule
+// and the page, or the page alone behind a 2-column margin.
+func (m *model) workspace(h int) []string {
+	h = max(h, 0)
+	page := strings.Split(m.pageView(m.pageWidth(), h), "\n")
+	out := make([]string, h)
+	if !m.sidebarShows() {
+		for i := range out {
+			if i < len(page) && page[i] != "" {
+				out[i] = "  " + page[i]
+			}
+		}
+		return out
 	}
-	return m, nil
-}
-
-func (m *model) onError(msg errMsg) (tea.Model, tea.Cmd) {
-	var leftover *update.LeftoverError
-	if m.createDone() && !errors.As(msg.err, &leftover) {
-		return m.quit() // the cancelled download cleaned up after itself
+	sw := m.sidebarWidth()
+	side := strings.Split(m.sidebarView(h), "\n")
+	rule := dimSty.Render(" │ ")
+	for i := range out {
+		s, p := "", ""
+		if i < len(side) {
+			s = side[i]
+		}
+		if i < len(page) {
+			p = page[i]
+		}
+		out[i] = padTo(s, sw) + rule + p
 	}
-	m.fail(msg.err, m.screen)
-	return m, nil
+	return out
 }
 
-// fail shows err on the error screen; phase is the screen it happened on.
-func (m *model) fail(err error, phase screen) {
-	m.err, m.errPhase, m.screen = err, phase, scError
+// padTo pads s with spaces to width columns.
+func padTo(s string, width int) string {
+	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
 }
 
-func (m *model) isListScreen() bool {
-	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.screen == scSettings ||
-		(m.screen == scBackups && len(m.backups) > 0) || m.choosingConfigs()
+// visible is the instances the sidebar lists: GTNH ones, or all with showAll.
+func (m *model) visible() []prism.Instance {
+	var out []prism.Instance
+	for _, in := range m.insts {
+		if in.GTNH || m.showAll {
+			out = append(out, in)
+		}
+	}
+	return out
 }
 
-// choosingConfigs reports whether a config-choice list is on screen; those belong to a
-// prepared session, so the self-update offer is hidden there.
-func (m *model) choosingConfigs() bool {
-	return m.screen == scConflicts || m.screen == scResolve
+// current is the selected visible instance; false when there is none.
+func (m *model) current() (prism.Instance, bool) {
+	v := m.visible()
+	if m.sel < 0 || m.sel >= len(v) {
+		return prism.Instance{}, false
+	}
+	return v[m.sel], true
 }
 
+// selectDir selects the visible instance with folder dir, else the first one.
+func (m *model) selectDir(dir string) {
+	m.sel = 0
+	for i, in := range m.visible() {
+		if in.Dir == dir {
+			m.sel = i
+		}
+	}
+}
+
+// refresh rereads everything the page shows about each instance into m.home.
+func (m *model) refresh() {
+	m.home = make(map[string]homeInfo, len(m.insts))
+	for _, in := range m.insts {
+		m.home[in.Dir] = m.homeInfoOf(in)
+	}
+	if _, ok := m.current(); !ok {
+		m.sel = 0
+	}
+	if !m.sidebarShows() {
+		m.focus = focusPage
+	}
+}
+
+func (m *model) homeInfoOf(in prism.Instance) homeInfo {
+	st, _ := update.LoadState(in.Dir)
+	info := homeInfo{
+		gtnh:    in.GTNH,
+		version: update.DetectVersion(in, st, m.manifest).Version,
+		played:  ago(in.LastLaunch, time.Now()),
+		flavor:  update.FlavorOf(in),
+	}
+	if m.manifest != nil && len(m.manifest.Releases) > 0 {
+		info.rec = defaultTarget(m.manifest, info.version)
+	}
+	if st != nil {
+		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
+	}
+	if in.GTNH {
+		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {
+			info.backup = &bs[0]
+		}
+	}
+	info.settings, info.settingsErr = prism.ReadSettings(in.Dir)
+	return info
+}
+
+// quit leaves the program: m.quitting and tea.Quit.
 func (m *model) quit() (tea.Model, tea.Cmd) {
-	if m.screen == scApplying || m.screen == scRestoring || m.screen == scSelfUpdate {
-		return m, nil // never abandon a half-applied update; rollback needs this process
-	}
-	if m.cancelCreate != nil {
-		// The download goroutine removes the new folder when it sees the cancel; quitting
-		// now would kill it first. Its errMsg (or createReady) quits.
-		m.cancelCreate()
-		m.quitAfterCancel = true
-		return m, nil
-	}
-	if m.session != nil {
-		m.session.Close()
-	}
-	if err := m.closeCreation(); err != nil {
-		return m.showLeftover(err)
-	}
 	m.quitting = true
 	return m, tea.Quit
 }
 
-// startBusy enters a busy screen with a fresh step log.
-func (m *model) startBusy(sc screen) {
-	m.screen, m.warns, m.steps, m.step = sc, nil, nil, ""
+// key handles a key with no dialog open (C5).
+func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	s := k.String()
+	if s == "q" || s == "ctrl+c" {
+		return m.quit()
+	}
+	if !m.loaded {
+		return m, nil
+	}
+	switch s {
+	case "up":
+		m.move(-1)
+	case "down":
+		m.move(1)
+	case "tab", "shift+tab", "left", "right":
+		if m.sidebarShows() && m.focus == focusPage {
+			m.focus = focusSidebar
+		} else if m.sidebarShows() {
+			m.focus = focusPage
+		}
+	case "enter":
+		if m.focus == focusSidebar {
+			return m, m.playCmd(false)
+		}
+		if rs := m.rows(); m.row < len(rs) && rs[m.row].run != nil {
+			return m, rs[m.row].run(m)
+		}
+	case "esc":
+		if m.focus == focusPage && m.row == 0 {
+			m.dismissPlay()
+		}
+	case "p":
+		return m, m.playCmd(false)
+	case "j":
+		return m, m.runRow("join") // only GTNH instances with a server have one
+	case "u":
+		return m, m.runRow("update")
+	case "o":
+		return m, m.runRow("versions")
+	case "b":
+		return m, m.runRow("undo")
+	case "s":
+		m.jumpToSettings()
+	case "n":
+		return m, m.newInstance()
+	case "a":
+		m.toggleShowAll()
+	case "v":
+		if m.newer != nil {
+			return m, m.selfUpdate()
+		}
+	}
+	return m, nil
 }
+
+// move moves the page row or, in the sidebar, the selected instance by d, clamped.
+func (m *model) move(d int) {
+	if m.focus == focusPage {
+		m.row = max(min(m.row+d, len(m.rows())-1), 0)
+		return
+	}
+	m.sel = max(min(m.sel+d, len(m.visible())-1), 0)
+	m.row, m.pageScroll = 0, 0
+}
+
+// runRow runs the page row with id, if the page has one.
+func (m *model) runRow(id string) tea.Cmd {
+	for _, r := range m.rows() {
+		if r.id == id && r.run != nil {
+			return r.run(m)
+		}
+	}
+	return nil
+}
+
+// jumpToSettings focuses the first settings row, or the first launcher row without one.
+func (m *model) jumpToSettings() {
+	m.focus = focusPage
+	ids := map[string]bool{}
+	for _, r := range m.settingsRows() {
+		ids[r.id] = true
+	}
+	if len(ids) == 0 {
+		for _, r := range m.launcherRows() {
+			ids[r.id] = true
+		}
+	}
+	for i, r := range m.rows() {
+		if ids[r.id] {
+			m.row = i
+			return
+		}
+	}
+}
+
+func (m *model) toggleShowAll() {
+	dir := ""
+	if in, ok := m.current(); ok {
+		dir = in.Dir
+	}
+	m.showAll = !m.showAll
+	m.selectDir(dir)
+	m.row, m.pageScroll = 0, 0
+	if !m.sidebarShows() {
+		m.focus = focusPage
+	}
+}
+
+// onStep starts the next step of the running job. Unused until slice "updateflow".
+func (m *model) onStep(msg stepMsg) {
+	if m.step != "" {
+		m.steps = append(m.steps, m.step)
+	}
+	m.step, m.stepStart, m.done, m.total = string(msg), time.Now(), 0, 0
+}
+
+// startBusy starts a job with a fresh step log.
+func (m *model) startBusy() {
+	m.warns, m.steps, m.step = nil, nil, ""
+}
+
+// newInstance starts making a new instance. Filled by slice "flows2".
+func (m *model) newInstance() tea.Cmd { return nil }
+
+// selfUpdate replaces the launcher with m.newer. Filled by slice "flows2".
+func (m *model) selfUpdate() tea.Cmd { return nil }
+
+// startUpdate updates the current instance to target. Filled by slice "updateflow".
+func (m *model) startUpdate(target string) tea.Cmd { return nil }
+
+// chooseVersion lets the player pick the version to install. Filled by slice "updateflow".
+func (m *model) chooseVersion() tea.Cmd { return nil }
+
+// startUndo restores the current instance's newest backup. Filled by slice "flows2".
+func (m *model) startUndo() tea.Cmd { return nil }
+
+// editSetting edits the setting of the row with id key. Filled by slice "editsettings".
+func (m *model) editSetting(key string) tea.Cmd { return nil }
