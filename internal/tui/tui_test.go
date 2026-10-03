@@ -6,7 +6,6 @@ import (
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
-	"github.com/Enn3Developer/gtnh-client-updater/internal/selfupdate"
 )
 
 func TestDefaultTargetNeverDowngrades(t *testing.T) {
@@ -215,41 +214,6 @@ func TestC5SWithUnreadableSettingsJumpsToTheLauncherRows(t *testing.T) {
 
 	if m.focus != focusPage || m.rows()[m.row].id != "after" {
 		t.Errorf("after s: focus %v row %d, want page on after", m.focus, m.row)
-	}
-}
-
-// C4/C5: the undo, settings and launcher rows do nothing yet (update and versions are
-// the update flow's, see flow_update_test.go).
-func TestC5RowsOfLaterSlicesChangeNothing(t *testing.T) {
-	for _, id := range []string{"undo", "memory", "server", "after", "prism"} {
-		t.Run(id, func(t *testing.T) {
-			m, f := oneFull(t)
-			m.row = indexOf(rowIDs(m), id)
-			before := strings.Join(screen(m), "\n")
-
-			runCmd(press(m, "enter"))
-
-			if after := strings.Join(screen(m), "\n"); after != before || m.dialog != nil || len(f.launches) != 0 {
-				t.Errorf("enter on %s changed the view:\n%s\n---\n%s", id, before, after)
-			}
-		})
-	}
-}
-
-// C5
-func TestC5ShortcutsOfLaterSlicesChangeNothing(t *testing.T) {
-	for _, k := range []string{"b", "n", "v", "esc"} {
-		t.Run(k, func(t *testing.T) {
-			m, _ := oneFull(t)
-			m.Update(newerMsg{r: &selfupdate.Release{Version: "9.9.9"}})
-			before := strings.Join(screen(m), "\n")
-
-			runCmd(press(m, k))
-
-			if after := strings.Join(screen(m), "\n"); after != before || m.dialog != nil || m.quitting {
-				t.Errorf("%s changed the view:\n%s\n---\n%s", k, before, after)
-			}
-		})
 	}
 }
 

@@ -100,6 +100,54 @@ func TestC1ViewFitsTheTerminalWithTitleWorkspaceAndStatusBar(t *testing.T) {
 	})
 }
 
+// C1/C8/C12: with an instance being created (any number of real ones, any progress) or
+// the launcher's progress dialog open, the view still has exactly height lines, none
+// wider than width.
+func TestC1ViewFitsTheTerminalWithAPendingInstanceOrTheProgressDialog(t *testing.T) {
+	root := t.TempDir()
+	pool := []prism.Instance{
+		makeInst(t, root, fullSpec("Alpha")),
+		makeInst(t, root, instSpec{name: "Bravo", gtnh: true, version: "2.8.4"}),
+	}
+	names := []string{"My Pack", "GT New Horizons 2.8.4", "A new instance with a really long name that goes on and on"}
+	words := []string{"Downloading", "GTNH", "2.8.4", "checking", "files", "·",
+		"a-very-long-word-without-any-breaks-anywhere-at-all-in-it-whatsoever-really"}
+	rapid.Check(t, func(rt *rapid.T) {
+		width := rapid.IntRange(40, 160).Draw(rt, "width")
+		height := rapid.IntRange(10, 50).Draw(rt, "height")
+		insts := pool[:rapid.IntRange(0, len(pool)).Draw(rt, "n")]
+		m, _ := newTestModel(Config{PrismDirs: []string{root}}, width, height)
+		m.Update(newerMsg{r: &selfupdate.Release{Version: "9.9.9"}})
+		m.Update(loadedMsg{m: testManifest(), insts: insts})
+
+		if rapid.Bool().Draw(rt, "pending") {
+			target := rapid.SampledFrom([]string{"2.8.4", "2.8.1", "2.8.0"}).Draw(rt, "target")
+			m.beginCreate(target, rapid.SampledFrom(names).Draw(rt, "name"))
+		} else {
+			m.job = &job{kind: jobSelf, title: "Downloading GTNH Launcher 9.9.9", phase: "apply"}
+			m.progressDialog("Updating the launcher")
+		}
+		for _, s := range rapid.SliceOfN(rapid.SampledFrom(words), 0, 4).Draw(rt, "steps") {
+			m.Update(stepMsg(s))
+		}
+		total := rapid.Int64Range(0, 2_000_000_000).Draw(rt, "total")
+		m.Update(progressMsg{rapid.Int64Range(0, total).Draw(rt, "done"), total})
+		for _, k := range rapid.SliceOfN(rapid.SampledFrom([]string{"up", "down", "tab", "shift+tab"}), 0, 10).Draw(rt, "keys") {
+			press(m, k)
+		}
+
+		lines := strings.Split(m.View(), "\n")
+		if len(lines) != height {
+			rt.Fatalf("view has %d lines, want %d", len(lines), height)
+		}
+		for i, l := range lines {
+			if w := ansi.StringWidth(l); w > width {
+				rt.Fatalf("line %d is %d columns wide, terminal is %d: %q", i+1, w, width, ansi.Strip(l))
+			}
+		}
+	})
+}
+
 // C2
 func TestC2BeforeLoadThePageSaysItIsLookingAndOnlyQuitIsOffered(t *testing.T) {
 	m, _ := newTestModel(Config{}, 80, 24)

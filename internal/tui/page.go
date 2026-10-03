@@ -44,6 +44,9 @@ func (m *model) entries() []entry {
 	if !ok {
 		return nil
 	}
+	if p, ok := m.pending(); ok && p.Dir == in.Dir {
+		return m.pendingEntries()
+	}
 	es := m.playEntries()
 	if m.home[in.Dir].gtnh {
 		es = append(es, m.updateEntries()...)

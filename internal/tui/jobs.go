@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
+	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
+	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
 )
 
 // jobKind is what a running job does.
@@ -22,10 +27,58 @@ const (
 
 // job is the background work shown inline on its instance's page.
 type job struct {
-	kind  jobKind
-	dir   string // Dir of the instance the job works on
-	title string
-	phase string // "prepare" | "apply"
+	kind   jobKind
+	dir    string // Dir of the instance the job works on
+	title  string
+	phase  string // "prepare" | "apply"
+	backup string // backup dir of a jobRestore; "" otherwise
+}
+
+// pending is the instance being created: a synthetic GTNH instance while a jobCreate runs.
+func (m *model) pending() (prism.Instance, bool) {
+	if m.job == nil || m.job.kind != jobCreate {
+		return prism.Instance{}, false
+	}
+	return prism.Instance{Dir: m.job.dir, Name: m.newName, GTNH: true}, true
+}
+
+// jobOutcome is what a failed job means for its instance, per kind and phase (C4, C9,
+// C13); "" when the error already says it.
+func (m *model) jobOutcome(err error) string {
+	switch m.job.kind {
+	case jobRestore:
+		if errors.Is(err, update.ErrGameRunning) {
+			return "Nothing was changed."
+		}
+		return "Some files may have changed. The backup folder is still there, so you can try again: " + m.job.backup
+	case jobCreate:
+		var left *update.LeftoverError
+		switch {
+		case errors.As(err, &left):
+			return ""
+		case m.job.phase == "prepare":
+			return "Nothing was created."
+		}
+		return "I removed the half-made instance, so there's nothing to clean up."
+	case jobSelf:
+		return "The launcher wasn't changed."
+	}
+	return m.updateOutcome(err)
+}
+
+// pendingInfo is the page info of the pending instance, read without touching the disk.
+func (m *model) pendingInfo() homeInfo {
+	flavor := manifest.Java17
+	if r, ok := m.release(m.target); ok {
+		flavor = update.NewInstanceFlavor(r)
+	}
+	return homeInfo{gtnh: true, version: m.target, rec: m.target, flavor: flavor}
+}
+
+// pendingEntries is the page of the pending instance: the hero and the job block.
+func (m *model) pendingEntries() []entry {
+	es := textEntries(titleSty.Render(m.newName), dimSty.Render("GTNH "+m.target+" · being created"), "")
+	return append(es, rowEntries([]row{m.jobRow()})...)
 }
 
 // jobShown reports whether the running job belongs to the instance at dir.
@@ -38,10 +91,17 @@ func (m *model) busyApplying() bool {
 	return m.job != nil && m.job.phase == "apply"
 }
 
-// jobName is the display name of the job's instance, or its dir's base name.
+// jobName is what the job works on: the launcher update, the new instance's name, or
+// the display name of the job's instance (its dir's base name when unlisted).
 func (m *model) jobName() string {
 	if m.job == nil {
 		return ""
+	}
+	if m.job.kind == jobSelf {
+		return "the launcher update"
+	}
+	if p, ok := m.pending(); ok {
+		return p.Name
 	}
 	for _, in := range m.insts {
 		if in.Dir == m.job.dir {

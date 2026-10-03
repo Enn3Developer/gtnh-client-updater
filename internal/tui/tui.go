@@ -23,8 +23,6 @@ import (
 )
 
 // Config is what the command line pre-selects. Empty fields are asked interactively.
-// Create, Target, Installed, ServerMods and Configs are accepted but unused until
-// slices "updateflow" and "flows2" wire them.
 type Config struct {
 	Client     *http.Client
 	AppVersion string
@@ -116,7 +114,7 @@ type model struct {
 	saveApp      func(appcfg.Config) error
 	restore      func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
 
-	// job state; used by the next slices (updateflow, flows2)
+	// job state
 	steps           []string // finished steps of the current job
 	step            string
 	stepStart       time.Time
@@ -132,6 +130,7 @@ type model struct {
 	newName         string
 	detect          update.Detection
 	nameUsed        bool              // cfg.Name was offered already
+	targetUsed      bool              // cfg.Target was consumed by a creation
 	job             *job              // the running job shown inline; nil when none runs
 	notices         map[string]notice // outcome of the last job per instance Dir
 	runUnknown      bool              // the last check couldn't tell whether the game runs
@@ -241,10 +240,25 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.job != nil && m.session != nil {
 			return m, m.onApplied(msg.r)
 		}
+	case createReady:
+		if m.job != nil {
+			return m, m.onCreateReady(msg.c)
+		}
+	case createdMsg:
+		if m.job != nil {
+			return m, m.onCreated(msg.r)
+		}
+	case restoredMsg:
+		if m.job != nil {
+			return m, m.onRestored(msg.r)
+		}
+	case selfDoneMsg:
+		if m.job != nil {
+			return m, m.onSelfDone()
+		}
 	case errMsg:
 		if m.job != nil {
-			m.onJobErr(msg.err)
-			return m, nil
+			return m, m.onJobErr(msg.err)
 		}
 		if !m.loaded {
 			m.loadErr = msg.err
@@ -315,13 +329,17 @@ func padTo(s string, width int) string {
 	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
 }
 
-// visible is the instances the sidebar lists: GTNH ones, or all with showAll.
+// visible is the instances the sidebar lists: GTNH ones, or all with showAll, then the
+// one being created.
 func (m *model) visible() []prism.Instance {
 	var out []prism.Instance
 	for _, in := range m.insts {
 		if in.GTNH || m.showAll {
 			out = append(out, in)
 		}
+	}
+	if p, ok := m.pending(); ok {
+		out = append(out, p)
 	}
 	return out
 }
@@ -350,6 +368,9 @@ func (m *model) refresh() {
 	m.home = make(map[string]homeInfo, len(m.insts))
 	for _, in := range m.insts {
 		m.home[in.Dir] = m.homeInfoOf(in)
+	}
+	if p, ok := m.pending(); ok {
+		m.home[p.Dir] = m.pendingInfo()
 	}
 	if _, ok := m.current(); !ok {
 		m.sel = 0
@@ -394,6 +415,11 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if s == "q" || s == "ctrl+c" {
 		if m.busyApplying() {
 			return m, nil // never quit mid-apply
+		}
+		if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
+			m.cancelCreate() // quit once the download has cleaned up (C10)
+			m.quitAfterCancel = true
+			return m, nil
 		}
 		return m.quit()
 	}
@@ -511,15 +537,6 @@ func (m *model) onStep(msg stepMsg) {
 func (m *model) startBusy() {
 	m.warns, m.steps, m.step = nil, nil, ""
 }
-
-// newInstance starts making a new instance. Filled by slice "flows2".
-func (m *model) newInstance() tea.Cmd { return nil }
-
-// selfUpdate replaces the launcher with m.newer. Filled by slice "flows2".
-func (m *model) selfUpdate() tea.Cmd { return nil }
-
-// startUndo restores the current instance's newest backup. Filled by slice "flows2".
-func (m *model) startUndo() tea.Cmd { return nil }
 
 // editSetting edits the setting of the row with id key. Filled by slice "editsettings".
 func (m *model) editSetting(key string) tea.Cmd { return nil }

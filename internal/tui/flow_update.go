@@ -108,10 +108,16 @@ func (m *model) startUpdate(target string) tea.Cmd {
 // askServerMods settles the server-mods link (C3d), asking when it never was, then
 // starts preparing.
 func (m *model) askServerMods(inst prism.Instance, st *update.State, target string) tea.Cmd {
+	return m.askServerModsThen(st, func(m *model) tea.Cmd { return m.beginPrepare(inst, target) })
+}
+
+// askServerModsThen settles the server-mods link, asking when it never was (esc stops
+// there), then runs then.
+func (m *model) askServerModsThen(st *update.State, then func(m *model) tea.Cmd) tea.Cmd {
 	url, asked := serverModsSetting(m.cfg.ServerMods, st)
 	if asked {
 		m.serverMods, m.serverModsAsked = url, true
-		return m.beginPrepare(inst, target)
+		return then(m)
 	}
 	m.openInput("Does your server have extra mods?", serverModsIntro, url, "https://…/custom_mods.zip",
 		"Leave it empty if there's none. You can change it later in Settings.", []string{"Continue"},
@@ -126,7 +132,7 @@ func (m *model) askServerMods(inst prism.Instance, st *update.State, target stri
 			}
 			m.serverMods, m.serverModsAsked = value, true
 			m.closeDialog()
-			return m.beginPrepare(inst, target)
+			return then(m)
 		})
 	return nil
 }
@@ -165,20 +171,43 @@ func (m *model) onApplied(r *update.Result) tea.Cmd {
 	return m.reload()
 }
 
-// onJobErr ends the running job with err and says what it means for the instance (C4).
-func (m *model) onJobErr(err error) {
-	outcome := "Some files may have changed. The originals are in the .gtnh-updater folder inside the instance."
-	switch {
-	case m.job.phase == "prepare":
-		outcome = "Nothing was changed."
-	case errors.Is(err, update.ErrRolledBack):
-		outcome = "Everything was put back the way it was, so your instance is exactly as before."
+// onJobErr ends the running job with err and says what it means (C4, C9, C13); a
+// cancelled download the player is waiting on quits instead (C10).
+func (m *model) onJobErr(err error) tea.Cmd {
+	j := m.job
+	outcome := m.jobOutcome(err)
+	if j.kind == jobCreate && m.createDone() {
+		m.job = nil
+		_, cmd := m.quit()
+		return cmd
 	}
 	m.job = nil
 	if m.session != nil {
 		m.dropSession()
 	}
-	m.errorDialog(err, outcome)
+	switch j.kind {
+	case jobSelf:
+		m.closeDialog() // the progress dialog
+	case jobCreate:
+		m.refresh() // the pending row is gone
+	}
+	if outcome == "" {
+		m.notify("Something went wrong", err.Error())
+	} else {
+		m.errorDialog(err, outcome)
+	}
+	return nil
+}
+
+// updateOutcome is what a failed update means for the instance (C4).
+func (m *model) updateOutcome(err error) string {
+	switch {
+	case m.job.phase == "prepare":
+		return "Nothing was changed."
+	case errors.Is(err, update.ErrRolledBack):
+		return "Everything was put back the way it was, so your instance is exactly as before."
+	}
+	return "Some files may have changed. The originals are in the .gtnh-updater folder inside the instance."
 }
 
 // cancelUpdate drops the prepared update before anything was changed.
@@ -358,16 +387,23 @@ func noticeOf(r *update.Result, pl *update.Plan) notice {
 	if k := len(pl.Chosen(update.KeepMine)); k > 0 {
 		n.text += fmt.Sprintf(" · %d new config %s saved as .mcnew", k, plural(k, "version", "versions"))
 	}
-	if r.CustomErr != nil {
-		n.warn = "Your server's extra mods couldn't be synced (" + r.CustomErr.Error() + "). I'll try again next time."
+	n.warn, n.info = serverModsNotice(r.CustomErr, r.CustomMods)
+	return n
+}
+
+// serverModsNotice is a notice's warning and info about the server's extra mods after a
+// job synced them (customErr: the sync failed; cm: what it did, nil = nothing).
+func serverModsNotice(customErr error, cm *update.CustomModsResult) (warn, info string) {
+	if customErr != nil {
+		warn = "Your server's extra mods couldn't be synced (" + customErr.Error() + "). I'll try again next time."
 	}
-	if cm := r.CustomMods; cm != nil {
+	if cm != nil {
 		switch {
 		case len(cm.Installed) > 0:
-			n.info = fmt.Sprintf("%d extra %s from your server installed", len(cm.Installed), plural(len(cm.Installed), "mod", "mods"))
+			info = fmt.Sprintf("%d extra %s from your server installed", len(cm.Installed), plural(len(cm.Installed), "mod", "mods"))
 		case len(cm.Removed) > 0:
-			n.info = fmt.Sprintf("Removed %d extra %s from your old server", len(cm.Removed), plural(len(cm.Removed), "mod", "mods"))
+			info = fmt.Sprintf("Removed %d extra %s from your old server", len(cm.Removed), plural(len(cm.Removed), "mod", "mods"))
 		}
 	}
-	return n
+	return warn, info
 }

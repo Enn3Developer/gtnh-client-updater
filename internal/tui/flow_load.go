@@ -36,8 +36,8 @@ func listInstances(dirs []string) []prism.Instance {
 }
 
 // afterLoad marks the workspace loaded, preselects Config.Instance (by name or folder),
-// refreshes and starts the update Config.Target asks for, else the game when
-// Config.Play asks to.
+// refreshes and starts the creation Config.Create asks for, else the update Config.Target
+// asks for, else the game when Config.Play asks to.
 func (m *model) afterLoad() tea.Cmd {
 	m.loaded = true
 	m.focus = focusSidebar
@@ -53,6 +53,9 @@ func (m *model) afterLoad() tea.Cmd {
 		m.selectDir(in.Dir)
 	}
 	m.refresh()
+	if m.cfg.Create {
+		return m.newInstance()
+	}
 	if _, ok := m.current(); ok && m.cfg.Target != "" {
 		v, err := manifest.Resolve(m.manifest, m.cfg.Target)
 		if err != nil {

@@ -38,6 +38,8 @@ func (m *model) statusPairs() []string {
 	switch {
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
+	case m.dialog != nil && m.dialog.buttons == nil && m.dialog.list == nil && m.dialog.input == nil:
+		return []string{"updating", "please don't close this window"} // the progress dialog (C14)
 	case m.dialog != nil:
 		return m.dialogPairs()
 	}
@@ -60,6 +62,9 @@ func (m *model) statusPairs() []string {
 	}
 	if m.busyApplying() {
 		return append(pairs, "updating", "please don't close this window")
+	}
+	if m.quitAfterCancel && m.job != nil {
+		return append(pairs, "stopping", "cleaning up…")
 	}
 	return append(pairs, "q", "quit")
 }

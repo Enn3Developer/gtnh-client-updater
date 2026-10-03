@@ -25,6 +25,9 @@ func (m *model) playCmd(join bool) tea.Cmd {
 	if !ok || m.gameUnderway(inst.Dir) {
 		return nil
 	}
+	if p, ok := m.pending(); ok && p.Dir == inst.Dir {
+		return nil
+	}
 	dataDir := prism.DataDirOf(m.cfg.PrismDirs, inst)
 	server := ""
 	if join {
