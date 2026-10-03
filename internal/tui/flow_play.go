@@ -42,7 +42,7 @@ func (m *model) play(join bool) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) launchFailed(err error) (tea.Model, tea.Cmd) {
-	m.err, m.errPhase, m.screen = err, scLaunching, scError
+	m.fail(err, scLaunching)
 	return m, nil
 }
 

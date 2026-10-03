@@ -344,8 +344,13 @@ func (m *model) onError(msg errMsg) (tea.Model, tea.Cmd) {
 	if m.createDone() && !errors.As(msg.err, &leftover) {
 		return m.quit() // the cancelled download cleaned up after itself
 	}
-	m.err, m.errPhase, m.screen = msg.err, m.screen, scError
+	m.fail(msg.err, m.screen)
 	return m, nil
+}
+
+// fail shows err on the error screen; phase is the screen it happened on.
+func (m *model) fail(err error, phase screen) {
+	m.err, m.errPhase, m.screen = err, phase, scError
 }
 
 func (m *model) isListScreen() bool {

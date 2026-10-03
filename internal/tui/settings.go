@@ -188,7 +188,7 @@ func (m *model) toggleAfterPlay() (tea.Model, tea.Cmd) {
 	}
 	if err := m.saveApp(m.app); err != nil {
 		m.app = prev
-		m.err, m.errPhase, m.screen = fmt.Errorf("I couldn't save that setting: %w", err), scSettings, scError
+		m.fail(fmt.Errorf("I couldn't save that setting: %w", err), scSettings)
 		return m, nil
 	}
 	m.savedRow = "after"
@@ -206,7 +206,7 @@ func (m *model) keySettingEdit(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if err := m.saveSetting(m.setting, v); err != nil {
-			m.err, m.errPhase, m.screen = fmt.Errorf("I couldn't save that setting: %w", err), scSettingEdit, scError
+			m.fail(fmt.Errorf("I couldn't save that setting: %w", err), scSettingEdit)
 			return m, nil
 		}
 		m.setEr = ""

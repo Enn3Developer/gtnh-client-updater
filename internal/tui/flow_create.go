@@ -23,7 +23,7 @@ func (m *model) closeCreation() error {
 // showLeftover shows the error of a thrown-away creation whose folder is still there.
 // The creation never got past its download, hence the preparing phase.
 func (m *model) showLeftover(err error) (tea.Model, tea.Cmd) {
-	m.err, m.errPhase, m.screen = err, scPreparing, scError
+	m.fail(err, scPreparing)
 	return m, nil
 }
 
