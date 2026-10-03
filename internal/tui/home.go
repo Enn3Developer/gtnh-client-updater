@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
@@ -23,9 +23,14 @@ type homeInfo struct {
 	backup                                *update.Backup // newest restorable backup; nil = nothing to undo
 }
 
-// cardSty boxes the instance card: 38 columns of text, 42 on screen. lipgloss's Width
-// counts the padding but not the border.
-var cardSty = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#727169")).Padding(0, 1).Width(40)
+// cardLabelWidth is the column every instance-card label is padded to.
+const cardLabelWidth = 13
+
+const (
+	cardWidth      = 42 // the instance card's on-screen columns
+	cardValueWidth = 25 // cardWidth - 4 - cardLabelWidth: inside border and padding, after the label
+	cardTitleWidth = 34 // longest name that still fits the top border
+)
 
 func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	st, _ := update.LoadState(in.Dir)
@@ -47,24 +52,39 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	return info
 }
 
-// homeDesc is the line under an instance's name on the home list.
+// homeDesc is the line under an instance's name on the home list: its parts joined by
+// " · " with the status badge last, "GTNH <ver> · <played> · <status>" ("GTNH · ..." when
+// the version is unknown, "<played> · <status>" when not GTNH); <played> is "never played"
+// or "played <ago>".
 func homeDesc(in prism.Instance, info homeInfo) string {
-	played := " · never played"
+	played := "never played"
 	if info.played != "" {
-		played = " · played " + info.played
+		played = "played " + info.played
 	}
-	if !in.GTNH {
-		return "not a GTNH instance" + played
+	parts := []string{played, homeStatus(info)}
+	if in.GTNH {
+		gtnh := "GTNH"
+		if info.version != "" {
+			gtnh += " " + info.version
+		}
+		parts = append([]string{gtnh}, parts...)
 	}
-	v := info.version
-	if v == "" {
-		v = "version unknown"
+	return strings.Join(parts, " · ")
+}
+
+// homeStatus is an instance's status badge: the recommended version when it differs,
+// up to date, version unknown, or not a GTNH instance.
+func homeStatus(info homeInfo) string {
+	if !info.gtnh {
+		return badge(badgeDim, "not a GTNH instance")
 	}
-	status := " · up to date"
+	if info.version == "" {
+		return badge(badgeDim, "version unknown")
+	}
 	if info.rec != info.version {
-		status = " · update available"
+		return badge(badgeWarn, info.rec+" available")
 	}
-	return "GTNH " + v + played + status
+	return badge(badgeOK, "up to date")
 }
 
 // selectedHome is the selected home item's key and card data.
@@ -76,59 +96,67 @@ func (m *model) selectedHome() (string, homeInfo, bool) {
 	return sel.key, m.home[sel.key], true
 }
 
+// cardView is the selected instance's card: a panel titled with its name (truncated to 34
+// columns), 42 columns wide, labels padded to cardLabelWidth; "" with no selection.
 func (m *model) cardView() string {
-	_, info, ok := m.selectedHome()
+	dir, info, ok := m.selectedHome()
 	if !ok {
 		return ""
 	}
-	line := func(label, value string) string { return dimSty.Render(label) + value }
+	name := m.list.SelectedItem().(item).title
+	if in, ok := m.instanceOf(dir); ok {
+		name = in.Name
+	}
+	var rows []string
+	row := func(label, value, hint string) {
+		if hint != "" && ansi.StringWidth(value+hint) <= cardValueWidth {
+			value += dimSty.Render(hint)
+		}
+		value = ansi.Truncate(value, cardValueWidth, "…")
+		rows = append(rows, dimSty.Render(label+strings.Repeat(" ", cardLabelWidth-len(label)))+value)
+	}
 	installed := "version unknown"
 	if info.version != "" {
 		installed = "GTNH " + info.version
 	}
-	upd := "—"
-	switch {
-	case info.gtnh && info.rec != info.version:
-		upd = warnSty.Render(info.rec + " is out — press u")
-	case info.gtnh:
-		upd = okSty.Render("up to date")
+	row("Installed", installed, "")
+	if !info.gtnh {
+		row("Update", "—", "")
+	} else if info.version != "" && info.rec != info.version {
+		row("Update", homeStatus(info), " · press u")
+	} else {
+		row("Update", homeStatus(info), "")
+	}
+	if info.gtnh {
+		if info.backup != nil {
+			row("Undo", warnSty.Render("back to "+info.backup.Info.From), " · press b")
+		} else {
+			row("Undo", dimSty.Render("nothing to undo"), "")
+		}
 	}
 	played := "never"
 	if info.played != "" {
 		played = info.played
 	}
-	server := "none set"
+	row("Played", played, "")
 	if info.server != "" {
-		server = info.server + " — j joins it"
+		row("Server", info.server, " · press j to join")
+	} else {
+		row("Server", "none set", "")
 	}
 	mods := "none"
 	if info.modsURL != "" {
 		mods = hostOf(info.modsURL)
 	}
-	lines := []string{
-		line("Installed  ", installed),
-		line("Update     ", upd),
-	}
-	if info.gtnh {
-		undo := dimSty.Render("nothing to undo")
-		if info.backup != nil {
-			undo = warnSty.Render("back to " + info.backup.Info.From + " — press b")
-		}
-		lines = append(lines, line("Undo       ", undo))
-	}
-	lines = append(lines,
-		line("Played     ", played),
-		line("Server     ", server),
-		line("Server mods  ", mods),
-	)
+	row("Server mods", mods, "")
 	if info.gtnh {
 		pack := "Java 8"
 		if info.flavor == manifest.Java17 {
 			pack = "Java 17+"
 		}
-		lines = append(lines, line("Pack       ", pack))
+		row("Pack", pack, "")
 	}
-	return cardSty.Render(strings.Join(lines, "\n"))
+	return panel(ansi.Truncate(name, cardTitleWidth, "…"), strings.Join(rows, "\n"), cardWidth)
 }
 
 func (m *model) homeHelp() string {

@@ -1609,14 +1609,14 @@ func TestC11HomeUPicksSelectedInstanceForUpdate(t *testing.T) { // home spec C5:
 	}
 }
 
-func TestC11InstanceListSaysWhenPlayed(t *testing.T) { // home spec C3: unknown version reads "update available"
+func TestC11InstanceListSaysWhenPlayed(t *testing.T) { // home-card C1, C2: unknown version reads "○ version unknown"
 	m := routeModel(t)
 	m.insts[0].LastLaunch = time.Now().Add(-3 * 24 * time.Hour)
 	m.inst = prism.Instance{}
 	m.showHome()
-	desc := m.list.Items()[0].(item).desc
-	if want := "GTNH version unknown · played 3 days ago · update available"; desc != want {
-		t.Errorf("instance desc = %q, want %q", desc, want)
+	desc := ansi.Strip(m.list.Items()[0].(item).desc)
+	if want := "GTNH · played 3 days ago · ○ version unknown"; desc != want {
+		t.Errorf("instance desc (ansi-stripped) = %q, want %q", desc, want)
 	}
 }
 

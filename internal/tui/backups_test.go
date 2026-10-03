@@ -118,11 +118,11 @@ func realUndoModel(t *testing.T) (*model, prism.Instance, string) {
 
 func TestUndoCardOffersBackupThenBListsIt(t *testing.T) { // C1, C2, C7
 	m, inst, bdir := realUndoModel(t)
-	if v := view(m); !strings.Contains(v, "Undo back to 2.8.1 — press b") {
-		t.Errorf("home card %q lacks %q", v, "Undo back to 2.8.1 — press b")
+	if v := view(m); !strings.Contains(v, "Undo back to 2.8.1 · press b") {
+		t.Errorf("home card %q lacks %q", v, "Undo back to 2.8.1 · press b")
 	}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "Undo       back to 2.8.1 — press b") {
-		t.Errorf("home card lacks the padded line %q:\n%s", "Undo       back to 2.8.1 — press b", v)
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "Undo         back to 2.8.1 · press b") {
+		t.Errorf("home card lacks the padded line %q:\n%s", "Undo         back to 2.8.1 · press b", v)
 	}
 	press(m, runes("b"))
 	items := m.list.Items()

@@ -360,7 +360,7 @@ func TestSettingsEscReloadsHomeWithNewServer(t *testing.T) { // C1, C6
 		t.Fatalf("esc on settings: no command, want the reload")
 	}
 	press(f.m, cmd())
-	if v := view(f.m); f.m.screen != scHome || !strings.Contains(v, "Server mc.x:1 — j joins it") {
+	if v := view(f.m); f.m.screen != scHome || !strings.Contains(v, "Server mc.x:1 · press j to join") {
 		t.Errorf("after esc and reload: screen %d, view\n%s\nwant scHome (%d) with the new server on the card", f.m.screen, ansi.Strip(f.m.View()), scHome)
 	}
 }
