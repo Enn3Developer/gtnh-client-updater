@@ -11,7 +11,8 @@ import (
 var (
 	accent    = lipgloss.Color("#7FB4CA")
 	titleSty  = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	okSty     = lipgloss.NewStyle().Foreground(lipgloss.Color("#98BB6C"))
+	okColor   = lipgloss.Color("#98BB6C")
+	okSty     = lipgloss.NewStyle().Foreground(okColor)
 	warnSty   = lipgloss.NewStyle().Foreground(lipgloss.Color("#E6C384"))
 	badSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E46876")).Bold(true)
 	dimSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("#727169"))

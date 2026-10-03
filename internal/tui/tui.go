@@ -179,7 +179,7 @@ func newModel(cfg Config) *model {
 	si.CharLimit = 500
 	return &model{
 		cfg: cfg, spin: sp, input: ti, nameIn: ni, setIn: si, width: 80, height: 24,
-		bar:          progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
+		bar:          progress.New(progress.WithGradient(string(accent), string(okColor))),
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore,
 	}
