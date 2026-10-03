@@ -56,14 +56,23 @@ internal/selfupdate/         GitHub-release self-update, ed25519 release signatu
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
 internal/tui/                bubbletea UI, a screen state machine: tui.go model/messages/
-                             update loop, keys.go per-screen keys, nav.go navigation,
-                             home.go home screen (instance list + card), lists.go list
-                             screens, views.go screen bodies, settings.go settings screen,
-                             backups.go undo screens, layout.go frame/scroll/styles,
-                             format.go number/time formatting, flow_load.go/flow_create.go/
-                             flow_update.go/flow_self.go/flow_play.go background commands
-                             (flow_play.go: Play and the game monitor), reporter.go engine
-                             progress -> messages
+                             update loop; keys.go key dispatch (listKey/selectedKey live in
+                             lists.go); nav.go navigation; home.go home list + card panel;
+                             lists.go showList/showListWith, list delegate, listKeyPairs,
+                             listKey dispatcher; views.go View/page (the single rendering
+                             path) + views_update.go/views_create.go/views_play.go/
+                             views_input.go/views_busy.go/views_error.go (screen bodies by
+                             flow); blocks.go message blocks (titles, bullets, notes,
+                             heads-up, shared texts); buttons.go button screens (labels,
+                             footer, keys, back); settings.go settings form (formDelegate,
+                             sections, saved marker, validation, persistence); backups.go
+                             undo screens; layout.go chrome (titleBar/crumb/banner/keyBar/
+                             frame), panel/badge/buttons primitives, styles and named
+                             colours, bodyWidth; format.go number/time formatting;
+                             flow_load.go/flow_create.go/flow_update.go/flow_self.go/
+                             flow_play.go background commands (flow_play.go: Play and the
+                             game monitor); reporter.go engine progress -> messages;
+                             arch_test.go architecture ratchets (see "Working on it")
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
 .github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
@@ -137,7 +146,8 @@ home screen, `-create`, or when Prism has no instances, and passes a cancellable
 ## How Play works
 
 `enter`/`p` on home = Play, `j` = Play & join (only when the instance has a
-`State.ServerAddress`); also `p` on the done screens after an update/create/restore.
+`State.ServerAddress`); also `p` or the "Play now" button on the done screens after an
+update/create/restore.
 
 1. Data dir = the Prism dir whose instances folder holds the instance, else `PrismDirs[0]`
    (`prism.DataDirOf`).
@@ -162,7 +172,8 @@ home screen, `-create`, or when Prism has no instances, and passes a cancellable
    `starting` → `running` once seen (shows the time it started) → `closed` when it
    disappears (polling stops); not seen after `slowStart` = 90 s → `slow` (tells the player
    to look at Prism's window; keeps polling); an `IsRunning` error → `unknown` (polling
-   stops). `enter`/`esc` back to home, `q` quits. A poll tick from an older run
+   stops). Buttons Back / Quit: `enter` activates the selected one (Back by default), `esc`
+   back to home, `q` quits. A poll tick from an older run
    (`playGen`) or off-screen is dropped.
 
 Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
@@ -195,8 +206,9 @@ kept (`pruneBackups` after a run that made one). Backup dirs without a readable 
 
 A failed restore is never rolled back: the backup dir stays so the player can retry, and
 the TUI says some files may have changed (or "Nothing was changed." for the game-running
-refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo") → `scRestoreConfirm`
-(red warning when it's a downgrade) → `scRestoring` → `scRestored`.
+refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Back button) →
+`scRestoreConfirm` (red warning when it's a downgrade; buttons Undo now / Back) →
+`scRestoring` → `scRestored` (buttons Back / Play now / Quit).
 
 ## Invariants (do not break)
 
@@ -258,9 +270,22 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo") → `scR
   stay). Don't rename `prismExe`/`afterPlay`.
 - **Keys**: self-update is `v` (home and version lists, only when a newer release is
   known). Home binds `enter`/`p` play, `j` join (no-op without a server), `u` update, `s`
-  settings, `b` undo, `n` new, `a` show all instances, `q` quit (`tui.keyHome`). The home
-  help line shows `j` only with a server and `a` only when there are non-GTNH instances
-  (or all are shown) — keep it under ~100 columns.
+  settings, `b` undo, `n` new, `a` show all instances, `q` quit (`tui.keyHome`); `esc` on
+  home only clears a filter. The home key bar (`homeHelp`) shows `j` only with a server
+  and `a` only when there are non-GTNH instances (or all are shown).
+  On a button screen (`buttonLabels`) `enter` activates the selected button; the
+  selection resets to the first on every screen change, so the default is: Update now /
+  Create it / Undo now on the confirm screens, Back on done/restored/playing/"Nothing to
+  undo" and on the error screen (Quit there when it can't go back), Restart now after a
+  self-update. `←→`/tab/shift+tab move the selection; the old shortcuts are unchanged
+  (confirm screens: `y` goes ahead, `n`/`esc`/`q` go back; done screens: `esc` back, `p`
+  play, `q` quit; after a self-update `esc`/`q` quit). The bubbles list's own quit keys
+  are disabled (`DisableQuitKeybindings`): `q` quits through `m.quit` on every other
+  screen except text fields (where it's typed) and busy screens (only ctrl+c). The error
+  screen: `enter` and `esc` go back when going back is possible (`canGoBack`), quit
+  otherwise. List and home key bars wrap whole pairs to the terminal width (`hintRows`),
+  so width is no longer a reason to hide a key; the button-screen, text-field and busy
+  footers are a single `hint` row, so keep those short.
 
 ## Known quirks of the outside world
 
@@ -290,7 +315,8 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo") → `scR
   returns at once either way). Flatpak Prism has its own data dir inside the sandbox, so
   `-d` is omitted for it.
 - Prism re-reads `instance.cfg` at launch, but settings edited while Prism is open may
-  need a Prism restart to take effect (the settings screen's `instanceFoot` says so).
+  need a Prism restart to take effect (the instance settings' edit screens say so,
+  `instanceFoot`).
 - Game detection: Linux reads `/proc` (a JVM whose cmdline contains the instance dir, or
   whose cwd is inside it); macOS runs `ps -axww -o command=` (`psTimeout` 10 s); Windows
   runs PowerShell `Get-CimInstance Win32_Process` (case-folded, `powershellTimeout` 15 s),
@@ -299,12 +325,57 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo") → `scR
   (deleted by `selfupdate.CleanupOld` on next start). Windows restart = child process the
   parent waits on (keeps a double-clicked console open).
 
+## TUI chrome
+
+Every screen is `View()` = `chrome(page())`: `page()` (views.go) returns the body, the
+pinned footer and the scroll offset, and `chrome` (layout.go) lays them out with
+`frame(width, height, titleBar(header, crumb), banner, body, footer, scroll)`. There is no
+other rendering path.
+
+- **Title bar**: full width; "GTNH Launcher <version>" (`header`) on the left, the crumb on
+  the right: "<instance> › <area>" (e.g. "Pack › Update › Config files"), just the area
+  for a non-GTNH or unnamed instance. "Home", "New instance", "Launcher update" and
+  "Problem" never name an instance; loading has no crumb. The right side gives way first.
+- **Banner** (second line): the self-update offer, only where `v` works (home, installed,
+  target); blank otherwise.
+- **Body**: indented 2, `bodyWidth()` = width − 4 wide, windowed by `bodyWindow` into the
+  rows the chrome leaves (`fitRows`); an overflowing body gets "↑ N more" / "↓ N more
+  (↑/↓ to scroll)" markers. Busy screens keep the newest line in view.
+- **Footer**: pinned at the bottom after a blank line. Decision screens put a button row
+  (`buttons`: `[ Update now ]  [ Back ]`, the selected one highlighted) above a key row
+  that starts with `←→ choose`; `←→`/tab move, enter activates, the old keys still work.
+  Elsewhere it's a key bar of key chips: `keyBar` on lists and `homeHelp` on home (both
+  `hintRows`), a one-row `hint` on text fields and busy screens.
+- **Lists** (`showListWith`): the bubbles help is off (the key bar replaces it), its quit
+  bindings are disabled (q/esc go through the TUI), and non-home titles are drawn by
+  `page()` (`titledList`), wrapped to the list width — the list would cut them to one
+  line. The "N choices" status bar shows only on installed/target/resolve with more than 8
+  items (`showsStatusBar`).
+- **Home**: each row ends in a status badge (`homeStatus`): `● up to date`, `▲ <version>
+  available`, `○ version unknown` / `○ not a GTNH instance`. At ≥ 90 columns
+  (`homeCardShows`) the selected instance's card sits next to the list: a 42-column
+  (`cardWidth`) `panel` titled with the instance name (cut to 34), labels padded to 13
+  (`cardLabelWidth`), "press u/b/j" hints when they fit.
+- **Settings**: a one-line-per-row form (`formDelegate`): label, padded to the widest one
+  shown, and value, under "── This instance" / "── The launcher" section rules. The cursor
+  (`▸`) skips the rules (`skipSections`); "✓ saved" (`savedMarker`) shows on the row just
+  saved until the next key.
+- **Busy screens** (preparing, applying, restoring, self-update): a title, then the
+  finished steps (✓), the current one and the progress bar boxed in an untitled `panel`
+  across the body width; the footer asks not to close the window, or offers `ctrl+c
+  cancel` while preparing.
+
 ## UI voice
 
 The TUI talks to players, not developers: first person ("I couldn't find…"), full
 sentences, no jargon ("baseline", "reconcile", "B/C/N" never appear on screen), always a
-visible next key (`hint("enter", "…", "esc", "…")`). Errors say whether anything was
-changed. Keep help labels short — the list help line must fit in ~100 columns.
+visible next key in the footer (`keyBar`, `buttonFooter`, `hint`). Errors say whether
+anything was changed. Vocabulary: `esc` is always "back", `q` is always "quit", `enter`
+is labelled with its verb ("update now", "save", "continue"). On screen the product is
+"GTNH Launcher" / "the launcher", never `gtnh-update`; never "instance.cfg", "flatpak" or
+"host:port". The key bar carries the keys, so bodies don't repeat "press enter to…". Keep
+key labels to a word or two: list and home key bars wrap (`hintRows`), but the one-row
+footers of button, text-field and busy screens don't.
 
 ## Working on it
 
@@ -326,6 +397,22 @@ gofmt -l .                        # CI fails on unformatted files
   Prism dir (`prismlauncher.cfg` with `InstanceDir=<abs path>`), `-prism-dir <fake>`,
   drive it with `tmux send-keys`, read with `tmux capture-pane -p`. Never test against a
   real player instance.
+- Page goldens: `TestC1PageGoldens` (characterize_test.go, `pageGoldens`) pins `page()`
+  of every screen at 82x25 (`termW`/`termH` in layout_test.go) as ANSI-stripped inline
+  strings. There is no update flag or env var: when the layout changes on purpose, copy
+  the test's "got" output into `pageGoldens` by hand and say why in its comment.
+  backups_test.go, buttons_test.go and chrome_test.go pin the undo, button and chrome
+  screens with exact expected strings, mostly at the same size.
+- chrome_test.go `TestEveryScreenFitsTheTerminalAndShowsItsFooter` is a rapid property
+  over every screen (`chromeScreenNames`, 40–160 x 10–50): the view fits the terminal
+  and shows its footer.
+- arch_test.go (`TestArchitecture`) ratchets duplication: `m.width-4/-8/-10` exactly once,
+  in layout.go (`bodyWidth`); `list.Filtering`/`list.Unfiltered` and
+  `SelectedItem().(item)` only in lists.go; only `fail` (tui.go) assigns `scError`; colour
+  literals only in layout.go; message blocks (`okSty.Bold(true)`, warn bullets, no local
+  bullet helpers or `titleSty.Render(wrap`) only in blocks.go; shared texts written once in
+  blocks.go; file line budgets (300 lines; settings.go 500, tui.go 400, layout.go 330).
+  Read it before adding a `m.width-4` or a colour literal.
 - Version string: `main.version`, injected by `build.sh` (`-X main.version=…`, leading
   `v` stripped). `dev` builds never offer self-updates.
 - Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).
