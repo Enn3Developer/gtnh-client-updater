@@ -76,6 +76,8 @@ const (
 	scError
 	scSelfUpdate
 	scSelfUpdated
+	scSettings    // per-instance and launcher-wide settings list
+	scSettingEdit // text field for one setting
 )
 
 type model struct {
@@ -134,6 +136,10 @@ type model struct {
 	quitting bool
 
 	app          appcfg.Config
+	saveApp      func(appcfg.Config) error
+	setting      string          // key of the settings row being edited or last chosen
+	setIn        textinput.Model // value of the setting being edited
+	setEr        string          // why the typed setting was rejected
 	findLauncher func(dataDir, override string) (prism.Launcher, error)
 	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
 	isRunning    func(inst prism.Instance) (bool, error)
@@ -154,10 +160,13 @@ func newModel(cfg Config) *model {
 	ti.CharLimit = 500
 	ni := textinput.New()
 	ni.CharLimit = 100
+	si := textinput.New()
+	si.CharLimit = 500
 	return &model{
-		cfg: cfg, spin: sp, input: ti, nameIn: ni, width: 80, height: 24,
+		cfg: cfg, spin: sp, input: ti, nameIn: ni, setIn: si, width: 80, height: 24,
 		bar:          progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
+		saveApp: appcfg.Save,
 	}
 }
 
@@ -275,6 +284,7 @@ func (m *model) onResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.bar.Width = max(min(msg.Width-8, 64), 10)
 	m.input.Width = m.inputWidth()
 	m.nameIn.Width = m.inputWidth()
+	m.setIn.Width = m.inputWidth()
 	if m.hasList {
 		m.list.SetSize(m.listWidth(), m.listHeight())
 	}
@@ -324,7 +334,7 @@ func (m *model) onError(msg errMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) isListScreen() bool {
-	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.choosingConfigs()
+	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.screen == scSettings || m.choosingConfigs()
 }
 
 // choosingConfigs reports whether a config-choice list is on screen; those belong to a

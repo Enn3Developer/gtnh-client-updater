@@ -23,6 +23,10 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.keyList(k)
 	case scServerMods:
 		return m.keyServerMods(k)
+	case scSettings:
+		return m.keySettings(k)
+	case scSettingEdit:
+		return m.keySettingEdit(k)
 	case scName:
 		return m.keyName(k)
 	case scConflicts:
@@ -93,7 +97,7 @@ func (m *model) keyServerMods(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		v := strings.TrimSpace(m.input.Value())
 		if v != "" {
 			if err := update.CheckCustomModsURL(v); err != nil {
-				m.inputEr = "That doesn't look like a download link — it should start with https://"
+				m.inputEr = msgBadModsLink
 				return m, nil
 			}
 		}

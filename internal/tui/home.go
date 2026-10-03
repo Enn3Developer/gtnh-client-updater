@@ -121,7 +121,7 @@ func (m *model) homeHelp() string {
 	if _, info, ok := m.selectedHome(); ok && info.server != "" {
 		pairs = append(pairs, "j", "join")
 	}
-	pairs = append(pairs, "u", "update", "n", "new")
+	pairs = append(pairs, "u", "update", "s", "settings", "n", "new")
 	if m.showAll || slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH }) {
 		pairs = append(pairs, "a", "all")
 	}
@@ -158,7 +158,7 @@ func (m *model) keyHome(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.startSelfUpdate()
 		}
 		return m, nil
-	case "enter", "p", "j", "u":
+	case "enter", "p", "j", "u", "s":
 		return m.keyHomeInstance(k.String())
 	}
 	return m.updateList(k)
@@ -184,6 +184,9 @@ func (m *model) keyHomeInstance(k string) (tea.Model, tea.Cmd) {
 		return m.play(true)
 	case "u":
 		return m.pickInstance(in)
+	case "s":
+		m.inst = in
+		return m.showSettings()
 	}
 	m.inst = in
 	return m.play(false)

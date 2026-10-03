@@ -344,15 +344,15 @@ func TestHomeViewFitsTerminalWithAndWithoutCard(t *testing.T) { // C4
 func TestHomeHelpLineBasic(t *testing.T) { // C5
 	h := newHome(t, termW, update.State{})
 	h.m.showHome()
-	if v := view(h.m); !strings.Contains(v, "enter play u update n new q quit") || strings.Contains(v, "j join") || strings.Contains(v, "a all") {
-		t.Errorf("home view %q: want the help \"enter play u update n new q quit\" without j or a", v)
+	if v := view(h.m); !strings.Contains(v, "enter play u update s settings n new q quit") || strings.Contains(v, "j join") || strings.Contains(v, "a all") {
+		t.Errorf("home view %q: want the help \"enter play u update s settings n new q quit\" without j or a", v)
 	}
 }
 
 func TestHomeHelpLineOffersJoinWithServer(t *testing.T) { // C5
 	h := newHome(t, termW, update.State{ServerAddress: "mc.x:1"})
 	h.m.showHome()
-	if v := view(h.m); !strings.Contains(v, "enter play j join u update n new q quit") {
+	if v := view(h.m); !strings.Contains(v, "enter play j join u update s settings n new q quit") {
 		t.Errorf("home view %q: want the help with j join", v)
 	}
 }
@@ -362,7 +362,7 @@ func TestHomeHelpLineOffersAllAndNewVersion(t *testing.T) { // C5
 	h.m.insts = append(h.m.insts, prism.Instance{Dir: t.TempDir(), Name: "Vanilla"})
 	h.m.newer = &selfupdate.Release{Version: "9.9.9"}
 	h.m.showHome()
-	if v := view(h.m); !strings.Contains(v, "enter play u update n new a all q quit v new version") {
+	if v := view(h.m); !strings.Contains(v, "enter play u update s settings n new a all q quit v new version") {
 		t.Errorf("home view %q: want the help with a all and v new version", v)
 	}
 }

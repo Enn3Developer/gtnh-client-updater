@@ -26,7 +26,7 @@ func (m *model) View() string {
 			body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.cardView())
 		}
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + body + "\n\n" + m.homeHelp())
-	case scInstalled, scTarget:
+	case scInstalled, scTarget, scSettings:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
 	case scConflicts, scResolve:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.list.View())
@@ -46,6 +46,8 @@ func (m *model) page() (header, body, footer string, scroll int) {
 		body, footer = m.serverModsView()
 	case scName:
 		body, footer = m.nameView()
+	case scSettingEdit:
+		body, footer = m.settingEditView()
 	case scPreparing, scApplying, scSelfUpdate:
 		body, footer = m.busyView()
 		scroll = math.MaxInt32 // keep the newest step in view
@@ -99,10 +101,15 @@ func (m *model) playingView() (body, footer string) {
 	return titleSty.Render(m.inst.Name) + "\n\n" + state, hint("enter", "back", "q", "quit")
 }
 
+// serverModsIntro explains the server extra mods link wherever the player is asked for it.
+const serverModsIntro = "Some servers add a few mods on top of GTNH. If the server owner gave you a link for " +
+	"them, paste it here — I'll install them now and keep them in sync every time you update."
+
+// msgBadModsLink is shown when a server extra mods link is rejected.
+const msgBadModsLink = "That doesn't look like a download link — it should start with https://"
+
 func (m *model) serverModsView() (body, footer string) {
-	return m.inputView("Does your server have its own extra mods?",
-		"Some servers add a few mods on top of GTNH. If the server owner gave you a link for "+
-			"them, paste it here — I'll install them now and keep them in sync every time you update.",
+	return m.inputView("Does your server have its own extra mods?", serverModsIntro,
 		m.input, m.inputEr, "No link? Leave it empty — you can add one later with m on the version list.")
 }
 

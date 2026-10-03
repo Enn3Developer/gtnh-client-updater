@@ -49,7 +49,7 @@ func (m *model) listHeightFor(sc screen) int {
 // scrollable reports whether the current screen scrolls with the arrow keys.
 func (m *model) scrollable() bool {
 	switch m.screen {
-	case scConfirm, scDone, scError, scServerMods, scName:
+	case scConfirm, scDone, scError, scServerMods, scName, scSettingEdit:
 		return true
 	}
 	return false
@@ -62,7 +62,7 @@ func (m *model) scrollKey(k string) (ok bool) {
 	lines := len(strings.Split(body, "\n"))
 	rows := fitBodyRows(m.height, len(strings.Split(header, "\n")), len(strings.Split(footer, "\n")))
 	page := max(rows/2, 1)
-	input := m.screen == scServerMods || m.screen == scName
+	input := m.screen == scServerMods || m.screen == scName || m.screen == scSettingEdit
 	switch {
 	case k == "up":
 		m.scroll--

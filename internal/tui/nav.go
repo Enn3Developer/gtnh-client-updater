@@ -166,6 +166,9 @@ func (m *model) canGoBack() bool {
 // goBackFromError returns to the version list after a failed download or self-update,
 // otherwise to the instance list (e.g. the picked instance was running).
 func (m *model) goBackFromError() (tea.Model, tea.Cmd) {
+	if m.errPhase == scSettings || m.errPhase == scSettingEdit {
+		return m.showSettings()
+	}
 	if (m.inst.Dir != "" || m.creating) && (m.errPhase == scPreparing || m.errPhase == scSelfUpdate) {
 		return m.showTargets()
 	}
