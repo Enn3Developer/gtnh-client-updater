@@ -5,10 +5,14 @@ before changing code; the "Invariants" section is the part that bites.
 
 ## What this is
 
-`gtnh-update` updates a **GT: New Horizons** (GTNH, Minecraft 1.7.10 modpack) instance in
-**Prism Launcher** in place, to any version in the official GTNH manifest, keeping worlds,
-settings and the player's config tweaks. Players run it by double-clicking (Windows) or
-from a terminal; it is a bubbletea TUI with a scriptable `-yes` mode.
+`gtnh-update` is a launcher front end for **GT: New Horizons** (GTNH, Minecraft 1.7.10
+modpack) instances in **Prism Launcher**. Its home screen lists the instances; per instance
+the player can **Play**, **Play & join** the saved server, **Update** in place to any version
+in the official GTNH manifest (keeping worlds, settings and config tweaks), change
+**Settings**, **Undo** the last update, or make a **New** instance. Starting the game always
+goes through Prism (login, Java, launch). Players run it by double-clicking (Windows) or
+from a terminal; it is a bubbletea TUI with a scriptable `-yes` mode. The binary, the
+module and the AUR package stay `gtnh-update`.
 
 - Public repo: https://github.com/Enn3Developer/gtnh-client-updater (MIT)
 - Module: `github.com/Enn3Developer/gtnh-client-updater`, Go version from `go.mod`
@@ -20,28 +24,46 @@ from a terminal; it is a bubbletea TUI with a scriptable `-yes` mode.
 ## Layout
 
 ```
-cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -list,
-                             -self-update; launches TUI
+cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -play,
+                             -list, -self-update, -V; launches TUI
+internal/appcfg/             launcher-wide settings: config.json under
+                             os.UserConfigDir()/gtnh-update (Config.PrismExe "prismExe",
+                             Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen)
 internal/manifest/           fetch/parse versions.json, version ordering, URL pinning,
                              manifest.Resolve (latest / latest-stable / exact key)
 internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download,
                              DownloadContext (cancellable)
-internal/prism/              find Prism data dirs, list/load instances, instance.cfg edits,
-                             prism.SetName (name= of a new instance), "is the game running"
-                             (Linux only; other OSes return false)
+internal/prism/              find Prism data dirs, list/load instances, instance.cfg edits
+                             (prism.RenameVersion, prism.SetName for a new instance),
+                             prism.DataDirOf (Prism data dir holding an instance)
+internal/prism/launch.go     FindLauncher (flatpak/portable/native/custom lookup),
+                             LaunchCommand (Prism CLI -d/-l/-s), Launch (detached start;
+                             launch_unix.go / launch_windows.go do the detaching)
+internal/prism/running*.go   IsRunning on every OS (CanDetectRunning = true): running_linux
+                             /proc, running_darwin `ps`, running_windows PowerShell
+                             Get-CimInstance; Running = IsRunning with errors as "no"
+internal/prism/settings.go   ReadSettings/WriteSettings: the instance.cfg override keys
+                             (memory, JVM args, Java path, window size)
 internal/update/             the engine: state, version detection, plan, apply, server mods,
-                             Session (Prepare -> Apply)
+                             Session (Prepare -> Apply), UpdateState (load-edit-save of
+                             state.json), State.ServerAddress (the "Play & join" server),
+                             ErrGameRunning (refuses to update/restore while the game runs)
 internal/update/create.go    new instance: download into the new folder, extract, server
                              mods, state; instance.cfg written last
+internal/update/restore.go   undo: BackupInfo manifest (gtnh-backup.json in each backup
+                             dir), ListBackups, Restore
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
 internal/tui/                bubbletea UI, a screen state machine: tui.go model/messages/
                              update loop, keys.go per-screen keys, nav.go navigation,
-                             lists.go list screens, views.go screen bodies, layout.go
-                             frame/scroll/styles, format.go number/time formatting,
-                             flow_load.go/flow_create.go/flow_update.go/flow_self.go
-                             background commands, reporter.go engine progress -> messages
+                             home.go home screen (instance list + card), lists.go list
+                             screens, views.go screen bodies, settings.go settings screen,
+                             backups.go undo screens, layout.go frame/scroll/styles,
+                             format.go number/time formatting, flow_load.go/flow_create.go/
+                             flow_update.go/flow_self.go/flow_play.go background commands
+                             (flow_play.go: Play and the game monitor), reporter.go engine
+                             progress -> messages
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
 .github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
@@ -84,8 +106,10 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
    `.gtnh-updater/backup-<ts>/` (mirrored paths); new content is written to
    `<file>.gtnh-tmp` then renamed. Any error → full rollback in reverse order, backup dir
    deleted.
-6. Server extra mods sync, save state (N becomes the new baseline), prune older backups
-   (only if this run made a backup).
+   `Session.Apply` first refuses with `update.ErrGameRunning` while `prism.Running`.
+6. Server extra mods sync, save state (N becomes the new baseline; `ServerAddress` is
+   carried over), then — only if this run made a backup — write the backup's
+   `gtnh-backup.json` (see "Undo") and prune older backups.
 
 **Creating an instance** follows the same download/verify path but has no B or C:
 `PrepareCreate` creates `<InstancesDir>/<name>/` (and `<InstancesDir>` itself if missing,
@@ -105,10 +129,74 @@ Order of writes: see "How an update works" above. `update.PrepareCreate` checks 
 saved state makes the pack the baseline; `instance.cfg` gets the chosen name
 (`prism.SetName`) and its presence marks the instance finished. On any error, or `Close`
 without a finished Apply, the folder is removed. The TUI enters this flow with `n` on the
-instance list, `-create`, or when Prism has no instances, and passes a cancellable
+home screen, `-create`, or when Prism has no instances, and passes a cancellable
 `CreateOptions.Context` to the download; headless is
 `-create -version … [-name …] [-server-mods …] -yes`. Instances dir =
 `prism.InstancesDir(PrismDirs[0])`.
+
+## How Play works
+
+`enter`/`p` on home = Play, `j` = Play & join (only when the instance has a
+`State.ServerAddress`); also `p` on the done screens after an update/create/restore.
+
+1. Data dir = the Prism dir whose instances folder holds the instance, else `PrismDirs[0]`
+   (`prism.DataDirOf`).
+2. `prism.FindLauncher(dataDir, appcfg PrismExe)`, first hit wins:
+   - `PrismExe` set → that file, Kind `custom` (not a file → `ErrLauncherNotFound`);
+   - data dir under `/.var/app/org.prismlauncher.PrismLauncher/` → `flatpak run
+     org.prismlauncher.PrismLauncher`, Kind `flatpak` (no `flatpak` on PATH →
+     `ErrLauncherNotFound`);
+   - `prismlauncher` / `PrismLauncher` (`.exe` on Windows) inside the data dir → `portable`;
+   - the same names on `PATH` → `native`;
+   - `wellKnownLaunchers()` (Windows `%LOCALAPPDATA%\Programs\PrismLauncher`,
+     `%ProgramFiles%\PrismLauncher`; macOS `/Applications` and `~/Applications`
+     `Prism Launcher.app`; Linux `/usr/bin`, `/usr/local/bin`, `~/.local/bin`) → `native`.
+3. `prism.LaunchCommand`: `<exe> [launcher args] -d <dataDir> -l <instance folder name>
+   [-s <server>]`; `-d` is omitted for `flatpak`.
+4. `prism.Launch` starts it detached (unix `Setsid`; Windows
+   `CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS`), releases the handle and returns without
+   waiting. Closing the TUI never stops the game.
+5. `AfterPlay`: `"quit"` → the TUI quits right after the launch; anything else (`"stay"`,
+   empty, unknown) → monitor screen `scPlaying`.
+6. Monitor: `prism.IsRunning` every 2 s (`pollLater`), `playState`:
+   `starting` → `running` once seen (shows the time it started) → `closed` when it
+   disappears (polling stops); not seen after `slowStart` = 90 s → `slow` (tells the player
+   to look at Prism's window; keeps polling); an `IsRunning` error → `unknown` (polling
+   stops). `enter`/`esc` back to home, `q` quits. A poll tick from an older run
+   (`playGen`) or off-screen is dropped.
+
+Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
+(same as `-yes` update), then finds and launches Prism and exits; it never joins a server
+and never monitors. `-play` without `-yes` opens the TUI and plays `-instance` straight
+away (with `-version` it goes to the update flow instead). `-play` with `-create` is
+refused; `-play -yes` needs `-instance`.
+
+## Undo
+
+Every update that made a backup writes `backup-<ts>/gtnh-backup.json`
+(`update.BackupManifest`, type `BackupInfo`): `from`, `to`, `when`, `prevName` (instance
+name before the rename, only if renamed), `prevState` (state.json before the update, nil
+if none), `added` (backup-mirror paths, slashed, of files the update created from
+nothing), `addedMods` (server extra-mod jars the sync created). Only the newest backup is
+kept (`pruneBackups` after a run that made one). Backup dirs without a readable manifest
+(older builds, partial) are skipped by `ListBackups` and never restorable.
+
+`update.Restore(inst, b, rep)`, in order:
+
+1. Refuse with `ErrGameRunning` while `prism.Running`.
+2. Remove `Added` (relative to the instance) and `AddedMods` (in `<GameDir>/mods`), then
+   prune emptied dirs. `_external/` paths are not touched and are reported in `Skipped`.
+3. Move every file in the backup dir back (`custom-mods/` → `<GameDir>/mods`, `_external/`
+   stays and is reported, the rest → the same path under the instance), overwriting.
+4. Write `PrevState` back as state.json, keeping the current `CustomModsURL`,
+   `CustomModsAsked` and `ServerAddress`.
+5. `prism.RenameVersion(To → From)`; a failure is only a warning.
+6. Delete the backup dir, only if nothing was skipped.
+
+A failed restore is never rolled back: the backup dir stays so the player can retry, and
+the TUI says some files may have changed (or "Nothing was changed." for the game-running
+refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo") → `scRestoreConfirm`
+(red warning when it's a downgrade) → `scRestoring` → `scRestored`.
 
 ## Invariants (do not break)
 
@@ -145,6 +233,34 @@ instance list, `-create`, or when Prism has no instances, and passes a cancellab
 - **Never preselect a downgrade** (`tui.defaultTarget`); downgrades get a red warning.
 - `state.json` is persisted on players' machines: **add fields backward-compatibly**
   (omitempty, zero value = old behavior). Don't rename JSON keys.
+- **`instance.cfg` of an existing instance is never reconciled** by updates or restores.
+  Its only writers are `prism.RenameVersion` (the `name=` line; update and restore) and
+  `prism.WriteSettings` (from the settings screen only), which rewrites exactly these 10
+  keys in place and keeps every other line and the line endings byte-for-byte:
+  `OverrideMemory`, `MinMemAlloc`, `MaxMemAlloc`, `OverrideJavaArgs`, `JvmArgs`,
+  `OverrideJavaLocation`, `JavaPath`, `OverrideWindow`, `MinecraftWinWidth`,
+  `MinecraftWinHeight`. (`prism.SetName` only builds the instance.cfg of a *new*
+  instance.) Clearing a setting turns its `Override*` flag off and keeps the values.
+- **Settings validation lives in `tui.checkSetting`**: server `host[:port]`; memory a whole
+  number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024, it));
+  Java path and Prism location must be existing regular files; window `WxH` (x or ×),
+  each 320–16384. Server and mods link go to state.json via `update.UpdateState`.
+- **Restore only removes paths recorded in `Added`/`AddedMods`** and only moves back
+  files the backup holds; nothing outside those lists is deleted. Never "guess" added
+  files from a manifest-less backup.
+- **Play never implements auth, Java or the game launch itself** — it always starts Prism
+  (`prism.Launch`) and lets Prism do the rest. Don't pass anything but `-d`/`-l`/`-s`.
+- **Never update or restore while the game runs** (`update.ErrGameRunning`; headless
+  update and the TUI check first too). Detection is best effort: `prism.Running` treats a
+  failed process listing as "not running".
+- `appcfg` `config.json` is persisted on players' machines: **add fields only**
+  (omitempty, zero value = old behavior: `PrismExe` "" = find Prism, `AfterPlay` "" =
+  stay). Don't rename `prismExe`/`afterPlay`.
+- **Keys**: self-update is `v` (home and version lists, only when a newer release is
+  known). Home binds `enter`/`p` play, `j` join (no-op without a server), `u` update, `s`
+  settings, `b` undo, `n` new, `a` show all instances, `q` quit (`tui.keyHome`). The home
+  help line shows `j` only with a server and `a` only when there are non-GTNH instances
+  (or all are shown) — keep it under ~100 columns.
 
 ## Known quirks of the outside world
 
@@ -169,6 +285,16 @@ instance list, `-create`, or when Prism has no instances, and passes a cancellab
   usually fine).
 - Prism: `prismlauncher.cfg` `InstanceDir=` may be relative or absolute;
   `instance.cfg` `lastLaunchTime` is epoch ms (used to preselect the last-played instance).
+- Prism CLI: `-l` takes the instance **folder name**, not the display name. A second
+  `prismlauncher -l …` while Prism is open is handed to the running Prism (so Launch
+  returns at once either way). Flatpak Prism has its own data dir inside the sandbox, so
+  `-d` is omitted for it.
+- Prism re-reads `instance.cfg` at launch, but settings edited while Prism is open may
+  need a Prism restart to take effect (the settings screen's `instanceFoot` says so).
+- Game detection: Linux reads `/proc` (a JVM whose cmdline contains the instance dir, or
+  whose cwd is inside it); macOS runs `ps -axww -o command=` (`psTimeout` 10 s); Windows
+  runs PowerShell `Get-CimInstance Win32_Process` (case-folded, `powershellTimeout` 15 s),
+  which is slow — roughly a second per poll. Only command lines containing `java` count.
 - Windows can't overwrite a running exe: self-update renames it to `<exe>.old`
   (deleted by `selfupdate.CleanupOld` on next start). Windows restart = child process the
   parent waits on (keeps a double-clicked console open).
