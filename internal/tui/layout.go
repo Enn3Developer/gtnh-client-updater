@@ -22,7 +22,8 @@ var (
 	bannerSty = lipgloss.NewStyle().Foreground(lipgloss.Color("#1F1F28")).Background(lipgloss.Color("#E6C384")).Padding(0, 1)
 )
 
-func (m *model) inputWidth() int { return max(min(m.width-10, 70), 20) }
+func (m *model) bodyWidth() int  { return m.width - 4 }
+func (m *model) inputWidth() int { return max(min(m.bodyWidth()-6, 70), 20) }
 func (m *model) listWidth() int  { return m.listWidthFor(m.screen) }
 func (m *model) listHeight() int { return m.listHeightFor(m.screen) }
 
@@ -34,7 +35,7 @@ func (m *model) listWidthFor(sc screen) int {
 	if m.homeCardShows(sc) {
 		return m.width - 46
 	}
-	return max(m.width-4, 20)
+	return max(m.bodyWidth(), 20)
 }
 
 // listHeightFor is the list height on sc: the body rows left by the chrome and the
@@ -108,7 +109,7 @@ func (m *model) banner() string {
 		return ""
 	}
 	text := fmt.Sprintf("A new version of this updater is out (%s) — press v to get it", m.newer.Version)
-	return bannerSty.Render(ansi.Truncate(text, m.width-4, "…"))
+	return bannerSty.Render(ansi.Truncate(text, m.bodyWidth(), "…"))
 }
 
 // bodyRows is how many body lines of the current page fit in the chrome.
@@ -316,7 +317,7 @@ func hintRows(limit int, pairs ...string) string {
 
 // bullet renders "  • text" with wrapped lines indented under the text.
 func (m *model) bullet(s string) string {
-	lines := strings.Split(wrap(s, m.width-8), "\n")
+	lines := strings.Split(wrap(s, m.bodyWidth()-4), "\n")
 	for i, l := range lines {
 		prefix := "    "
 		if i == 0 {

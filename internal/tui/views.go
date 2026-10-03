@@ -76,7 +76,7 @@ func (m *model) page() (body, footer string, scroll int) {
 	case scError:
 		body, footer = m.errorView()
 	case scSelfUpdated:
-		body = okSty.Bold(true).Render(wrap("The launcher is now version "+m.newer.Version+".", m.width-4))
+		body = okSty.Bold(true).Render(wrap("The launcher is now version "+m.newer.Version+".", m.bodyWidth()))
 		footer = m.buttonFooter("enter", "restart now", "q", "quit")
 	}
 	return strings.TrimRight(body, "\n"), footer, scroll
@@ -98,16 +98,16 @@ func (m *model) playingView() (body, footer string) {
 	case "starting":
 		state = m.spin.View() + " Prism Launcher is starting the game…"
 	case "slow":
-		state = warnSty.Render(wrap("I haven't seen the game start yet. Maybe Prism is asking you something — have a look at its window.", m.width-4))
+		state = warnSty.Render(wrap("I haven't seen the game start yet. Maybe Prism is asking you something — have a look at its window.", m.bodyWidth()))
 	case "running":
 		state = okSty.Render("The game is running (since "+m.runningSince.Format("15:04")+").") + "\n" +
 			dimSty.Render("Leave me open or press q — the game keeps running either way.")
 	case "closed":
 		state = "The game closed. Have fun next time!"
 	case "unknown":
-		state = dimSty.Render(wrap("The game should be starting from Prism now. I can't tell on this computer whether it's running.", m.width-4))
+		state = dimSty.Render(wrap("The game should be starting from Prism now. I can't tell on this computer whether it's running.", m.bodyWidth()))
 	}
-	return titleSty.Render(wrap(m.inst.Name, m.width-4)) + "\n\n" + state, m.buttonFooter("enter", "back", "q", "quit")
+	return titleSty.Render(wrap(m.inst.Name, m.bodyWidth())) + "\n\n" + state, m.buttonFooter("enter", "back", "q", "quit")
 }
 
 // serverModsIntro explains the server extra mods link wherever the player is asked for it.
@@ -133,12 +133,12 @@ func (m *model) nameView() (body, footer string) {
 func (m *model) inputView(title, intro string, input textinput.Model, errText, footnote string) (body, footer string) {
 	var b strings.Builder
 	b.WriteString(titleSty.Render(title) + "\n\n")
-	b.WriteString(wrap(intro, m.width-4) + "\n\n")
+	b.WriteString(wrap(intro, m.bodyWidth()) + "\n\n")
 	b.WriteString(input.View() + "\n")
 	if errText != "" {
-		b.WriteString(badSty.Render(wrap(errText, m.width-4)) + "\n")
+		b.WriteString(badSty.Render(wrap(errText, m.bodyWidth())) + "\n")
 	}
-	b.WriteString("\n" + dimSty.Render(wrap(footnote, m.width-4)))
+	b.WriteString("\n" + dimSty.Render(wrap(footnote, m.bodyWidth())))
 	return b.String(), hint("enter", "continue", "esc", "back")
 }
 
@@ -160,21 +160,21 @@ func (m *model) busyView() (body, footer string) {
 	}
 	var steps []string
 	for _, s := range m.steps {
-		steps = append(steps, okSty.Render("✓ ")+dimSty.Render(indentWrap(s, m.width-10, 2)))
+		steps = append(steps, okSty.Render("✓ ")+dimSty.Render(indentWrap(s, m.bodyWidth()-6, 2)))
 	}
 	if m.step != "" {
-		steps = append(steps, m.spin.View()+indentWrap(m.step, m.width-10, 2))
+		steps = append(steps, m.spin.View()+indentWrap(m.step, m.bodyWidth()-6, 2))
 	}
 	if m.total > 0 {
 		pct := float64(m.done) / float64(m.total)
 		steps = append(steps, "", m.bar.ViewAs(pct), dimSty.Render(m.progressDetail()))
 	}
-	body = titleSty.Render(wrap(title, m.width-4)) + "\n\n" + panel("", strings.Join(steps, "\n"), m.width-4) + "\n" + m.headsUp()
+	body = titleSty.Render(wrap(title, m.bodyWidth())) + "\n\n" + panel("", strings.Join(steps, "\n"), m.bodyWidth()) + "\n" + m.headsUp()
 	switch {
 	case m.screen != scPreparing:
-		footer = warnSty.Render(indentWrap("Please don't close this window until I'm done.", m.width-4, 0))
+		footer = warnSty.Render(indentWrap("Please don't close this window until I'm done.", m.bodyWidth(), 0))
 	case m.quitAfterCancel:
-		footer = dimSty.Render(wrap("Stopping and cleaning up…", m.width-4))
+		footer = dimSty.Render(wrap("Stopping and cleaning up…", m.bodyWidth()))
 	default:
 		footer = hint("ctrl+c", "cancel")
 	}
@@ -201,7 +201,7 @@ func (m *model) confirmView() (body, footer string) {
 	if m.target != m.detect.Version {
 		title = fmt.Sprintf("Ready to update %s from %s to %s", m.inst.Name, m.detect.Version, m.target)
 	}
-	b.WriteString(titleSty.Render(wrap(title, m.width-4)) + "\n\n" + m.confirmWarnings())
+	b.WriteString(titleSty.Render(wrap(title, m.bodyWidth())) + "\n\n" + m.confirmWarnings())
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
 	if ins, rem := pl.Count(update.Install), pl.Count(update.Remove); ins+rem == 0 {
 		bullet("Your GTNH files are already exactly as they should be.")
@@ -253,7 +253,7 @@ func (m *model) confirmWarnings() string {
 	}
 	var b strings.Builder
 	for _, w := range bad {
-		b.WriteString(badSty.Render(wrap("! "+w, m.width-4)) + "\n\n")
+		b.WriteString(badSty.Render(wrap("! "+w, m.bodyWidth())) + "\n\n")
 	}
 	return b.String()
 }
@@ -275,7 +275,7 @@ func (m *model) doneFooter() string {
 func (m *model) doneView() (body, footer string) {
 	r, pl := m.result, m.session.Plan
 	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To), m.width-4)) + "\n\n")
+	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To), m.bodyWidth())) + "\n\n")
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
 	if ins, rem := pl.Count(update.Install), pl.Count(update.Remove); ins+rem == 0 {
 		bullet("Your GTNH files were already up to date.")
@@ -294,7 +294,7 @@ func (m *model) doneView() (body, footer string) {
 		b.WriteString("\n" + wrap(fmt.Sprintf("%d config %s changed on your side and in the new version. "+
 			"I kept yours and saved the new %s next to %s as .mcnew. It's usually fine to ignore this — "+
 			"many mods rewrite their own config when the game starts.",
-			len(c), plural(len(c), "file was", "files were"), plural(len(c), "one", "ones"), plural(len(c), "it", "them")), m.width-4) + "\n")
+			len(c), plural(len(c), "file was", "files were"), plural(len(c), "one", "ones"), plural(len(c), "it", "them")), m.bodyWidth()) + "\n")
 		const limit = 20
 		for i, p := range c {
 			if i == limit {
@@ -305,7 +305,7 @@ func (m *model) doneView() (body, footer string) {
 		}
 	}
 	if r.BackupDir != "" {
-		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.width-4)) + "\n")
+		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.bodyWidth())) + "\n")
 	}
 	b.WriteString(m.headsUp())
 	return b.String(), m.doneFooter()
@@ -346,7 +346,7 @@ func (m *model) customModsSummary(cm *update.CustomModsResult, cerr error) strin
 func (m *model) confirmCreateView() (body, footer string) {
 	c := m.creation
 	var b strings.Builder
-	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to create %s with GTNH %s", m.newName, m.target), m.width-4)) + "\n\n")
+	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to create %s with GTNH %s", m.newName, m.target), m.bodyWidth())) + "\n\n")
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
 	bullet("It'll be a new instance in Prism, in " + c.Dir + ".")
 	bullet(num(int64(c.Files)) + " files will be installed.")
@@ -366,7 +366,7 @@ func (m *model) confirmCreateView() (body, footer string) {
 func (m *model) createdView() (body, footer string) {
 	r := m.created
 	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is ready in Prism.", r.Instance.Name), m.width-4)) + "\n\n")
+	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is ready in Prism.", r.Instance.Name), m.bodyWidth())) + "\n\n")
 	b.WriteString(m.bullet(num(int64(r.Files)) + " files installed."))
 	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
 	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
@@ -376,22 +376,22 @@ func (m *model) createdView() (body, footer string) {
 
 func (m *model) errorView() (body, footer string) {
 	var b strings.Builder
-	b.WriteString(badSty.Render(wrap("Something went wrong", m.width-4)) + "\n\n")
-	b.WriteString(wrap(m.err.Error(), m.width-4) + "\n\n")
+	b.WriteString(badSty.Render(wrap("Something went wrong", m.bodyWidth())) + "\n\n")
+	b.WriteString(wrap(m.err.Error(), m.bodyWidth()) + "\n\n")
 	var leftover *update.LeftoverError
 	switch {
 	case m.creating && (m.errPhase == scPreparing || m.errPhase == scApplying) && errors.As(m.err, &leftover):
 		// The error itself says the folder is still there and what to do.
 	case m.creating && m.errPhase == scPreparing:
-		b.WriteString(okSty.Render(wrap("Nothing was created.", m.width-4)) + "\n\n")
+		b.WriteString(okSty.Render(wrap("Nothing was created.", m.bodyWidth())) + "\n\n")
 	case m.creating && m.errPhase == scApplying:
-		b.WriteString(okSty.Render(wrap("I removed the half-made instance, so there's nothing to clean up.", m.width-4)) + "\n\n")
+		b.WriteString(okSty.Render(wrap("I removed the half-made instance, so there's nothing to clean up.", m.bodyWidth())) + "\n\n")
 	case m.errPhase == scPreparing:
-		b.WriteString(okSty.Render(wrap("Nothing was changed.", m.width-4)) + "\n\n")
+		b.WriteString(okSty.Render(wrap("Nothing was changed.", m.bodyWidth())) + "\n\n")
 	case m.errPhase == scApplying && errors.Is(m.err, update.ErrRolledBack):
-		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.width-4)) + "\n\n")
+		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.bodyWidth())) + "\n\n")
 	case m.errPhase == scApplying:
-		b.WriteString(badSty.Render(wrap("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.", m.width-4)) + "\n\n")
+		b.WriteString(badSty.Render(wrap("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.", m.bodyWidth())) + "\n\n")
 	case m.errPhase == scRestoring:
 		b.WriteString(m.restoreErrorNote())
 	}
@@ -408,7 +408,7 @@ func (m *model) headsUp() string {
 	}
 	blocks := make([]string, len(m.warns))
 	for i, w := range m.warns {
-		blocks[i] = warnSty.Render(indentWrap("Heads up: "+w, m.width-4, 10))
+		blocks[i] = warnSty.Render(indentWrap("Heads up: "+w, m.bodyWidth(), 10))
 	}
 	return "\n" + strings.Join(blocks, "\n") + "\n"
 }

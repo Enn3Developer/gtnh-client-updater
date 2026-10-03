@@ -110,8 +110,8 @@ func (m *model) startRestore() (tea.Model, tea.Cmd) {
 
 // backupsView is the screen shown when m.inst has no backups to restore.
 func (m *model) backupsView() (body, footer string) {
-	body = titleSty.Render(wrap("Nothing to undo for "+m.inst.Name, m.width-4)) + "\n\n" +
-		wrap("I only keep the files from the last update I did here, and there isn't one.", m.width-4)
+	body = titleSty.Render(wrap("Nothing to undo for "+m.inst.Name, m.bodyWidth())) + "\n\n" +
+		wrap("I only keep the files from the last update I did here, and there isn't one.", m.bodyWidth())
 	return body, m.buttonFooter("esc", "back")
 }
 
@@ -119,10 +119,10 @@ func (m *model) backupsView() (body, footer string) {
 func (m *model) restoreConfirmView() (body, footer string) {
 	info := m.backup.Info
 	var b strings.Builder
-	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to put %s back on GTNH %s", m.inst.Name, info.From), m.width-4)) + "\n\n")
+	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to put %s back on GTNH %s", m.inst.Name, info.From), m.bodyWidth())) + "\n\n")
 	if update.IsDowngrade(info.From, info.To) {
 		b.WriteString(badSty.Render(wrap(fmt.Sprintf("! This goes BACK to an older version. Worlds you played on %s may lose "+
-			"blocks and items or not load at all. Copy your saves folder somewhere safe first.", info.To), m.width-4)) + "\n\n")
+			"blocks and items or not load at all. Copy your saves folder somewhere safe first.", info.To), m.bodyWidth())) + "\n\n")
 	}
 	bullet := func(s string) { b.WriteString(m.bullet(s)) }
 	bullet("Files that update added are removed and the files it replaced are put back exactly as they were.")
@@ -140,7 +140,7 @@ func (m *model) restoreConfirmView() (body, footer string) {
 func (m *model) restoredView() (body, footer string) {
 	r := m.restored
 	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is back on GTNH %s.", m.inst.Name, r.To), m.width-4)) + "\n\n")
+	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is back on GTNH %s.", m.inst.Name, r.To), m.bodyWidth())) + "\n\n")
 	b.WriteString(m.bullet(fmt.Sprintf("%s %s put back, %s removed.", num(int64(r.MovedBack)), plural(r.MovedBack, "file", "files"), num(int64(r.Removed)))))
 	if r.Renamed != "" {
 		b.WriteString(m.bullet("Renamed the instance in Prism to \"" + r.Renamed + "\"."))
@@ -162,9 +162,9 @@ func (m *model) restoredView() (body, footer string) {
 // instance is in and what to do next.
 func (m *model) restoreErrorNote() string {
 	if errors.Is(m.err, update.ErrGameRunning) {
-		return okSty.Render(wrap("Nothing was changed.", m.width-4)) + "\n\n"
+		return okSty.Render(wrap("Nothing was changed.", m.bodyWidth())) + "\n\n"
 	}
-	return badSty.Render(wrap("Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir, m.width-4)) + "\n\n"
+	return badSty.Render(wrap("Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir, m.bodyWidth())) + "\n\n"
 }
 
 // backupDesc is the line under a backup on the list: which update it undoes and when
