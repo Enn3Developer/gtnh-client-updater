@@ -12,6 +12,8 @@ import (
 type row struct {
 	id    string // "play", "join", "update", "versions", "undo", a setting key, "after", "prism"
 	key   string // shortcut shown as its hint; "" = none
+	text  string // stripped text of a hinted row; "" = not hinted
+	hint  string // its hint; "" = none
 	lines func(width int, selected bool) []string
 	run   func(m *model) tea.Cmd // enter on the row; nil = nothing
 }
@@ -84,14 +86,23 @@ func (m *model) render(width int, es []entry) (lines []string, span [2]int) {
 		sel = rs[m.row].id
 	}
 	marked := m.selectedID()
+	mw := measure(width)
+	col := hintCol(mw, rs)
 	for _, e := range es {
 		if e.row == nil {
-			lines = append(lines, ansi.Truncate(e.text, width, "…"))
+			lines = append(lines, ansi.Truncate(e.text, mw, "…"))
 			continue
 		}
 		from := len(lines)
-		for _, l := range e.row.lines(width, marked != "" && e.row.id == marked) {
-			lines = append(lines, ansi.Truncate(l, width, "…"))
+		selected := marked != "" && e.row.id == marked
+		var rl []string
+		if e.row.hint != "" {
+			rl = []string{rowLineAt(mw, col, selected, e.row.text, e.row.hint)}
+		} else {
+			rl = e.row.lines(mw, selected)
+		}
+		for _, l := range rl {
+			lines = append(lines, ansi.Truncate(l, mw, "…"))
 		}
 		if e.row.id == sel {
 			span = [2]int{from, len(lines)}
@@ -182,6 +193,38 @@ func rowLine(width int, selected bool, text, hint string) string {
 		prefix, sty = "▸ ", titleSty
 	}
 	return styledRow(width, prefix, sty, text, hint)
+}
+
+// measure is the page's content measure: min(pageWidth, 84) columns.
+func measure(pageWidth int) int {
+	return min(pageWidth, 84)
+}
+
+// hintCol is the 0-based column where every hinted row of the page puts its hint:
+// min(max(widest hinted-row text + 4, 32), measure - widest hint - 1) over the rows with hint != "".
+func hintCol(measure int, rs []row) int {
+	text, hint := 0, 0
+	for _, r := range rs {
+		if r.hint != "" {
+			text = max(text, ansi.StringWidth(r.text))
+			hint = max(hint, ansi.StringWidth(r.hint))
+		}
+	}
+	return min(max(text+4, 32), measure-hint-1)
+}
+
+// rowLineAt is rowLine with the hint at column col instead of flush right.
+func rowLineAt(width, col int, selected bool, text, hint string) string {
+	prefix, sty := "  ", lipgloss.NewStyle()
+	if selected {
+		prefix, sty = "▸ ", titleSty
+	}
+	if col < 3 || col+ansi.StringWidth(hint) > width {
+		return styledRow(width, prefix, sty, text, hint)
+	}
+	text = ansi.Truncate(text, col-3, "…")
+	gap := col - 2 - ansi.StringWidth(text)
+	return prefix + sty.Render(text) + strings.Repeat(" ", gap) + dimSty.Render(hint)
 }
 
 // styledRow is rowLine with the prefix and the text style given.

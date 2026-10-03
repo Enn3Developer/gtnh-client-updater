@@ -28,6 +28,9 @@ func (m *model) playRows() []row {
 		}
 		return m.playCmd(false)
 	}}}
+	if !m.gameShown(in.Dir) {
+		rows[0].text, rows[0].hint = "Play", "enter"
+	}
 	if info.gtnh && info.server != "" {
 		rows = append(rows, hintedRow("join", "j", "Play and join "+info.server,
 			func(m *model) tea.Cmd { return m.playCmd(true) }))

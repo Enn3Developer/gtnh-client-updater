@@ -23,7 +23,7 @@ func (m *model) updateRows() []row {
 
 // hintedRow is a one-line row with text and its shortcut as the hint.
 func hintedRow(id, key, text string, run func(m *model) tea.Cmd) row {
-	return row{id: id, key: key, run: run,
+	return row{id: id, key: key, text: text, hint: key, run: run,
 		lines: func(w int, sel bool) []string { return []string{rowLine(w, sel, text, key)} }}
 }
 
@@ -37,7 +37,7 @@ func (m *model) updateEntries() []entry {
 		return append(es, entry{text: infoLine("Busy — wait for it to finish.")}, entry{})
 	}
 	if n, ok := m.notices[in.Dir]; ok {
-		es = append(es, textEntries(m.noticeLines(m.pageWidth(), n)...)...)
+		es = append(es, textEntries(m.noticeLines(measure(m.pageWidth()), n)...)...)
 	}
 	switch {
 	case info.version == "":

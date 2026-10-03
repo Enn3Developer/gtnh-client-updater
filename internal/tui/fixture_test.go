@@ -275,6 +275,21 @@ func hinted(prefix, text, hint string, width int) string {
 	return s + strings.Repeat(" ", width-ansi.StringWidth(s)-ansi.StringWidth(hint)) + hint
 }
 
+// hintedAt is a page row line as C2 fixes it: prefix + text, hint starting at column col.
+func hintedAt(prefix, text, hint string, col int) string {
+	s := prefix + text
+	return s + strings.Repeat(" ", col-ansi.StringWidth(s)) + hint
+}
+
+// hintColumn is the 0-based column where hint (the last occurrence) starts in line.
+func hintColumn(line, hint string) int {
+	i := strings.LastIndex(line, hint)
+	if i < 0 {
+		return -1
+	}
+	return ansi.StringWidth(line[:i])
+}
+
 func containsLine(lines []string, sub string) bool {
 	for _, l := range lines {
 		if strings.Contains(l, sub) {

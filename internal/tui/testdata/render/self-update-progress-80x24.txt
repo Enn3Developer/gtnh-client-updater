@@ -3,13 +3,13 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   Play                                                  enter
-                 │   Play and join play.example.org                            j
+○ Vanilla        │   Play                                              enter
+                 │   Play and join play.example.org                    j
                  │
                  │ Update
-          ╭─ Updating the launcher ──────────────────────────────────╮         u
-          │ █████████████████████████████░░░░░░░░░░░░░░░░░░░  60%    │         o
-          │ 7 MB of 12 MB · almost done                              │         b
+          ╭─ Updating the launcher ──────────────────────────────────╮ u
+          │ █████████████████████████████░░░░░░░░░░░░░░░░░░░  60%    │ o
+          │ 7 MB of 12 MB · almost done                              │ b
           │ ⣾ Downloading GTNH Launcher 1.3.0                        │
           ╰──────────────────────────────────────────────────────────╯
                  │   Memory         8192 MB (at least 4096 MB)

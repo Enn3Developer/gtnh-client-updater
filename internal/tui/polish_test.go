@@ -128,7 +128,7 @@ func TestC1dUpdateRowSaysTheKindLowercase(t *testing.T) {
 
 	got := pageLines(m, w)
 
-	if l := lineWith(got, "is out"); l != hinted("  ", "GTNH 2.8.4 is out · stable release · 5 days ago", "u", w) {
+	if l := lineWith(got, "is out"); l != hintedAt("  ", "GTNH 2.8.4 is out · stable release · 5 days ago", "u", 51) {
 		t.Errorf("update row = %q", l)
 	}
 	page := strings.Join(got, "\n")

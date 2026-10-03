@@ -21,8 +21,10 @@ func TestC4UnknownVersionAsksWhichVersionItIs(t *testing.T) {
 	if meta := got[1]; !strings.HasPrefix(meta, "GTNH · version unknown · ") {
 		t.Errorf("meta line = %q", meta)
 	}
-	text := "I'm not sure which version this is — tell me and I'll check for updates"
-	if l := lineWith(got, "I'm not sure"); l != hinted("  ", text, "u", w) {
+	// C2 (hint column): the 71-column text gives min(max(75, 32), 78-5-1) = 72, so the text is
+	// cut to 72-3 = 69 columns and one space separates it from the hint.
+	want := "  I'm not sure which version this is — tell me and I'll check for upda… u"
+	if l := lineWith(got, "I'm not sure"); l != want {
 		t.Errorf("update row = %q", l)
 	}
 	if ids := strings.Join(rowIDs(m), ","); !strings.HasPrefix(ids, "play,update,versions,memory") {
@@ -83,7 +85,7 @@ func TestC4UpdateRowNamesAReleaseCandidate(t *testing.T) {
 
 	got := pageLines(m, 78)
 
-	if l := lineWith(got, "is out"); l != hinted("  ", "GTNH 2.9.0-RC-2 is out · release candidate · 3 days ago", "u", 78) {
+	if l := lineWith(got, "is out"); l != hintedAt("  ", "GTNH 2.9.0-RC-2 is out · release candidate · 3 days ago", "u", 59) { // min(max(55+4, 32), 72)
 		t.Errorf("update row = %q", l)
 	}
 }

@@ -3,16 +3,16 @@
 Instances        │ Older
 ● Older          │ GTNH 2.8.4 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │ ▸ Play                                                  enter
-                 │   Play and join play.example.org                            j
+○ Vanilla        │ ▸ Play                                     enter
+                 │   Play and join play.example.org           j
                  │
                  │ Update
                  │   Updated to GTNH 2.8.4 just now · 1,204 files updated, 18
                  │   removed · 1 new config version saved as .mcnew
                  │   2 extra mods from your server installed
                  │   You have the newest stable version.
-                 │   Choose another version…                                   o
-                 │   Last update 2.8.1 → 2.8.4, today · undo                   b
+                 │   Choose another version…                  o
+                 │   Last update 2.8.1 → 2.8.4, today · undo  b
                  │
                  │ Settings
                  │   Memory         8192 MB (at least 4096 MB)

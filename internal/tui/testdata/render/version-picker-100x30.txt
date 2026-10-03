@@ -3,13 +3,13 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   Play                                                                      enter
-                 │   Play and join play.example.org                                                j
+○ Vanilla        │   Play                                              enter
+                 │   Play and join play.example.org                    j
                  │
                  │ Update
-           ╭─ Which GTNH version do you want? ──────────────────────────────────────────╮          u
-           │   2.9.0-beta-2  beta · 3 days ago                                          │          o
-           │   2.9.0-beta-1  beta · 10 days ago                                         │          b
+           ╭─ Which GTNH version do you want? ──────────────────────────────────────────╮
+           │   2.9.0-beta-2  beta · 3 days ago                                          │
+           │   2.9.0-beta-1  beta · 10 days ago                                         │
            │ ▸ 2.8.4         stable release · 2 weeks ago · recommended                 │
            │   2.8.3         stable release · 7 weeks ago                               │
            │   2.8.2         stable release · 2 months ago                              │

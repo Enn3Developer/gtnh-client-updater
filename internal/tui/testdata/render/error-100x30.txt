@@ -3,13 +3,13 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   Play                                                                      enter
-                 │   Play and join play.example.org                                                j
+○ Vanilla        │   Play                                              enter
+                 │   Play and join play.example.org                    j
                  │
                  │ Update
-                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago                              u
-                 │  ╭─ Something went wrong ───────────────────────────────────╮                   o
-                 │  │ I couldn't reach the GTNH download server to see what    │                   b
+                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago  u
+                 │  ╭─ Something went wrong ───────────────────────────────────╮
+                 │  │ I couldn't reach the GTNH download server to see what    │
                  │  │ changed.                                                 │
                  │ S│ Check your internet connection and try again.            │
                  │  │                                                          │

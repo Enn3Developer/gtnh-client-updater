@@ -433,7 +433,7 @@ func TestPolish2C4UnselectedPlayRowSaysPlay(t *testing.T) {
 
 	got := pageLines(m, 61)
 
-	if len(got) < 5 || got[3] != hinted("  ", "Play", "enter", 61) || got[4] != hinted("  ", "Play and join play.example.org", "j", 61) {
+	if len(got) < 5 || got[3] != hintedAt("  ", "Play", "enter", 51) || got[4] != hintedAt("  ", "Play and join play.example.org", "j", 51) { // hint column min(max(47+4, 32), 61-5-1)
 		t.Errorf("play rows = %q", got)
 	}
 }

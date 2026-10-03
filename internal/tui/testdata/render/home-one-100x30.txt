@@ -3,11 +3,11 @@
   Main
   GTNH 2.8.4 · Java 17+ · never played
 
-  ▸ Play                                                                                       enter
+  ▸ Play                          enter
 
   Update
     You have the newest stable version.
-    Choose another version…                                                                        o
+    Choose another version…       o
 
   Settings
     Memory         Prism's default

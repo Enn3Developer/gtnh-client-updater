@@ -19,13 +19,14 @@ func TestC4GTNHPageTopToBottom(t *testing.T) {
 		"Home",
 		"GTNH 2.8.1 · Java 17+ · played 2 days ago",
 		"",
-		hinted("▸ ", "Play", "enter", w),
-		hinted("  ", "Play and join play.example.org", "j", w),
+		// C2: hintCol = min(max(47+4, 32), 78-5-1) = 51
+		hintedAt("▸ ", "Play", "enter", 51),
+		hintedAt("  ", "Play and join play.example.org", "j", 51),
 		"",
 		"Update",
-		hinted("  ", "GTNH 2.8.4 is out · stable release · 5 days ago", "u", w),
-		hinted("  ", "Choose another version…", "o", w),
-		hinted("  ", "Last update 2.8.0 → 2.8.1, 3 days ago · undo", "b", w),
+		hintedAt("  ", "GTNH 2.8.4 is out · stable release · 5 days ago", "u", 51),
+		hintedAt("  ", "Choose another version…", "o", 51),
+		hintedAt("  ", "Last update 2.8.0 → 2.8.1, 3 days ago · undo", "b", 51),
 		"",
 		"Settings",
 		"  Memory         8192 MB (at least 4096 MB)",
@@ -81,7 +82,7 @@ func TestC4NonGTNHPageHasNoUpdateNoJoinAndFourSettings(t *testing.T) {
 		"Vanilla",
 		"Not a GTNH instance · never played",
 		"",
-		hinted("▸ ", "Play", "enter", w),
+		hintedAt("▸ ", "Play", "enter", 32), // C2: max(4+4, 32)
 		"",
 		"Settings",
 		"  Memory         Prism's default",
@@ -241,7 +242,13 @@ func TestC4PageViewAlwaysShowsTheSelectedRow(t *testing.T) {
 		t.Run(fmt.Sprint(r), func(t *testing.T) {
 			m, _ := oneFull(t)
 			m.row = r
-			sel := strings.TrimSpace(ansi.Strip(m.rows()[r].lines(78, true)[0]))
+			row := m.rows()[r]
+			sel := strings.TrimSpace(ansi.Strip(row.lines(78, true)[0]))
+			if row.hint != "" {
+				// C2: hinted rows put their hint at the page's shared column, so match the
+				// marked text only (no text at 78 is cut: the widest is 47 < 51-3).
+				sel = "▸ " + row.text
+			}
 
 			lines := trimLines(m.pageView(78, 8))
 
