@@ -1,10 +1,6 @@
 package tui
 
-import (
-	"strings"
-
-	"github.com/charmbracelet/bubbles/textinput"
-)
+import "github.com/charmbracelet/bubbles/textinput"
 
 // serverModsIntro explains the server extra mods link wherever the player is asked for it.
 const serverModsIntro = "Some servers add a few mods on top of GTNH. If the server owner gave you a link for " +
@@ -27,13 +23,13 @@ func (m *model) nameView() (body, footer string) {
 // inputView is a text-input screen: title, intro, the input, its error (if any) and a
 // dim footnote.
 func (m *model) inputView(title, intro string, input textinput.Model, errText, footnote string) (body, footer string) {
-	var b strings.Builder
-	b.WriteString(titleSty.Render(title) + "\n\n")
-	b.WriteString(wrap(intro, m.bodyWidth()) + "\n\n")
-	b.WriteString(input.View() + "\n")
+	b := m.blocks()
+	b.title(title)
+	b.para(intro)
+	b.raw(input.View() + "\n")
 	if errText != "" {
-		b.WriteString(badSty.Render(wrap(errText, m.bodyWidth())) + "\n")
+		b.raw(badSty.Render(wrap(errText, m.bodyWidth())) + "\n")
 	}
-	b.WriteString("\n" + dimSty.Render(wrap(footnote, m.bodyWidth())))
+	b.raw("\n" + dimSty.Render(wrap(footnote, m.bodyWidth())))
 	return b.String(), hint("enter", "continue", "esc", "back")
 }

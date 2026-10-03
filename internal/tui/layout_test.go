@@ -516,6 +516,56 @@ func TestServerModsViewFitsTerminal(t *testing.T) { // C6
 	}
 }
 
+// trimmedFrame returns the ANSI-stripped View lines with trailing spaces trimmed.
+func trimmedFrame(out string) []string {
+	lines := frameLines(out)
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return lines
+}
+
+func TestInputTitleWrapsToBodyWidthInNarrowTerminal(t *testing.T) { // C1, C2, K1
+	const title = "Does your server have its own extra mods?" // 41 columns
+	m := sizedModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	m.askServerMods(true)
+
+	out := m.View()
+	lines := trimmedFrame(out)
+	_, widest := fit(out)
+
+	if len(lines) < 4 {
+		t.Fatalf("view has %d lines, want at least 4:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	first, second := lines[2], lines[3]
+	if !strings.HasPrefix(first, "  ") || !strings.HasPrefix(second, "  ") {
+		t.Errorf("title lines %q and %q, want both indented by the frame's two spaces", first, second)
+	}
+	if strings.Contains(first, "…") || strings.Contains(second, "…") {
+		t.Errorf("title lines %q and %q, want no clipping ellipsis", first, second)
+	}
+	if got := strings.TrimSpace(first) + " " + strings.TrimSpace(second); got != title {
+		t.Errorf("title across body lines 2-3 = %q, want %q\n%s", got, title, strings.Join(lines, "\n"))
+	}
+	if widest > 40 {
+		t.Errorf("widest view line is %d columns, want <= 40", widest)
+	}
+}
+
+func TestInputTitleStaysOnOneLineWhenItFits(t *testing.T) { // C2 boundary
+	const title = "Does your server have its own extra mods?"
+	m := sizedModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 45, Height: 24})
+	m.askServerMods(true)
+
+	lines := trimmedFrame(m.View())
+
+	if len(lines) < 3 || lines[2] != "  "+title {
+		t.Errorf("body line 2 = %q, want %q\n%s", lines[min(2, len(lines)-1)], "  "+title, strings.Join(lines, "\n"))
+	}
+}
+
 func TestApplyingViewFitsTerminal(t *testing.T) { // C6
 	m := sizedModel(t)
 	m.screen = scApplying
