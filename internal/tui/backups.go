@@ -71,8 +71,10 @@ func (m *model) keyRestoreConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "y":
 		return m.startRestore()
-	case "esc", "n", "q":
+	case "esc", "n":
 		return m.showBackups()
+	case "q":
+		return m.quit()
 	}
 	return m, nil
 }

@@ -22,7 +22,7 @@ func (m *model) checkSelf() tea.Msg {
 
 func (m *model) startSelfUpdate() (tea.Model, tea.Cmd) {
 	m.startBusy(scSelfUpdate)
-	m.step, m.stepStart, m.done, m.total = "Downloading gtnh-update "+m.newer.Version, time.Now(), 0, 0
+	m.step, m.stepStart, m.done, m.total = "Downloading GTNH Launcher "+m.newer.Version, time.Now(), 0, 0
 	rel, rep, client := m.newer, m.reporter(), m.cfg.Client
 	return m, func() tea.Msg {
 		if err := rel.Apply(client, rep.Progress); err != nil {

@@ -664,7 +664,7 @@ func chromeScreen(t *testing.T, name string, w, h int) *model {
 	case "launching":
 		m.screen = scLaunching
 	case "self update":
-		m.newer, m.screen, m.step = newer, scSelfUpdate, "Downloading gtnh-update 9.9.9"
+		m.newer, m.screen, m.step = newer, scSelfUpdate, "Downloading GTNH Launcher 9.9.9"
 	case "self updated":
 		m.newer, m.screen = newer, scSelfUpdated
 	case "loading":
@@ -700,7 +700,7 @@ func TestEveryScreenFitsTheTerminalAndShowsItsFooter(t *testing.T) { // C6, K2
 
 // ---- C7 banner ----
 
-const bannerText = "A new version of this updater is out (9.9.9) — press v to get it" // 64 columns
+const bannerText = "A new version of GTNH Launcher is out (9.9.9) — press v to get it" // 65 columns
 
 func TestBannerOffersTheNewVersionOnTheVersionList(t *testing.T) { // C7
 	m := routeModel(t)
@@ -720,22 +720,22 @@ func TestBannerIsDarkTextOnYellow(t *testing.T) { // C7
 	}
 }
 
-func TestBannerFitsInWidthMinusFour(t *testing.T) { // C7: 68 - 4 = 64, the whole text
+func TestBannerFitsInWidthMinusFour(t *testing.T) { // C7: 69 - 4 = 65, the whole text
 	m := sizedModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 68, Height: termH})
+	m.Update(tea.WindowSizeMsg{Width: 69, Height: termH})
 	m.screen, m.newer = scHome, &selfupdate.Release{Version: "9.9.9"}
 	if got := ansi.Strip(m.banner()); got != " "+bannerText+" " {
-		t.Errorf("banner() at 68 columns = %q, want %q", got, " "+bannerText+" ")
+		t.Errorf("banner() at 69 columns = %q, want %q", got, " "+bannerText+" ")
 	}
 }
 
-func TestBannerIsTruncatedToWidthMinusFour(t *testing.T) { // C7: 66 - 4 = 62 columns
+func TestBannerIsTruncatedToWidthMinusFour(t *testing.T) { // C7: 67 - 4 = 63 columns
 	m := sizedModel(t)
-	m.Update(tea.WindowSizeMsg{Width: 66, Height: termH})
+	m.Update(tea.WindowSizeMsg{Width: 67, Height: termH})
 	m.screen, m.newer = scHome, &selfupdate.Release{Version: "9.9.9"}
-	want := " A new version of this updater is out (9.9.9) — press v to get… "
+	want := " A new version of GTNH Launcher is out (9.9.9) — press v to get… "
 	if got := ansi.Strip(m.banner()); got != want {
-		t.Errorf("banner() at 66 columns = %q, want %q", got, want)
+		t.Errorf("banner() at 67 columns = %q, want %q", got, want)
 	}
 }
 

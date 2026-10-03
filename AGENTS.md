@@ -278,14 +278,14 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
   Create it / Undo now on the confirm screens, Back on done/restored/playing/"Nothing to
   undo" and on the error screen (Quit there when it can't go back), Restart now after a
   self-update. `←→`/tab/shift+tab move the selection; the old shortcuts are unchanged
-  (confirm screens: `y` goes ahead, `n`/`esc`/`q` go back; done screens: `esc` back, `p`
-  play, `q` quit; after a self-update `esc`/`q` quit). The bubbles list's own quit keys
-  are disabled (`DisableQuitKeybindings`): `q` quits through `m.quit` on every other
-  screen except text fields (where it's typed) and busy screens (only ctrl+c). The error
-  screen: `enter` and `esc` go back when going back is possible (`canGoBack`), quit
-  otherwise. List and home key bars wrap whole pairs to the terminal width (`hintRows`),
-  so width is no longer a reason to hide a key; the button-screen, text-field and busy
-  footers are a single `hint` row, so keep those short.
+  (confirm screens: `y` goes ahead, `n`/`esc` go back, `q` quits; done screens: `esc`
+  back, `p` play, `q` quit; after a self-update `esc`/`q` quit). The bubbles list's own
+  quit keys are disabled (`DisableQuitKeybindings`): `q` quits through `m.quit` on every
+  screen, confirm screens included, except text fields (where it's typed) and busy
+  screens (only ctrl+c). The error screen: `enter` and `esc` go back when going back is
+  possible (`canGoBack`), quit otherwise. List and home key bars wrap whole pairs to the
+  terminal width (`hintRows`), so width is no longer a reason to hide a key; the
+  button-screen, text-field and busy footers are a single `hint` row, so keep those short.
 
 ## Known quirks of the outside world
 

@@ -148,8 +148,12 @@ func (m *model) keyConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "y":
 		return m.apply()
-	case "esc", "n", "q":
+	case "esc", "n":
 		return m.dropSession()
+	case "q":
+		m.session.Close()
+		m.session = nil
+		return m.quit()
 	}
 	return m, nil
 }
@@ -200,11 +204,13 @@ func (m *model) keyConfirmCreate(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "y":
 		return m.applyCreate()
-	case "esc", "n", "q":
+	case "esc", "n":
 		if err := m.closeCreation(); err != nil {
 			return m.showLeftover(err)
 		}
 		return m.showTargets()
+	case "q":
+		return m.quit()
 	}
 	return m, nil
 }

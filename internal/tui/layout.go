@@ -111,7 +111,7 @@ func (m *model) banner() string {
 	if m.newer == nil || (m.screen != scHome && m.screen != scInstalled && m.screen != scTarget) {
 		return ""
 	}
-	text := fmt.Sprintf("A new version of this updater is out (%s) — press v to get it", m.newer.Version)
+	text := fmt.Sprintf("A new version of GTNH Launcher is out (%s) — press v to get it", m.newer.Version)
 	return bannerSty.Render(ansi.Truncate(text, m.bodyWidth(), "…"))
 }
 

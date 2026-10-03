@@ -194,7 +194,7 @@ func goldenCases() []goldenCase {
 			m := goldenModel(t)
 			m.newer = &selfupdate.Release{Version: "9.9.9"}
 			m.screen = scSelfUpdate
-			m.step, m.stepStart, m.done, m.total = "Downloading gtnh-update 9.9.9", time.Now(), 2_000_000, 8_000_000
+			m.step, m.stepStart, m.done, m.total = "Downloading GTNH Launcher 9.9.9", time.Now(), 2_000_000, 8_000_000
 			return m
 		}},
 		{"confirm update", func(t *testing.T) *model {
@@ -565,7 +565,7 @@ Please don't close this window until I'm done.
 Updating the launcher
 
 ╭────────────────────────────────────────────────────────────────────────────╮
-│ ⣾ Downloading gtnh-update 9.9.9                                            │
+│ ⣾ Downloading GTNH Launcher 9.9.9                                          │
 │                                                                            │
 │ ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25%           │
 │ 2 MB of 8 MB                                                               │
@@ -1188,7 +1188,7 @@ func TestC5VWithNewerStartsSelfUpdate(t *testing.T) { // home spec C5: the self-
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	m.warns, m.steps, m.done, m.total = []string{"w"}, []string{"s"}, 5, 10
 	cmd := press(m, runes("v"))
-	if m.screen != scSelfUpdate || m.step != "Downloading gtnh-update 9.9.9" || cmd == nil ||
+	if m.screen != scSelfUpdate || m.step != "Downloading GTNH Launcher 9.9.9" || cmd == nil ||
 		m.warns != nil || m.steps != nil || m.done != 0 || m.total != 0 {
 		t.Errorf("v with newer: screen %d, step %q, cmd nil %v, warns %v, steps %v, done/total %d/%d; want scSelfUpdate, the download step, a cmd, all reset",
 			m.screen, m.step, cmd == nil, m.warns, m.steps, m.done, m.total)
@@ -1244,19 +1244,48 @@ func TestC6ConfirmEnterOrYStartsApplyingWithFreshProgress(t *testing.T) {
 	}
 }
 
-func TestC6ConfirmEscNOrQDropsSessionAndShowsVersions(t *testing.T) {
-	for _, k := range []tea.KeyMsg{keyEsc, runes("n"), runes("q")} {
-		t.Run(k.String(), func(t *testing.T) {
-			m := routeModel(t)
-			m.target = "2.9.0-RC-1"
-			m.session = &update.Session{Plan: &update.Plan{}}
-			m.screen = scConfirm
-			press(m, k)
-			if m.session != nil || m.screen != scTarget || m.quitting {
-				t.Errorf("%s on confirm: session nil %v, screen %d, quitting %v; want nil, scTarget (%d), false",
-					k, m.session == nil, m.screen, m.quitting, scTarget)
-			}
-		})
+func TestC6ConfirmEscDropsSessionAndShowsVersions(t *testing.T) { // C1
+	m := confirmUpdateModel(t)
+	cmd := press(m, keyEsc)
+	if m.session != nil || m.screen != scTarget || m.quitting || isQuit(cmd) {
+		t.Errorf("esc on confirm: session nil %v, screen %d, quitting %v, quit cmd %v; want nil, scTarget (%d), false, false",
+			m.session == nil, m.screen, m.quitting, isQuit(cmd), scTarget)
+	}
+}
+
+func TestC6ConfirmNDropsSessionAndShowsVersions(t *testing.T) { // C1
+	m := confirmUpdateModel(t)
+	cmd := press(m, runes("n"))
+	if m.session != nil || m.screen != scTarget || m.quitting || isQuit(cmd) {
+		t.Errorf("n on confirm: session nil %v, screen %d, quitting %v, quit cmd %v; want nil, scTarget (%d), false, false",
+			m.session == nil, m.screen, m.quitting, isQuit(cmd), scTarget)
+	}
+}
+
+func TestC6QOnUpdateConfirmDropsSessionAndQuits(t *testing.T) { // C1, K1
+	m := confirmUpdateModel(t)
+	cmd := press(m, runes("q"))
+	if !m.quitting || !isQuit(cmd) || m.session != nil {
+		t.Errorf("q on update confirm: quitting %v, quit cmd %v, session nil %v; want true, true, true",
+			m.quitting, isQuit(cmd), m.session == nil)
+	}
+}
+
+func TestC6QOnCreateConfirmClosesCreationAndQuits(t *testing.T) { // C1
+	m, c := confirmCreateModel(t)
+	cmd := press(m, runes("q"))
+	_, err := os.Stat(c.Dir)
+	if !m.quitting || !isQuit(cmd) || m.creation != nil || !os.IsNotExist(err) {
+		t.Errorf("q on create confirm: quitting %v, quit cmd %v, creation nil %v, folder stat err %v; want true, true, true, removed",
+			m.quitting, isQuit(cmd), m.creation == nil, err)
+	}
+}
+
+func TestC6QOnRestoreConfirmQuits(t *testing.T) { // C1
+	m := restoreConfirmModel(t)
+	cmd := press(m, runes("q"))
+	if !m.quitting || !isQuit(cmd) {
+		t.Errorf("q on restore confirm: quitting %v, quit cmd %v; want true, true", m.quitting, isQuit(cmd))
 	}
 }
 
@@ -1790,7 +1819,7 @@ func TestC11ListViewShowsNewVersionBanner(t *testing.T) {
 	m := routeModel(t)
 	m.showTargets()
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
-	if v := words(m.View()); !strings.Contains(v, "A new version of this updater is out (9.9.9) — press v to get it") {
+	if v := words(m.View()); !strings.Contains(v, "A new version of GTNH Launcher is out (9.9.9) — press v to get it") {
 		t.Errorf("list view %q lacks the new-version banner", v)
 	}
 }
