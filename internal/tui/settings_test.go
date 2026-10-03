@@ -43,6 +43,9 @@ type setFix struct {
 	dataDir string
 	dir     string
 	app     *fakeApp
+	// formT is set by formFixture: open then checks the list is the form with its two
+	// section headings (form spec C3) before the test goes on.
+	formT *testing.T
 }
 
 // settingsFixture is a model on one instance <dataDir>/instances/pack. cfg is the
@@ -82,6 +85,27 @@ func settingsFixture(t *testing.T, cfg string, gtnh bool) *setFix {
 func (f *setFix) open(key string) {
 	f.m.setting = key
 	f.m.showSettings()
+	if f.formT != nil {
+		f.formT.Helper()
+		var sections []string
+		for _, it := range f.m.list.Items() {
+			if isSection(it) {
+				sections = append(sections, it.(item).title)
+			}
+		}
+		if want := []string{"This instance", "The launcher"}; !slices.Equal(sections, want) {
+			f.formT.Fatalf("setup: section headings %q, want %q", sections, want)
+		}
+	}
+}
+
+// formFixture is settingsFixture with instance.cfg formCfg, for the form-screen tests.
+func formFixture(t *testing.T, gtnh bool) *setFix {
+	t.Helper()
+	cfg := formCfg
+	f := settingsFixture(t, cfg, gtnh)
+	f.formT = t
+	return f
 }
 
 // edit opens the edit screen of the row key.
@@ -142,10 +166,14 @@ func otherLines(cfg string) []string {
 	return out
 }
 
+// itemKeys, itemTitles and itemDescList list the setting rows only: section headings
+// (isSection, form spec C3) are skipped.
 func itemKeys(m *model) []string {
 	var out []string
 	for _, it := range m.list.Items() {
-		out = append(out, it.(item).key)
+		if !isSection(it) {
+			out = append(out, it.(item).key)
+		}
 	}
 	return out
 }
@@ -153,7 +181,9 @@ func itemKeys(m *model) []string {
 func itemTitles(m *model) []string {
 	var out []string
 	for _, it := range m.list.Items() {
-		out = append(out, it.(item).title)
+		if !isSection(it) {
+			out = append(out, it.(item).title)
+		}
 	}
 	return out
 }
@@ -161,9 +191,44 @@ func itemTitles(m *model) []string {
 func itemDescList(m *model) []string {
 	var out []string
 	for _, it := range m.list.Items() {
-		out = append(out, it.(item).desc)
+		if !isSection(it) {
+			out = append(out, it.(item).desc)
+		}
 	}
 	return out
+}
+
+// itemOrder lists every item: setting rows by key, sections as "§<heading>".
+func itemOrder(m *model) []string {
+	var out []string
+	for _, it := range m.list.Items() {
+		if isSection(it) {
+			out = append(out, "§"+it.(item).title)
+		} else {
+			out = append(out, it.(item).key)
+		}
+	}
+	return out
+}
+
+// listLines is the rendered list, stripped of styling, one entry per line with
+// trailing padding removed.
+func listLines(m *model) []string {
+	lines := strings.Split(ansi.Strip(m.list.View()), "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimRight(l, " ")
+	}
+	return lines
+}
+
+// lineStartingWith is the first stripped list line with the given prefix ("" if none).
+func lineStartingWith(m *model, prefix string) string {
+	for _, l := range listLines(m) {
+		if strings.HasPrefix(l, prefix) {
+			return l
+		}
+	}
+	return ""
 }
 
 func helpPairs(m *model) []string {
@@ -185,8 +250,8 @@ func TestSettingsRowsForGTNHInstanceWithoutOverrides(t *testing.T) { // C1, rows
 	wantKeys := []string{"server", "mods", "memory", "jvm", "java", "window", "after", "prism"}
 	wantTitles := []string{"Server to join", "Server extra mods link", "Memory for the game", "Java arguments",
 		"Java to run it with", "Window size", "After I start the game", "Prism Launcher location"}
-	wantDescs := []string{"none — set one and j on the home screen joins it", "none", "Prism's default", "Prism's default",
-		"Prism's default", "Prism's default", "stay open and show whether it's running", "found automatically"}
+	wantDescs := []string{"none", "none", "Prism's default", "Prism's default", // form spec C5
+		"Prism's default", "Prism's default", "stay open and show whether the game is running", "found automatically"}
 	if f.m.screen != scSettings {
 		t.Fatalf("screen %d, want scSettings (%d)", f.m.screen, scSettings)
 	}
@@ -210,7 +275,7 @@ func TestSettingsRowsShowSavedStateOverridesAndAppConfig(t *testing.T) { // C1, 
 	f.m.app = appcfg.Config{PrismExe: "/opt/prism/prismlauncher", AfterPlay: appcfg.AfterPlayQuit}
 	f.open("")
 	want := []string{"mc.x:1", "mods.example.com", "6144 MB (at least 2048 MB)", "-XX:+UseG1GC",
-		"/usr/bin/java", "1920×1080", "quit", "/opt/prism/prismlauncher"}
+		"/usr/bin/java", "1920×1080", "quit the launcher", "/opt/prism/prismlauncher"} // form spec C5
 	if got := itemDescList(f.m); !slices.Equal(got, want) {
 		t.Errorf("descs = %q, want %q", got, want)
 	}
@@ -236,8 +301,9 @@ func TestSettingsLongJvmArgsAreTruncatedToListWidth(t *testing.T) { // C1, row 4
 	f.open("")
 	d := itemDescs(f.m)["jvm"]
 	listW := f.m.listWidthFor(scSettings)
-	if w := ansi.StringWidth(d); w > listW || !strings.HasSuffix(d, "…") || !strings.HasPrefix(long, strings.TrimSuffix(d, "…")) {
-		t.Errorf("jvm desc %q is %d columns; want a truncated prefix of the args ending in … within the list width %d", d, w, listW)
+	// form spec C5: truncated to list width - 2
+	if w := ansi.StringWidth(d); w > listW-2 || !strings.HasSuffix(d, "…") || !strings.HasPrefix(long, strings.TrimSuffix(d, "…")) {
+		t.Errorf("jvm desc %q is %d columns; want a truncated prefix of the args ending in … within %d columns", d, w, listW-2)
 	}
 }
 
@@ -255,11 +321,11 @@ func TestSettingsUnreadableInstanceCfgSaysSoOnRowsThreeToSix(t *testing.T) { // 
 	f.open("")
 	d := itemDescs(f.m)
 	got := []string{d["memory"], d["jvm"], d["java"], d["window"]}
-	const cant = "couldn't read instance.cfg"
+	const cant = "I couldn't read this instance's settings" // form spec C5
 	if want := []string{cant, cant, cant, cant}; !slices.Equal(got, want) {
 		t.Errorf("descs without instance.cfg = %q, want %q", got, want)
 	}
-	if d["server"] != "none — set one and j on the home screen joins it" || d["after"] != "stay open and show whether it's running" {
+	if d["server"] != "none" || d["after"] != "stay open and show whether the game is running" {
 		t.Errorf("other rows without instance.cfg = %q; want their normal values", d)
 	}
 }
@@ -390,10 +456,10 @@ func TestSettingsAfterPlayTogglesAndSaves(t *testing.T) { // C3
 	if !slices.Equal(f.app.saved, want) {
 		t.Errorf("saved configs = %+v, want %+v", f.app.saved, want)
 	}
-	if firstDesc != "quit" || firstScreen != scSettings || firstSel != "after" {
-		t.Errorf("after the first toggle: desc %q, screen %d, selected %q; want quit, scSettings, after", firstDesc, firstScreen, firstSel)
+	if firstDesc != "quit the launcher" || firstScreen != scSettings || firstSel != "after" { // form spec C5
+		t.Errorf("after the first toggle: desc %q, screen %d, selected %q; want quit the launcher, scSettings, after", firstDesc, firstScreen, firstSel)
 	}
-	if d := itemDescs(f.m)["after"]; d != "stay open and show whether it's running" || f.m.screen != scSettings || selectedKey(f.m) != "after" {
+	if d := itemDescs(f.m)["after"]; d != "stay open and show whether the game is running" || f.m.screen != scSettings || selectedKey(f.m) != "after" {
 		t.Errorf("after the second toggle: desc %q, screen %d, selected %q; want stay open…, scSettings, after", d, f.m.screen, selectedKey(f.m))
 	}
 }
@@ -426,13 +492,13 @@ func TestSettingsEditScreensShowTitleIntroValueAndFootnote(t *testing.T) { // C4
 		"OverrideJavaArgs=true\nJvmArgs=-Xss4m\nOverrideJavaLocation=true\nJavaPath=/usr/bin/java\n" +
 		"OverrideWindow=true\nMinecraftWinWidth=1920\nMinecraftWinHeight=1080\n"
 	cases := []struct{ key, title, intro, value, foot string }{
-		{"server", "Server to join", "Which server do you usually play on? host or host:port, like play.example.com:25565.", "mc.x:1", "Leave it empty for none."},
+		{"server", "Server to join", "Which server do you usually play on? Type its address, like play.example.com or play.example.com:25565. With one set, j on the home screen joins it.", "mc.x:1", "Leave it empty for none."},
 		{"mods", "Server extra mods link", "Some servers add a few mods on top of GTNH. If the server owner gave you a link for them, paste it here — I'll install them now and keep them in sync every time you update.", "https://m.example/a.zip", "Leave it empty for none."},
 		{"memory", "Memory for the game", "How much memory may the game use, in MB? GTNH runs well with 6144 to 8192.", "6144", instFoot},
 		{"jvm", "Java arguments", "Extra arguments for Java. Only change this if someone told you what to put here.", "-Xss4m", instFoot},
 		{"java", "Java to run it with", "Full path of the java executable Prism should use for this instance.", "/usr/bin/java", instFoot},
 		{"window", "Window size", "Width and height of the game window, like 1920x1080.", "1920x1080", instFoot},
-		{"prism", "Prism Launcher location", "Full path of the Prism Launcher executable (or the flatpak command).", "/opt/p", "Leave it empty to let me find Prism myself."},
+		{"prism", "Prism Launcher location", "Where is Prism Launcher on this computer? The full path of its program file.", "/opt/p", "Leave it empty to let me find Prism myself."},
 	}
 	for _, c := range cases {
 		t.Run(c.key, func(t *testing.T) {
@@ -522,7 +588,7 @@ func TestSettingsServerAddressEmptyClearsIt(t *testing.T) { // C5, C6
 	writeState(t, f.dir, update.State{Version: "2.8.4", ServerAddress: "old:1"})
 	f.edit(t, "server")
 	f.submit("")
-	if st := f.state(t); st.ServerAddress != "" || st.Version != "2.8.4" || itemDescs(f.m)["server"] != "none — set one and j on the home screen joins it" {
+	if st := f.state(t); st.ServerAddress != "" || st.Version != "2.8.4" || itemDescs(f.m)["server"] != "none" { // form spec C5
 		t.Errorf("empty server: state %+v, desc %q; want no server, version kept, the none desc", st, itemDescs(f.m)["server"])
 	}
 }
@@ -849,5 +915,330 @@ func TestErrorEscReturnsToSettingsForBothSettingsPhases(t *testing.T) { // C8
 				t.Errorf("esc on an error from phase %d: screen %d, title %q; want scSettings (%d)", phase, f.m.screen, f.m.list.Title, scSettings)
 			}
 		})
+	}
+}
+
+// ======== form-screen spec (C2-C6; "form spec" in comments) ========
+
+const formCfg = "[General]\nname=GTNH Pack\n"
+
+// ---- form spec C5: values that couldn't be read ----
+
+func TestFormCorruptStateSaysSavedSettingsUnreadableOnServerRows(t *testing.T) { // form spec C5
+	f := formFixture(t, true)
+	if err := os.MkdirAll(filepath.Join(f.dir, update.StateDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.dir, update.StateDir, "state.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.open("")
+	const cant = "couldn't read the saved settings"
+	keys, descs := itemKeys(f.m), itemDescList(f.m)
+	wantKeys := []string{"server", "mods"}
+	if len(descs) < 2 || !slices.Equal(keys[:2], wantKeys) || descs[0] != cant || descs[1] != cant {
+		t.Errorf("rows %q with a corrupt state.json read %q; want server and mods first, both %q", keys, descs, cant)
+	}
+}
+
+// ---- form spec C2: one-line rows ----
+
+func TestFormMemoryRowIsOneLineWithLabelPaddedToWidestTitle(t *testing.T) { // form spec C2
+	f := formFixture(t, true)
+	f.open("server")
+	// "Memory for the game" is 19 columns, padded to 23 ("Prism Launcher location") + 2 spaces.
+	const want = "  Memory for the game      Prism's default"
+	if got := lineStartingWith(f.m, "  Memory for the game"); got != want {
+		t.Errorf("memory row = %q, want %q\nlist:\n%s", got, want, strings.Join(listLines(f.m), "\n"))
+	}
+}
+
+func TestFormSelectedServerRowStartsWithCursor(t *testing.T) { // form spec C2
+	f := formFixture(t, true)
+	f.open("server")
+	// "Server to join" is 14 columns: 9 pad + 2 spaces.
+	const want = "▸ Server to join           none"
+	if got := lineStartingWith(f.m, "▸ "); got != want {
+		t.Errorf("selected row = %q, want %q\nlist:\n%s", got, want, strings.Join(listLines(f.m), "\n"))
+	}
+}
+
+func TestFormRowsAreOneLineEach(t *testing.T) { // form spec C2: no description line under the title
+	f := formFixture(t, true)
+	f.open("server")
+	if got := lineStartingWith(f.m, "  Prism's default"); got != "" {
+		t.Errorf("found a value on its own line %q; rows must be one line\nlist:\n%s", got, strings.Join(listLines(f.m), "\n"))
+	}
+	if got := lineStartingWith(f.m, "  Server extra mods link"); got != "  Server extra mods link   none" {
+		t.Errorf("mods row = %q, want %q", got, "  Server extra mods link   none")
+	}
+}
+
+func TestFormNoLineIsWiderThanListWithLongJvmArgs(t *testing.T) { // form spec C2
+	long := strings.Repeat("-XX:+UseG1GC ", 20) // 260 columns
+	f := settingsFixture(t, "[General]\nname=GTNH Pack\nOverrideJavaArgs=true\nJvmArgs="+long+"\n", true)
+	f.formT = t
+	f.open("jvm")
+	listW := f.m.listWidthFor(scSettings)
+	var tooWide []string
+	for _, l := range strings.Split(ansi.Strip(f.m.list.View()), "\n") {
+		if ansi.StringWidth(l) > listW {
+			tooWide = append(tooWide, l)
+		}
+	}
+	if len(tooWide) != 0 {
+		t.Errorf("lines wider than the list width %d: %q", listW, tooWide)
+	}
+	if jvm := lineStartingWith(f.m, "▸ Java arguments"); !strings.HasSuffix(jvm, "…") {
+		t.Errorf("jvm row = %q, want it truncated with …", jvm)
+	}
+}
+
+// ---- form spec C3: sections ----
+
+func TestFormItemOrderWithSectionsForGTNH(t *testing.T) { // form spec C3
+	f := formFixture(t, true)
+	f.open("")
+	want := []string{"§This instance", "server", "mods", "memory", "jvm", "java", "window", "§The launcher", "after", "prism"}
+	if got := itemOrder(f.m); !slices.Equal(got, want) {
+		t.Errorf("items = %q, want %q", got, want)
+	}
+}
+
+func TestFormItemOrderWithSectionsForNonGTNH(t *testing.T) { // form spec C3
+	f := formFixture(t, false)
+	f.open("")
+	want := []string{"§This instance", "memory", "jvm", "java", "window", "§The launcher", "after", "prism"}
+	if got := itemOrder(f.m); !slices.Equal(got, want) {
+		t.Errorf("items = %q, want %q", got, want)
+	}
+}
+
+func TestFormIsSectionMeansKeyIsEmpty(t *testing.T) { // form spec C3
+	if !isSection(item{title: "This instance"}) {
+		t.Errorf("isSection(item with key \"\") = false, want true")
+	}
+	if isSection(item{title: "Server to join", desc: "none", key: "server"}) {
+		t.Errorf("isSection(server row) = true, want false")
+	}
+}
+
+func TestFormSectionRendersAsRuleToListWidth(t *testing.T) { // form spec C3
+	f := formFixture(t, true)
+	f.open("server")
+	listW := f.m.listWidthFor(scSettings)
+	for _, head := range []string{"This instance", "The launcher"} {
+		prefix := "── " + head + " "
+		l := lineStartingWith(f.m, prefix)
+		rest := strings.TrimPrefix(l, prefix)
+		if l == "" || rest == "" || strings.Trim(rest, "─") != "" || ansi.StringWidth(l) != listW {
+			t.Errorf("section %q rendered as %q (%d columns); want %q then ─ up to the list width %d",
+				head, l, ansi.StringWidth(l), prefix, listW)
+		}
+	}
+}
+
+func TestFormSectionNeverGetsTheCursor(t *testing.T) { // form spec C3, C4
+	f := formFixture(t, true)
+	f.open("window")
+	press(f.m, keyDown)
+	if got := lineStartingWith(f.m, "▸ ──"); got != "" {
+		t.Errorf("a section rendered with the cursor: %q", got)
+	}
+}
+
+// ---- form spec C4: the cursor skips sections ----
+
+func TestFormDownFromWindowLandsOnAfter(t *testing.T) { // form spec C4, K1
+	f := formFixture(t, true)
+	f.open("window")
+	press(f.m, keyDown)
+	if got := selectedKey(f.m); got != "after" {
+		t.Errorf("down from window: selected %q, want after", got)
+	}
+}
+
+func TestFormUpFromAfterLandsOnWindow(t *testing.T) { // form spec C4
+	for name, gtnh := range map[string]bool{"gtnh": true, "non-gtnh": false} {
+		t.Run(name, func(t *testing.T) {
+			f := formFixture(t, gtnh)
+			f.open("after")
+			press(f.m, keyUp)
+			if got := selectedKey(f.m); got != "window" {
+				t.Errorf("up from after: selected %q, want window", got)
+			}
+		})
+	}
+}
+
+func TestFormUpFromFirstRowStaysOnIt(t *testing.T) { // form spec C4
+	f := formFixture(t, true)
+	f.open("server")
+	press(f.m, keyUp)
+	if got, idx := selectedKey(f.m), f.m.list.Index(); got != "server" || idx != 1 {
+		t.Errorf("up from server: selected %q at index %d, want server at 1", got, idx)
+	}
+}
+
+func TestFormUpFromFirstRowStaysOnItForNonGTNH(t *testing.T) { // form spec C4
+	f := formFixture(t, false)
+	f.open("memory")
+	press(f.m, keyUp)
+	if got, idx := selectedKey(f.m), f.m.list.Index(); got != "memory" || idx != 1 {
+		t.Errorf("up from memory: selected %q at index %d, want memory at 1", got, idx)
+	}
+}
+
+func TestFormEndLandsOnPrismAndHomeOnFirstRow(t *testing.T) { // form spec C4
+	f := formFixture(t, true)
+	f.open("memory")
+	press(f.m, keyEnd)
+	afterEnd := selectedKey(f.m)
+	press(f.m, keyHome)
+	if afterHome := selectedKey(f.m); afterEnd != "prism" || afterHome != "server" {
+		t.Errorf("end then home: selected %q then %q, want prism then server", afterEnd, afterHome)
+	}
+}
+
+func TestFormGAndLowerGJumpToLastAndFirstRow(t *testing.T) { // form spec C4
+	f := formFixture(t, false)
+	f.open("java")
+	press(f.m, runes("G"))
+	afterEnd := selectedKey(f.m)
+	press(f.m, runes("g"))
+	if afterHome := selectedKey(f.m); afterEnd != "prism" || afterHome != "memory" {
+		t.Errorf("G then g: selected %q then %q, want prism then memory", afterEnd, afterHome)
+	}
+}
+
+func TestFormShowSettingsWithoutRowSelectsServerForGTNH(t *testing.T) { // form spec C4
+	f := formFixture(t, true)
+	f.open("")
+	if got := selectedKey(f.m); got != "server" {
+		t.Errorf("no remembered row (GTNH): selected %q, want server", got)
+	}
+}
+
+func TestFormShowSettingsWithoutRowSelectsMemoryForNonGTNH(t *testing.T) { // form spec C4
+	f := formFixture(t, false)
+	f.open("")
+	if got := selectedKey(f.m); got != "memory" {
+		t.Errorf("no remembered row (non-GTNH): selected %q, want memory", got)
+	}
+}
+
+func TestFormShowSettingsWithUnknownRowSelectsFirstRow(t *testing.T) { // form spec C4
+	f := formFixture(t, true)
+	f.open("bogus")
+	if got := selectedKey(f.m); got != "server" {
+		t.Errorf("unknown remembered row: selected %q, want server", got)
+	}
+}
+
+func TestFormShowSettingsWithServerKeyOnNonGTNHSelectsFirstRow(t *testing.T) { // form spec C4: "server" isn't shown
+	f := formFixture(t, false)
+	f.open("server")
+	if got := selectedKey(f.m); got != "memory" {
+		t.Errorf("server remembered on a non-GTNH instance: selected %q, want memory", got)
+	}
+}
+
+// ---- form spec C6: inline "✓ saved" ----
+
+func TestFormSavedMarkerAfterEditSave(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.edit(t, "server")
+	f.submit("play.example:25565")
+	if f.m.screen != scSettings || f.m.savedRow != "server" {
+		t.Fatalf("after saving: screen %d, savedRow %q; want scSettings (%d), server", f.m.screen, f.m.savedRow, scSettings)
+	}
+	const want = "▸ Server to join           play.example:25565 ✓ saved"
+	if got := lineStartingWith(f.m, "▸ "); got != want {
+		t.Errorf("server row = %q, want %q", got, want)
+	}
+}
+
+func TestFormSavedMarkerOnlyOnTheSavedRow(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.edit(t, "server")
+	f.submit("play.example:25565")
+	if n := strings.Count(ansi.Strip(f.m.list.View()), "✓ saved"); n != 1 {
+		t.Errorf("\"✓ saved\" appears %d times, want once\nlist:\n%s", n, strings.Join(listLines(f.m), "\n"))
+	}
+}
+
+func TestFormSavedMarkerAfterAfterToggle(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.open("after")
+	press(f.m, keyEnter)
+	if f.m.screen != scSettings || f.m.savedRow != "after" {
+		t.Fatalf("after toggling: screen %d, savedRow %q; want scSettings (%d), after", f.m.screen, f.m.savedRow, scSettings)
+	}
+	if got := lineStartingWith(f.m, "▸ After I start the game"); !strings.HasSuffix(got, "quit the launcher ✓ saved") {
+		t.Errorf("after row = %q, want it to end with %q", got, "quit the launcher ✓ saved")
+	}
+}
+
+func TestFormSavedMarkerClearedByNextKey(t *testing.T) { // form spec C6, K2
+	f := formFixture(t, true)
+	f.edit(t, "server")
+	f.submit("play.example:25565")
+	press(f.m, keyDown)
+	if v := ansi.Strip(f.m.View()); f.m.savedRow != "" || strings.Contains(v, "✓ saved") {
+		t.Errorf("after down: savedRow %q, view\n%s\nwant no \"✓ saved\"", f.m.savedRow, v)
+	}
+}
+
+func TestFormSavedMarkerClearedByEscLeaving(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.open("after")
+	press(f.m, keyEnter)
+	press(f.m, keyEsc)
+	if f.m.savedRow != "" {
+		t.Errorf("esc after a save: savedRow %q, want \"\"", f.m.savedRow)
+	}
+}
+
+func TestFormSavedMarkerClearedByEnterIntoEdit(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.edit(t, "server")
+	f.submit("play.example:25565")
+	press(f.m, keyEnter) // opens the server edit again
+	if f.m.screen != scSettingEdit || f.m.savedRow != "" {
+		t.Fatalf("enter after a save: screen %d, savedRow %q; want scSettingEdit (%d), \"\"", f.m.screen, f.m.savedRow, scSettingEdit)
+	}
+	press(f.m, keyEsc)
+	if v := ansi.Strip(f.m.View()); f.m.screen != scSettings || strings.Contains(v, "✓ saved") {
+		t.Errorf("back on the list: screen %d, view\n%s\nwant scSettings without \"✓ saved\"", f.m.screen, v)
+	}
+}
+
+func TestFormNoSavedMarkerAfterFailedMemorySave(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.edit(t, "memory")
+	if err := os.Remove(filepath.Join(f.dir, "instance.cfg")); err != nil {
+		t.Fatal(err)
+	}
+	f.submit("6144")
+	if f.m.screen != scError || f.m.savedRow != "" {
+		t.Fatalf("failed save: screen %d, savedRow %q; want scError (%d), \"\"", f.m.screen, f.m.savedRow, scError)
+	}
+	press(f.m, keyEsc)
+	if v := ansi.Strip(f.m.View()); f.m.screen != scSettings || strings.Contains(v, "✓ saved") {
+		t.Errorf("esc after a failed save: screen %d, view\n%s\nwant scSettings without \"✓ saved\"", f.m.screen, v)
+	}
+}
+
+func TestFormNoSavedMarkerAfterFailedAfterToggle(t *testing.T) { // form spec C6
+	f := formFixture(t, true)
+	f.app.err = errors.New("disk full")
+	f.open("after")
+	press(f.m, keyEnter)
+	if f.m.screen != scError || f.m.savedRow != "" {
+		t.Fatalf("failed toggle: screen %d, savedRow %q; want scError (%d), \"\"", f.m.screen, f.m.savedRow, scError)
+	}
+	press(f.m, keyEsc)
+	if v := ansi.Strip(f.m.View()); f.m.screen != scSettings || strings.Contains(v, "✓ saved") {
+		t.Errorf("esc after a failed toggle: screen %d, view\n%s\nwant scSettings without \"✓ saved\"", f.m.screen, v)
 	}
 }

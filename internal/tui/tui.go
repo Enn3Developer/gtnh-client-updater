@@ -148,6 +148,7 @@ type model struct {
 	setting      string          // key of the settings row being edited or last chosen
 	setIn        textinput.Model // value of the setting being edited
 	setEr        string          // why the typed setting was rejected
+	savedRow     string          // key of the row whose value shows "✓ saved"; "" = none
 	findLauncher func(dataDir, override string) (prism.Launcher, error)
 	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
 	isRunning    func(inst prism.Instance) (bool, error)
