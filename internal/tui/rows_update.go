@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 )
@@ -32,6 +33,9 @@ func (m *model) updateEntries() []entry {
 	info := m.home[in.Dir]
 	now := time.Now()
 	es := textEntries(heading("Update"))
+	if n, ok := m.notices[in.Dir]; ok {
+		es = append(es, textEntries(m.noticeLines(m.pageWidth(), n)...)...)
+	}
 	switch {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
@@ -105,4 +109,80 @@ func defaultTarget(man *manifest.Manifest, installed string) string {
 		}
 	}
 	return man.Releases[0].Version
+}
+
+// notice is the outcome of the last job, shown in the Update section.
+type notice struct {
+	text string // the ok line
+	warn string // the server-mods warning; "" = none
+	info string // the dim extra-mods line; "" = none
+}
+
+// chooseVersion lets the player pick the version to install for the current instance
+// (C9); a version without a pack for the instance's Java is explained, not installed.
+func (m *model) chooseVersion() tea.Cmd {
+	if m.job != nil {
+		m.notifyBusy()
+		return nil
+	}
+	in, _ := m.current()
+	info := m.home[in.Dir]
+	now := time.Now()
+	items := make([]ditem, len(m.manifest.Releases))
+	for i, r := range m.manifest.Releases {
+		desc := releaseDesc(r, now)
+		if r.Version == info.rec {
+			desc += " · recommended"
+		}
+		if r.Version == info.version {
+			desc += " · you have this one"
+		}
+		if !availableFor(r, info.flavor) {
+			desc += " · not available for your Java"
+		}
+		items[i] = ditem{title: r.Version, desc: desc, key: r.Version}
+	}
+	m.openList("Which GTNH version do you want?", "", items, info.rec, func(m *model, v string) tea.Cmd {
+		if r, _ := m.release(v); !availableFor(r, info.flavor) {
+			m.notify("Not available", "GTNH "+v+" has no "+info.flavor.String()+" pack, which is what this instance uses.")
+			return nil
+		}
+		m.closeDialog()
+		return m.startUpdate(v)
+	})
+	return nil
+}
+
+// availableFor reports whether r has a pack for flavor.
+func availableFor(r manifest.Release, flavor manifest.Flavor) bool {
+	_, err := r.URL(flavor)
+	return err == nil
+}
+
+// releaseDesc is how a version list describes r: its kind and, when dated, how long ago
+// it came out.
+func releaseDesc(r manifest.Release, now time.Time) string {
+	desc := kindOf(r)
+	if a := ago(r.ReleaseDate, now); a != "" {
+		desc += " · " + a
+	}
+	return desc
+}
+
+// noticeLines are the rendered lines of n in the Update section (C8): the ok line, the
+// warning and the dim info, each wrapped to width.
+func (m *model) noticeLines(width int, n notice) []string {
+	var out []string
+	for _, part := range []struct {
+		text string
+		sty  lipgloss.Style
+	}{{n.text, okSty}, {n.warn, warnSty}, {n.info, dimSty}} {
+		if part.text == "" {
+			continue
+		}
+		for _, l := range wrapLines(part.text, width-2) {
+			out = append(out, "  "+part.sty.Render(l))
+		}
+	}
+	return out
 }

@@ -36,7 +36,8 @@ func listInstances(dirs []string) []prism.Instance {
 }
 
 // afterLoad marks the workspace loaded, preselects Config.Instance (by name or folder),
-// refreshes and starts the game when Config.Play asks to.
+// refreshes and starts the update Config.Target asks for, else the game when
+// Config.Play asks to.
 func (m *model) afterLoad() tea.Cmd {
 	m.loaded = true
 	m.focus = focusSidebar
@@ -52,6 +53,14 @@ func (m *model) afterLoad() tea.Cmd {
 		m.selectDir(in.Dir)
 	}
 	m.refresh()
+	if _, ok := m.current(); ok && m.cfg.Target != "" {
+		v, err := manifest.Resolve(m.manifest, m.cfg.Target)
+		if err != nil {
+			m.notify("No such version", fmt.Sprintf("GTNH has no version called %q.", m.cfg.Target))
+			return nil
+		}
+		return m.startUpdate(v)
+	}
 	if m.cfg.Play {
 		return m.playCmd(false)
 	}

@@ -218,9 +218,10 @@ func TestC5SWithUnreadableSettingsJumpsToTheLauncherRows(t *testing.T) {
 	}
 }
 
-// C4/C5: the update, versions, undo, settings and launcher rows do nothing yet.
+// C4/C5: the undo, settings and launcher rows do nothing yet (update and versions are
+// the update flow's, see flow_update_test.go).
 func TestC5RowsOfLaterSlicesChangeNothing(t *testing.T) {
-	for _, id := range []string{"update", "versions", "undo", "memory", "server", "after", "prism"} {
+	for _, id := range []string{"undo", "memory", "server", "after", "prism"} {
 		t.Run(id, func(t *testing.T) {
 			m, f := oneFull(t)
 			m.row = indexOf(rowIDs(m), id)
@@ -237,7 +238,7 @@ func TestC5RowsOfLaterSlicesChangeNothing(t *testing.T) {
 
 // C5
 func TestC5ShortcutsOfLaterSlicesChangeNothing(t *testing.T) {
-	for _, k := range []string{"u", "o", "b", "n", "v", "esc"} {
+	for _, k := range []string{"b", "n", "v", "esc"} {
 		t.Run(k, func(t *testing.T) {
 			m, _ := oneFull(t)
 			m.Update(newerMsg{r: &selfupdate.Release{Version: "9.9.9"}})

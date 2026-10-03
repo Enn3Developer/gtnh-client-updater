@@ -199,14 +199,14 @@ func TestC8ErrorsAfterLoadOpenADialog(t *testing.T) {
 	}
 }
 
-// C8/C7
+// C8/C7/C11
 func TestC8StatusBarOffersTheDialogKeys(t *testing.T) {
 	m, _ := oneFull(t)
 	m.notify("Heads up", "Something to know.")
 
 	got := strings.Join(m.statusPairs(), ",")
 
-	if got != "←→,choose,enter,ok,esc,close" {
+	if got != "←→,choose,enter,ok,esc,cancel" {
 		t.Errorf("statusPairs = %s", got)
 	}
 }

@@ -10,11 +10,15 @@ import (
 )
 
 // playRows are the play row and, when the instance has a server, the join row. While
-// the game of this instance is watched, the play row says how it's going (C6).
+// the game of this instance is watched, the play row says how it's going (C6); while a
+// job runs on it, the job row replaces them both.
 func (m *model) playRows() []row {
 	in, ok := m.current()
 	if !ok {
 		return nil
+	}
+	if m.jobShown(in.Dir) {
+		return []row{m.jobRow()}
 	}
 	info := m.home[in.Dir]
 	rows := []row{{id: "play", key: "enter", lines: m.playLines, run: func(m *model) tea.Cmd {

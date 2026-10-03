@@ -131,7 +131,10 @@ type model struct {
 	serverModsAsked bool
 	newName         string
 	detect          update.Detection
-	nameUsed        bool // cfg.Name was offered already
+	nameUsed        bool              // cfg.Name was offered already
+	job             *job              // the running job shown inline; nil when none runs
+	notices         map[string]notice // outcome of the last job per instance Dir
+	runUnknown      bool              // the last check couldn't tell whether the game runs
 }
 
 func newModel(cfg Config) *model {
@@ -142,6 +145,7 @@ func newModel(cfg Config) *model {
 		cfg: cfg, spin: sp, width: 80, height: 24,
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore,
+		notices: map[string]notice{},
 	}
 }
 
@@ -198,8 +202,8 @@ func (m *model) Init() tea.Cmd {
 }
 
 // Update routes messages: background results, window size, keys (a dialog takes every
-// key while open, C8; otherwise C5). An errMsg before load sets loadErr, after load it
-// becomes notify("Something went wrong", err).
+// key while open, C8; otherwise C5). An errMsg ends the running job; otherwise before
+// load it sets loadErr, after load it becomes notify("Something went wrong", err).
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -229,7 +233,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.onPoll(msg)
 	case reloadedMsg:
 		m.onReloaded(msg)
+	case preparedMsg:
+		if m.job != nil {
+			return m, m.onPrepared(msg.s)
+		}
+	case appliedMsg:
+		if m.job != nil && m.session != nil {
+			return m, m.onApplied(msg.r)
+		}
 	case errMsg:
+		if m.job != nil {
+			m.onJobErr(msg.err)
+			return m, nil
+		}
 		if !m.loaded {
 			m.loadErr = msg.err
 			return m, nil
@@ -376,6 +392,9 @@ func (m *model) quit() (tea.Model, tea.Cmd) {
 func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := k.String()
 	if s == "q" || s == "ctrl+c" {
+		if m.busyApplying() {
+			return m, nil // never quit mid-apply
+		}
 		return m.quit()
 	}
 	if !m.loaded {
@@ -498,12 +517,6 @@ func (m *model) newInstance() tea.Cmd { return nil }
 
 // selfUpdate replaces the launcher with m.newer. Filled by slice "flows2".
 func (m *model) selfUpdate() tea.Cmd { return nil }
-
-// startUpdate updates the current instance to target. Filled by slice "updateflow".
-func (m *model) startUpdate(target string) tea.Cmd { return nil }
-
-// chooseVersion lets the player pick the version to install. Filled by slice "updateflow".
-func (m *model) chooseVersion() tea.Cmd { return nil }
 
 // startUndo restores the current instance's newest backup. Filled by slice "flows2".
 func (m *model) startUndo() tea.Cmd { return nil }

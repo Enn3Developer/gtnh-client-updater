@@ -39,7 +39,7 @@ func (m *model) statusPairs() []string {
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
 	case m.dialog != nil:
-		return []string{"←→", "choose", "enter", "ok", "esc", "close"}
+		return m.dialogPairs()
 	}
 	var pairs []string
 	if m.focus == focusSidebar {
@@ -57,6 +57,9 @@ func (m *model) statusPairs() []string {
 	pairs = append(pairs, "n", "new instance")
 	if m.showAll || slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH }) {
 		pairs = append(pairs, "a", "show all")
+	}
+	if m.busyApplying() {
+		return append(pairs, "updating", "please don't close this window")
 	}
 	return append(pairs, "q", "quit")
 }

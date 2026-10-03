@@ -178,6 +178,11 @@ func rowLine(width int, selected bool, text, hint string) string {
 	if selected {
 		prefix, sty = "▸ ", titleSty
 	}
+	return styledRow(width, prefix, sty, text, hint)
+}
+
+// styledRow is rowLine with the prefix and the text style given.
+func styledRow(width int, prefix string, sty lipgloss.Style, text, hint string) string {
 	if hint == "" {
 		return ansi.Truncate(prefix+sty.Render(text), width, "…")
 	}

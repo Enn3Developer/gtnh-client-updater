@@ -36,7 +36,7 @@ func (m *model) sidebarView(height int) string {
 	for i := first; i < len(vis) && i < first+room; i++ {
 		in := vis[i]
 		g, gs := glyph(m.home[in.Dir]), glyphSty(m.home[in.Dir])
-		if m.play.dir == in.Dir && m.play.watching() {
+		if (m.play.dir == in.Dir && m.play.watching()) || m.jobShown(in.Dir) {
 			g, gs = "◐", lipgloss.NewStyle().Foreground(accent)
 		}
 		name := ansi.Truncate(in.Name, width-2, "…")
