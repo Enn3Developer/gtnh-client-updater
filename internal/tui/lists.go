@@ -65,6 +65,12 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	return m.showListWith(sc, title, m.listDelegate(), items, selected, help...)
 }
 
+// showsStatusBar reports whether the list on sc with n items shows its "N choices" bar.
+// Settings is left out: its rows include two section headings, so the count would be wrong.
+func showsStatusBar(sc screen, n int) bool {
+	return (sc == scInstalled || sc == scTarget || sc == scResolve) && n > 8
+}
+
 // showListWith shows a list drawn by d and remembers help for the key bar.
 func (m *model) showListWith(sc screen, title string, d list.ItemDelegate, items []list.Item, selected string, help ...key.Binding) (tea.Model, tea.Cmd) {
 	l := list.New(items, d, 0, 0)
@@ -78,7 +84,7 @@ func (m *model) showListWith(sc screen, title string, d list.ItemDelegate, items
 	l.Styles.TitleBar = l.Styles.TitleBar.PaddingLeft(0) // the frame indents the body already
 	l.SetShowHelp(false)                                 // the key bar replaces it
 	l.SetStatusBarItemName("choice", "choices")
-	l.SetShowStatusBar(len(items) > 8)
+	l.SetShowStatusBar(showsStatusBar(sc, len(items)))
 	for i, it := range items {
 		if it.(item).key == selected {
 			l.Select(i)
