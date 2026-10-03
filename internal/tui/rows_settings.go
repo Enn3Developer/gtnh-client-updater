@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // prismDefault is the value of a setting the instance leaves to Prism.
@@ -12,12 +13,28 @@ const prismDefault = "Prism's default"
 // cantReadCfg replaces the settings rows when the instance's settings can't be read.
 const cantReadCfg = "I couldn't read this instance's settings"
 
-// settingRow is a row showing label and value; enter edits the setting id.
-func settingRow(id, label, value string) row {
+// settingRow is a row showing label and value; enter edits the setting id. While id is
+// being edited the row is the field, its help and its error; after a save it's marked (C2).
+func (m *model) settingRow(id, label, value string) row {
 	text := labelled(label, value)
 	return row{id: id,
-		lines: func(w int, sel bool) []string { return []string{rowLine(w, sel, text, "")} },
-		run:   func(m *model) tea.Cmd { return m.editSetting(id) }}
+		lines: func(w int, sel bool) []string {
+			if e := m.edit; e != nil && e.id == id {
+				out := []string{
+					ansi.Truncate("▸ "+titleSty.Render(labelled(label, ""))+e.input.View(), w, "…"),
+					infoLine(settingHelp(id)),
+				}
+				if e.err != "" {
+					out = append(out, "  "+badSty.Render(e.err))
+				}
+				return out
+			}
+			if m.edit == nil && m.savedRow == id {
+				return []string{rowLine(w, sel, text+" "+okSty.Render("✓ saved"), "")}
+			}
+			return []string{rowLine(w, sel, text, "")}
+		},
+		run: func(m *model) tea.Cmd { return m.editSetting(id) }}
 }
 
 // settingsRows are the instance's setting rows: memory, jvm, java, window, and for a
@@ -36,7 +53,7 @@ func (m *model) settingsRows() []row {
 	}
 	var out []row
 	for _, k := range keys {
-		out = append(out, settingRow(k.id, k.label, settingValue(k.id, info)))
+		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info)))
 	}
 	return out
 }
@@ -52,8 +69,8 @@ func (m *model) launcherRows() []row {
 		exe = "found automatically"
 	}
 	return []row{
-		settingRow("after", "After I start the game", after),
-		settingRow("prism", "Prism Launcher", exe),
+		m.settingRow("after", "After I start the game", after),
+		m.settingRow("prism", "Prism Launcher", exe),
 	}
 }
 

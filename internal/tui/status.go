@@ -42,6 +42,8 @@ func (m *model) statusPairs() []string {
 		return []string{"updating", "please don't close this window"} // the progress dialog (C14)
 	case m.dialog != nil:
 		return m.dialogPairs()
+	case m.edit != nil:
+		return []string{"enter", "save", "esc", "cancel"}
 	}
 	var pairs []string
 	if m.focus == focusSidebar {

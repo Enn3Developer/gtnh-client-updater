@@ -107,6 +107,8 @@ type model struct {
 	quitting   bool
 	restart    bool
 	home       map[string]homeInfo // per instance Dir, filled by refresh
+	edit       *settingEdit        // nil = not editing
+	savedRow   string              // id of the row to mark "✓ saved"; "" none
 
 	findLauncher func(dataDir, override string) (prism.Launcher, error)
 	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
@@ -266,6 +268,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notify("Something went wrong", msg.err.Error())
 	case tea.KeyMsg:
+		if cmd, ok := m.keyEdit(msg); ok {
+			return m, cmd
+		}
 		if cmd, ok := m.keyDialog(msg); ok {
 			return m, cmd
 		}
@@ -411,6 +416,7 @@ func (m *model) quit() (tea.Model, tea.Cmd) {
 
 // key handles a key with no dialog open (C5).
 func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.savedRow = ""
 	s := k.String()
 	if s == "q" || s == "ctrl+c" {
 		if m.busyApplying() {
@@ -537,6 +543,3 @@ func (m *model) onStep(msg stepMsg) {
 func (m *model) startBusy() {
 	m.warns, m.steps, m.step = nil, nil, ""
 }
-
-// editSetting edits the setting of the row with id key. Filled by slice "editsettings".
-func (m *model) editSetting(key string) tea.Cmd { return nil }
