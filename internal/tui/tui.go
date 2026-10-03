@@ -76,8 +76,12 @@ const (
 	scError
 	scSelfUpdate
 	scSelfUpdated
-	scSettings    // per-instance and launcher-wide settings list
-	scSettingEdit // text field for one setting
+	scSettings       // per-instance and launcher-wide settings list
+	scSettingEdit    // text field for one setting
+	scBackups        // backups of the instance that can be restored
+	scRestoreConfirm // what restoring the chosen backup will do
+	scRestoring
+	scRestored
 )
 
 type model struct {
@@ -149,6 +153,11 @@ type model struct {
 	playState    string // "starting" | "slow" | "running" | "closed" | "unknown"
 	playStart    time.Time
 	runningSince time.Time
+
+	backups  []update.Backup       // restorable backups of m.inst, newest first
+	backup   update.Backup         // the backup being restored
+	restored *update.RestoreResult // what the last restore did
+	restore  func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
 }
 
 func newModel(cfg Config) *model {
@@ -166,7 +175,7 @@ func newModel(cfg Config) *model {
 		cfg: cfg, spin: sp, input: ti, nameIn: ni, setIn: si, width: 80, height: 24,
 		bar:          progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
-		saveApp: appcfg.Save,
+		saveApp: appcfg.Save, restore: update.Restore,
 	}
 }
 
@@ -194,6 +203,7 @@ type (
 		err     error
 	}
 	reloadedMsg struct{ insts []prism.Instance }
+	restoredMsg struct{ r *update.RestoreResult }
 )
 
 func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }
@@ -256,6 +266,9 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onCreateReady(msg)
 	case createdMsg:
 		m.created, m.screen = msg.r, scDone
+		return m, nil
+	case restoredMsg:
+		m.restored, m.screen = msg.r, scRestored
 		return m, nil
 	case selfDoneMsg:
 		m.screen = scSelfUpdated
@@ -334,7 +347,8 @@ func (m *model) onError(msg errMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) isListScreen() bool {
-	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.screen == scSettings || m.choosingConfigs()
+	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.screen == scSettings ||
+		(m.screen == scBackups && len(m.backups) > 0) || m.choosingConfigs()
 }
 
 // choosingConfigs reports whether a config-choice list is on screen; those belong to a
@@ -344,7 +358,7 @@ func (m *model) choosingConfigs() bool {
 }
 
 func (m *model) quit() (tea.Model, tea.Cmd) {
-	if m.screen == scApplying || m.screen == scSelfUpdate {
+	if m.screen == scApplying || m.screen == scRestoring || m.screen == scSelfUpdate {
 		return m, nil // never abandon a half-applied update; rollback needs this process
 	}
 	if m.cancelCreate != nil {

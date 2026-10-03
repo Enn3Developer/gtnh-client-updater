@@ -30,6 +30,10 @@ func (m *model) View() string {
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
 	case scConflicts, scResolve:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.list.View())
+	case scBackups:
+		if len(m.backups) > 0 {
+			return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
+		}
 	}
 	header, body, footer, scroll := m.page()
 	return frame(header, body, footer, m.width, m.height, scroll)
@@ -48,7 +52,13 @@ func (m *model) page() (header, body, footer string, scroll int) {
 		body, footer = m.nameView()
 	case scSettingEdit:
 		body, footer = m.settingEditView()
-	case scPreparing, scApplying, scSelfUpdate:
+	case scBackups:
+		body, footer = m.backupsView()
+	case scRestoreConfirm:
+		body, footer = m.restoreConfirmView()
+	case scRestored:
+		body, footer = m.restoredView()
+	case scPreparing, scApplying, scRestoring, scSelfUpdate:
 		body, footer = m.busyView()
 		scroll = math.MaxInt32 // keep the newest step in view
 	case scConfirm:
@@ -139,6 +149,8 @@ func (m *model) busyView() (body, footer string) {
 	switch {
 	case m.screen == scSelfUpdate:
 		title("Updating gtnh-update itself")
+	case m.screen == scRestoring:
+		title(fmt.Sprintf("Putting %s back on GTNH %s", m.inst.Name, m.backup.Info.From))
 	case m.creating && m.screen == scApplying:
 		title("Creating " + m.newName)
 	case m.creating:
@@ -383,6 +395,8 @@ func (m *model) errorView() (body, footer string) {
 		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.width-4)) + "\n\n")
 	case m.errPhase == scApplying:
 		b.WriteString(badSty.Render(wrap("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.", m.width-4)) + "\n\n")
+	case m.errPhase == scRestoring:
+		b.WriteString(m.restoreErrorNote())
 	}
 	if m.canGoBack() {
 		return b.String(), hint("esc", "go back", "enter", "exit")

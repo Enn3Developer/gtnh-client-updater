@@ -119,6 +119,7 @@ func (m *model) reloadHome() (tea.Model, tea.Cmd) {
 		m.session = nil
 	}
 	m.result, m.created, m.creating, m.warns = nil, nil, false, nil
+	m.restored = nil
 	m.screen = scLoading
 	dirs := m.cfg.PrismDirs
 	return m, func() tea.Msg { return reloadedMsg{listInstances(dirs)} }

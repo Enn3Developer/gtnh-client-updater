@@ -158,8 +158,12 @@ func (m *model) focusInput(ti *textinput.Model, value string) tea.Cmd {
 }
 
 // canGoBack reports whether the error screen may return to a list: not after a failed
-// apply (the player must read what happened) and not before anything was loaded.
+// apply or restore (the player must read what happened) and not before anything was
+// loaded. A restore refused because the game runs changed nothing, so that one may.
 func (m *model) canGoBack() bool {
+	if m.errPhase == scRestoring && !isGameRunningErr(m.err) {
+		return false
+	}
 	return m.manifest != nil && m.errPhase != scApplying && m.errPhase != scLoading
 }
 

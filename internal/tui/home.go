@@ -20,6 +20,7 @@ type homeInfo struct {
 	gtnh                                  bool
 	version, rec, played, server, modsURL string
 	flavor                                manifest.Flavor
+	backup                                *update.Backup // newest restorable backup; nil = nothing to undo
 }
 
 // cardSty boxes the instance card: 38 columns of text, 42 on screen. lipgloss's Width
@@ -37,6 +38,11 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	info.rec = defaultTarget(m.manifest, info.version)
 	if st != nil {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
+	}
+	if in.GTNH {
+		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {
+			info.backup = &bs[0]
+		}
 	}
 	return info
 }
@@ -102,10 +108,19 @@ func (m *model) cardView() string {
 	lines := []string{
 		line("Installed  ", installed),
 		line("Update     ", upd),
+	}
+	if info.gtnh {
+		undo := dimSty.Render("nothing to undo")
+		if info.backup != nil {
+			undo = warnSty.Render("back to " + info.backup.Info.From + " — press b")
+		}
+		lines = append(lines, line("Undo       ", undo))
+	}
+	lines = append(lines,
 		line("Played     ", played),
 		line("Server     ", server),
 		line("Server mods  ", mods),
-	}
+	)
 	if info.gtnh {
 		pack := "Java 8"
 		if info.flavor == manifest.Java17 {
@@ -121,7 +136,7 @@ func (m *model) homeHelp() string {
 	if _, info, ok := m.selectedHome(); ok && info.server != "" {
 		pairs = append(pairs, "j", "join")
 	}
-	pairs = append(pairs, "u", "update", "s", "settings", "n", "new")
+	pairs = append(pairs, "u", "update", "s", "settings", "b", "undo", "n", "new")
 	if m.showAll || slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH }) {
 		pairs = append(pairs, "a", "all")
 	}
@@ -158,7 +173,7 @@ func (m *model) keyHome(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.startSelfUpdate()
 		}
 		return m, nil
-	case "enter", "p", "j", "u", "s":
+	case "enter", "p", "j", "u", "s", "b":
 		return m.keyHomeInstance(k.String())
 	}
 	return m.updateList(k)
@@ -187,6 +202,9 @@ func (m *model) keyHomeInstance(k string) (tea.Model, tea.Cmd) {
 	case "s":
 		m.inst = in
 		return m.showSettings()
+	case "b":
+		m.inst = in
+		return m.showBackups()
 	}
 	m.inst = in
 	return m.play(false)

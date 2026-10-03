@@ -46,9 +46,15 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.keySelfUpdated(k)
 	case scPlaying:
 		return m.keyPlaying(k)
+	case scBackups:
+		return m.keyBackups(k)
+	case scRestoreConfirm:
+		return m.keyRestoreConfirm(k)
+	case scRestored:
+		return m.keyRestored(k)
 	case scLaunching:
 		// Busy: Prism is being started.
-	case scLoading, scPreparing, scApplying, scSelfUpdate:
+	case scLoading, scPreparing, scApplying, scRestoring, scSelfUpdate:
 		// Busy: only ctrl+c (handled above) interrupts.
 	}
 	return m, nil

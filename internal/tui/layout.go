@@ -49,8 +49,10 @@ func (m *model) listHeightFor(sc screen) int {
 // scrollable reports whether the current screen scrolls with the arrow keys.
 func (m *model) scrollable() bool {
 	switch m.screen {
-	case scConfirm, scDone, scError, scServerMods, scName, scSettingEdit:
+	case scConfirm, scDone, scError, scServerMods, scName, scSettingEdit, scRestoreConfirm, scRestored:
 		return true
+	case scBackups:
+		return len(m.backups) == 0
 	}
 	return false
 }
