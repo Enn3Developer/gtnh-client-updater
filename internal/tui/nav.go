@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,31 +37,40 @@ func (m *model) afterLoad() (tea.Model, tea.Cmd) {
 		return m.startCreate()
 	}
 	if m.cfg.Instance != "" {
-		for _, in := range m.insts {
-			if in.Name == m.cfg.Instance || sameDir(in.Dir, m.cfg.Instance) {
-				return m.pickInstance(in)
-			}
+		in, err := m.cfgInstance()
+		if err != nil {
+			return m, errCmd(err)
 		}
-		if in, err := prism.LoadInstance(m.cfg.Instance); err == nil {
-			m.insts = append(m.insts, in)
+		switch {
+		case m.cfg.Target != "":
 			return m.pickInstance(in)
+		case m.cfg.Play:
+			m.inst = in
+			return m.play(false)
 		}
-		return m, errCmd(fmt.Errorf("I couldn't find an instance called %q.", m.cfg.Instance))
-	}
-	var gtnh []prism.Instance
-	for _, in := range m.insts {
-		if in.GTNH {
-			gtnh = append(gtnh, in)
-		}
+		m.inst = in
+		return m.showHome()
 	}
 	if len(m.insts) == 0 {
 		return m.startCreate()
 	}
-	if len(gtnh) == 1 {
-		return m.pickInstance(gtnh[0])
+	m.showAll = !slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return in.GTNH })
+	return m.showHome()
+}
+
+// cfgInstance finds the instance named on the command line, by name or folder; a folder
+// outside the scanned Prism dirs is loaded and added to m.insts.
+func (m *model) cfgInstance() (prism.Instance, error) {
+	for _, in := range m.insts {
+		if in.Name == m.cfg.Instance || sameDir(in.Dir, m.cfg.Instance) {
+			return in, nil
+		}
 	}
-	m.showAll = len(gtnh) == 0
-	return m.showInstances()
+	if in, err := prism.LoadInstance(m.cfg.Instance); err == nil {
+		m.insts = append(m.insts, in)
+		return in, nil
+	}
+	return prism.Instance{}, fmt.Errorf("I couldn't find an instance called %q.", m.cfg.Instance)
 }
 
 func sameDir(a, b string) bool {
@@ -72,12 +82,6 @@ func sameDir(a, b string) bool {
 // choose handles Enter on a list screen.
 func (m *model) choose(key string) (tea.Model, tea.Cmd) {
 	switch m.screen {
-	case scInstance:
-		for _, in := range m.insts {
-			if in.Dir == key {
-				return m.pickInstance(in)
-			}
-		}
 	case scInstalled:
 		m.detect = update.Detection{Version: key, Source: "you told me"}
 		return m.showTargets()
@@ -104,7 +108,9 @@ func (m *model) instancesDir() string { return prism.InstancesDir(m.cfg.PrismDir
 
 func (m *model) pickInstance(in prism.Instance) (tea.Model, tea.Cmd) {
 	m.inst, m.target, m.creating = in, "", false
-	if prism.Running(in) {
+	running, err := m.isRunning(in)
+	m.runUnknown = err != nil
+	if running {
 		return m, errCmd(fmt.Errorf("%s is running right now. Close Minecraft, then start me again.", in.Name))
 	}
 	st, err := update.LoadState(in.Dir)
@@ -163,5 +169,5 @@ func (m *model) goBackFromError() (tea.Model, tea.Cmd) {
 	if (m.inst.Dir != "" || m.creating) && (m.errPhase == scPreparing || m.errPhase == scSelfUpdate) {
 		return m.showTargets()
 	}
-	return m.showInstances()
+	return m.showHome()
 }

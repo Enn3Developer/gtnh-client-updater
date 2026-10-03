@@ -20,10 +20,27 @@ var (
 )
 
 func (m *model) inputWidth() int { return max(min(m.width-10, 70), 20) }
-func (m *model) listWidth() int  { return max(m.width-4, 20) }
-func (m *model) listHeight() int {
+func (m *model) listWidth() int  { return m.listWidthFor(m.screen) }
+func (m *model) listHeight() int { return m.listHeightFor(m.screen) }
+
+// homeCardShows reports whether the instance card sits next to the list on sc.
+func (m *model) homeCardShows(sc screen) bool { return sc == scHome && m.width >= 90 }
+
+// listWidthFor is the list width on sc; the home card takes 42 of the usual columns.
+func (m *model) listWidthFor(sc screen) int {
+	if m.homeCardShows(sc) {
+		return m.width - 46
+	}
+	return max(m.width-4, 20)
+}
+
+// listHeightFor is the list height on sc; home keeps two rows for its own help line.
+func (m *model) listHeightFor(sc screen) int {
 	h := m.height - 5 // padding + header
 	if m.newer != nil {
+		h -= 2
+	}
+	if sc == scHome {
 		h -= 2
 	}
 	return max(h, 5)
@@ -67,14 +84,14 @@ func (m *model) scrollKey(k string) (ok bool) {
 }
 
 func (m *model) header() string {
-	return dimSty.Render("GTNH Updater "+m.cfg.AppVersion) + "\n\n"
+	return dimSty.Render("GTNH Launcher "+m.cfg.AppVersion) + "\n\n"
 }
 
 func (m *model) banner() string {
 	if m.newer == nil {
 		return ""
 	}
-	return bannerSty.Render(fmt.Sprintf("A new version of this updater is out (%s) — press u to get it", m.newer.Version)) + "\n\n"
+	return bannerSty.Render(fmt.Sprintf("A new version of this updater is out (%s) — press v to get it", m.newer.Version)) + "\n\n"
 }
 
 // fitBodyRows is how many body lines fit under the blank top line, header and footer.

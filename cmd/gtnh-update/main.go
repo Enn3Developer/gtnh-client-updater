@@ -7,6 +7,7 @@
 //	gtnh-update -list
 //	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] -yes
 //	gtnh-update -create -version <ver|latest|latest-stable> [-name <name>] [-server-mods <url>] -yes
+//	gtnh-update -play -instance <dir|name> [-version <ver>] -yes
 //
 // -configs new|mine decides what happens to config files changed both by the player and
 // by the new version (default new); in the TUI it only changes the preselected answer.
@@ -18,9 +19,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Enn3Developer/gtnh-client-updater/internal/appcfg"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/selfupdate"
@@ -52,6 +55,7 @@ func run() error {
 		configs    = flag.String("configs", "new", "what to do with config files changed both by you and by the new version: new (replace yours, old ones backed up) or mine (keep yours, new ones saved as .mcnew)")
 		create     = flag.Bool("create", false, "create a new Prism instance with -version instead of updating one")
 		name       = flag.String("name", "", "name for the new instance; default: GT New Horizons <version>")
+		play       = flag.Bool("play", false, "start the instance in Prism Launcher; with -yes and -instance it just starts it, add -version to update first")
 		yes        = flag.Bool("yes", false, "don't ask anything, just do it (update needs -instance and -version; -create needs -version)")
 		list       = flag.Bool("list", false, "show your instances and the available GTNH versions")
 		selfUpd    = flag.Bool("self-update", false, "update gtnh-update itself to the newest release")
@@ -75,6 +79,9 @@ func run() error {
 	}
 	if *create && *instance != "" {
 		return errors.New("-create makes a new instance, so it can't be used with -instance")
+	}
+	if err := checkPlayFlags(*play, *create, *yes, *instance); err != nil {
+		return err
 	}
 	if *serverMods != "" && *serverMods != "none" {
 		if err := update.CheckCustomModsURL(*serverMods); err != nil {
@@ -104,6 +111,11 @@ func run() error {
 			noticeNewer(client)
 		}
 		return createHeadless(client, dirs, *name, *target, *serverMods)
+	case *play && *yes:
+		if updateCheck && *target != "" {
+			noticeNewer(client)
+		}
+		return playHeadless(client, dirs, *instance, *installed, *target, *serverMods, choice)
 	case *yes:
 		if *instance == "" || *target == "" {
 			return errors.New("-yes needs -instance and -version")
@@ -116,7 +128,7 @@ func run() error {
 	out, err := tui.Run(tui.Config{
 		Client: client, AppVersion: version, PrismDirs: dirs, Instance: *instance,
 		Installed: *installed, Target: *target, ServerMods: *serverMods, UpdateCheck: updateCheck,
-		Create: *create, Name: *name, Configs: tuiConfigs(*configs),
+		Create: *create, Name: *name, Configs: tuiConfigs(*configs), Play: *play,
 	})
 	if err != nil {
 		return err
@@ -146,6 +158,62 @@ func tuiConfigs(v string) string {
 		return ""
 	}
 	return v
+}
+
+// checkPlayFlags rejects -play combinations that can't work.
+func checkPlayFlags(play, create, yes bool, instance string) error {
+	switch {
+	case play && create:
+		return errors.New("-play can't be used with -create")
+	case play && yes && instance == "":
+		return errors.New("-play -yes needs -instance")
+	}
+	return nil
+}
+
+// playHeadless starts an instance in Prism Launcher, updating it to target first when
+// one is given.
+func playHeadless(client *http.Client, dirs []string, instName, installed, target, serverMods string, configs update.Choice) error {
+	if target != "" {
+		if err := headless(client, dirs, instName, installed, target, serverMods, configs); err != nil {
+			return err
+		}
+	}
+	if len(dirs) == 0 {
+		return errors.New("Prism Launcher not found -- pass -prism-dir")
+	}
+	inst, err := findInstance(dirs, instName)
+	if err != nil {
+		return err
+	}
+	cfg, _ := appcfg.Load() // an unreadable settings file just means: find Prism automatically
+	dataDir := dataDirOf(dirs, inst)
+	l, err := prism.FindLauncher(dataDir, cfg.PrismExe)
+	if errors.Is(err, prism.ErrLauncherNotFound) {
+		return errors.New("Prism Launcher not found -- set its path in the launcher settings or pass -prism-dir")
+	}
+	if err != nil {
+		return err
+	}
+	if err := prism.Launch(l, dataDir, inst, ""); err != nil {
+		return err
+	}
+	fmt.Printf("Started %s in Prism Launcher.\n", inst.Name)
+	return nil
+}
+
+// dataDirOf is the Prism data dir whose instances folder holds inst, else the first one.
+func dataDirOf(dirs []string, inst prism.Instance) string {
+	for _, d := range dirs {
+		rel, err := filepath.Rel(prism.InstancesDir(d), inst.Dir)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "." {
+			return d
+		}
+	}
+	if len(dirs) == 0 {
+		return ""
+	}
+	return dirs[0]
 }
 
 func selfUpdate(client *http.Client) error {

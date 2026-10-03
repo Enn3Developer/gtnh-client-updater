@@ -17,7 +17,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.screen {
-	case scInstance, scInstalled, scTarget:
+	case scHome:
+		return m.keyHome(k)
+	case scInstalled, scTarget:
 		return m.keyList(k)
 	case scServerMods:
 		return m.keyServerMods(k)
@@ -38,6 +40,10 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.keyFinished(k)
 	case scSelfUpdated:
 		return m.keySelfUpdated(k)
+	case scPlaying:
+		return m.keyPlaying(k)
+	case scLaunching:
+		// Busy: Prism is being started.
 	case scLoading, scPreparing, scApplying, scSelfUpdate:
 		// Busy: only ctrl+c (handled above) interrupts.
 	}
@@ -61,30 +67,21 @@ func (m *model) keyList(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.choose(sel.key)
 		}
 		return m, nil
-	case "u":
+	case "v":
 		if m.newer != nil {
 			return m.startSelfUpdate()
 		}
 	case "esc":
-		if m.list.FilterState() == list.Unfiltered && m.screen != scInstance && len(m.insts) > 0 {
-			return m.showInstances()
+		if m.list.FilterState() == list.Unfiltered && len(m.insts) > 0 {
+			return m.showHome()
 		}
 	case "i":
 		if m.screen == scTarget && !m.creating {
 			return m.showInstalled()
 		}
-	case "n":
-		if m.screen == scInstance {
-			return m.startCreate()
-		}
 	case "m":
 		if m.screen == scTarget {
 			return m.askServerMods(false)
-		}
-	case "a":
-		if m.screen == scInstance {
-			m.showAll = !m.showAll
-			return m.showInstances()
 		}
 	}
 	return m.updateList(k)
@@ -158,10 +155,23 @@ func (m *model) keyError(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) keyFinished(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "q", "enter", "esc":
+	case "enter", "esc":
+		m.selectCreated()
+		return m.reloadHome()
+	case "p":
+		m.selectCreated()
+		return m.play(false)
+	case "q":
 		return m.quit()
 	}
 	return m, nil
+}
+
+// selectCreated makes a just-created instance the current one.
+func (m *model) selectCreated() {
+	if m.creating && m.created != nil {
+		m.inst = m.created.Instance
+	}
 }
 
 func (m *model) keySelfUpdated(k tea.KeyMsg) (tea.Model, tea.Cmd) {

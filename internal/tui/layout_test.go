@@ -308,6 +308,16 @@ const (
 func sizedModel(t *testing.T) *model {
 	m := newModel(Config{AppVersion: "1.2.3", PrismDirs: []string{t.TempDir()}})
 	m.Update(tea.WindowSizeMsg{Width: termW, Height: termH})
+	// Never touch the real OS: the game is not running and Prism is never started.
+	m.isRunning = func(prism.Instance) (bool, error) { return false, nil }
+	m.findLauncher = func(string, string) (prism.Launcher, error) {
+		t.Errorf("unexpected findLauncher call")
+		return prism.Launcher{}, prism.ErrLauncherNotFound
+	}
+	m.launch = func(prism.Launcher, string, prism.Instance, string) error {
+		t.Errorf("unexpected launch call")
+		return nil
+	}
 	return m
 }
 

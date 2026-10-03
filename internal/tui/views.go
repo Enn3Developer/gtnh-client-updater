@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
-	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
 )
 
@@ -21,7 +20,13 @@ func (m *model) View() string {
 		return ""
 	}
 	switch m.screen {
-	case scInstance, scInstalled, scTarget:
+	case scHome:
+		body := m.list.View()
+		if m.homeCardShows(scHome) {
+			body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.cardView())
+		}
+		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + body + "\n\n" + m.homeHelp())
+	case scInstalled, scTarget:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
 	case scConflicts, scResolve:
 		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.list.View())
@@ -56,6 +61,10 @@ func (m *model) page() (header, body, footer string, scroll int) {
 		} else {
 			body, footer = m.doneView()
 		}
+	case scLaunching:
+		body, footer = m.launchingView()
+	case scPlaying:
+		body, footer = m.playingView()
 	case scError:
 		body, footer = m.errorView()
 	case scSelfUpdated:
@@ -66,6 +75,28 @@ func (m *model) page() (header, body, footer string, scroll int) {
 		footer = "\n" + footer // a blank line between body and keys
 	}
 	return strings.TrimSuffix(m.header(), "\n"), strings.TrimRight(body, "\n"), footer, scroll
+}
+
+func (m *model) launchingView() (body, footer string) {
+	return m.spin.View() + " Starting " + m.inst.Name + " in Prism Launcher…", ""
+}
+
+func (m *model) playingView() (body, footer string) {
+	var state string
+	switch m.playState {
+	case "starting":
+		state = m.spin.View() + " Prism Launcher is starting the game…"
+	case "slow":
+		state = warnSty.Render(wrap("I haven't seen the game start yet. Maybe Prism is asking you something — have a look at its window.", m.width-4))
+	case "running":
+		state = okSty.Render("The game is running (since "+m.runningSince.Format("15:04")+").") + "\n" +
+			dimSty.Render("Leave me open or press q — the game keeps running either way.")
+	case "closed":
+		state = "The game closed. Have fun next time!"
+	case "unknown":
+		state = dimSty.Render(wrap("The game should be starting from Prism now. I can't tell on this computer whether it's running.", m.width-4))
+	}
+	return titleSty.Render(m.inst.Name) + "\n\n" + state, hint("enter", "back", "q", "quit")
 }
 
 func (m *model) serverModsView() (body, footer string) {
@@ -183,9 +214,7 @@ func (m *model) confirmView() (body, footer string) {
 		bullet("This instance uses the Java 8 version of the pack, so that's what you'll get.")
 	}
 	bullet("Everything that gets replaced is backed up first, just in case.")
-	if !prism.CanDetectRunning {
-		b.WriteString("\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n")
-	}
+	b.WriteString(m.closeMinecraftNote())
 	b.WriteString(m.headsUp("\n"))
 	return b.String(), hint("enter", "update now", "esc", "go back")
 }
@@ -211,8 +240,19 @@ func (m *model) confirmWarnings() string {
 	return b.String()
 }
 
+// closeMinecraftNote asks the player to close the game when pickInstance couldn't tell
+// whether it runs.
+func (m *model) closeMinecraftNote() string {
+	if !m.runUnknown {
+		return ""
+	}
+	return "\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n"
+}
+
 // haveFun ends the done screens.
-const haveFun = "\nYou can start the game from Prism now. Have fun!"
+const haveFun = "\nPress p to start the game now, or enter to go back."
+
+func doneFooter() string { return hint("enter", "back", "p", "play now", "q", "quit") }
 
 func (m *model) doneView() (body, footer string) {
 	r, pl := m.result, m.session.Plan
@@ -251,7 +291,7 @@ func (m *model) doneView() (body, footer string) {
 	}
 	b.WriteString(m.headsUp(""))
 	b.WriteString(haveFun)
-	return b.String(), hint("enter", "exit")
+	return b.String(), doneFooter()
 }
 
 // customModsSummary describes what the server-mods sync did (cm nil = it didn't run).
@@ -315,7 +355,7 @@ func (m *model) createdView() (body, footer string) {
 	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
 	b.WriteString(m.headsUp(""))
 	b.WriteString(haveFun)
-	return b.String(), hint("enter", "exit")
+	return b.String(), doneFooter()
 }
 
 func (m *model) errorView() (body, footer string) {

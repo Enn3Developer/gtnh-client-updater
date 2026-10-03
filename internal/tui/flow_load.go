@@ -20,11 +20,16 @@ func (m *model) load() tea.Msg {
 		return errMsg{fmt.Errorf("I couldn't reach the GTNH download server to see which versions exist. "+
 			"Check your internet connection and try again.\n\n(%w)", err)}
 	}
+	return loadedMsg{man, listInstances(m.cfg.PrismDirs)} // no instances at all: afterLoad offers to create one
+}
+
+// listInstances lists the instances of every Prism data dir; unreadable dirs are skipped.
+func listInstances(dirs []string) []prism.Instance {
 	var insts []prism.Instance
-	for _, d := range m.cfg.PrismDirs {
+	for _, d := range dirs {
 		if found, err := prism.ListInstances(prism.InstancesDir(d)); err == nil {
 			insts = append(insts, found...)
 		}
 	}
-	return loadedMsg{man, insts} // no instances at all: afterLoad offers to create one
+	return insts
 }

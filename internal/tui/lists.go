@@ -16,16 +16,14 @@ import (
 )
 
 var (
-	keyNotMine   = key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "not this one"))
-	keyServer    = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mods"))
-	keyOther     = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back"))
-	keySelfUpd   = key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "update me"))
-	keyShowOther = key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "all instances"))
-	keyNew       = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new instance"))
-	keyPick      = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "choose"))
-	keySwitch    = key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "switch"))
-	keyAllNew    = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "all new"))
-	keyDone      = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "done"))
+	keyNotMine = key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "not this one"))
+	keyServer  = key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mods"))
+	keyOther   = key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back"))
+	keySelfUpd = key.NewBinding(key.WithKeys("v"), key.WithHelp("v", "new version"))
+	keyPick    = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "choose"))
+	keySwitch  = key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "switch"))
+	keyAllNew  = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "all new"))
+	keyDone    = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "done"))
 )
 
 type item struct{ title, desc, key string }
@@ -39,8 +37,8 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(accent).BorderForeground(accent)
 	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("#98BB6C")).BorderForeground(accent)
 	l := list.New(items, d, 0, 0)
-	l.SetSize(m.listWidth(), m.listHeight()) // New doesn't size the help line, SetSize does
-	l.Title = ansi.Truncate(title, m.listWidth()-2, "…")
+	l.SetSize(m.listWidthFor(sc), m.listHeightFor(sc)) // New doesn't size the help line, SetSize does
+	l.Title = ansi.Truncate(title, m.listWidthFor(sc)-2, "…")
 	l.Styles.Title = titleSty.Padding(0, 1)
 	l.SetStatusBarItemName("choice", "choices")
 	l.SetShowStatusBar(len(items) > 8)
@@ -49,15 +47,18 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 			l.Select(i)
 		}
 	}
-	l.AdditionalShortHelpKeys = func() []key.Binding {
-		out := append([]key.Binding{}, help...)
-		if m.newer != nil && !m.choosingConfigs() {
-			out = append(out, keySelfUpd)
-		}
-		return out
-	}
+	l.AdditionalShortHelpKeys = func() []key.Binding { return m.listHelp(help) }
 	m.list, m.screen, m.hasList = l, sc, true
 	return m, nil
+}
+
+// listHelp is the list's extra help: help plus the self-update key when it applies.
+func (m *model) listHelp(help []key.Binding) []key.Binding {
+	out := append([]key.Binding{}, help...)
+	if m.newer != nil && !m.choosingConfigs() {
+		out = append(out, keySelfUpd)
+	}
+	return out
 }
 
 func (m *model) showConflicts() (tea.Model, tea.Cmd) {
@@ -111,46 +112,6 @@ func (m *model) resolveItems() []list.Item {
 		items = append(items, item{strings.TrimPrefix(p, ".minecraft/"), desc, p})
 	}
 	return items
-}
-
-func (m *model) showInstances() (tea.Model, tea.Cmd) {
-	m.creating = false
-	var items []list.Item
-	sel, hidden := "", 0
-	for _, in := range m.insts {
-		if !in.GTNH && !m.showAll {
-			hidden++
-			continue
-		}
-		var desc string
-		if in.GTNH {
-			st, _ := update.LoadState(in.Dir)
-			v := update.DetectVersion(in, st, m.manifest).Version
-			if v == "" {
-				v = "version unknown"
-			}
-			desc = "GTNH " + v
-			if sel == "" {
-				sel = in.Dir // the list is sorted most recently played first
-			}
-		} else {
-			desc = "not a GTNH instance"
-		}
-		if a := ago(in.LastLaunch, time.Now()); a != "" {
-			desc += " · played " + a
-		} else {
-			desc += " · never played"
-		}
-		items = append(items, item{in.Name, desc, in.Dir})
-	}
-	if m.inst.Dir != "" {
-		sel = m.inst.Dir
-	}
-	help := []key.Binding{keyNew}
-	if hidden > 0 || m.showAll {
-		help = append(help, keyShowOther)
-	}
-	return m.showList(scInstance, "Which modpack do you want to update?", items, sel, help...)
 }
 
 // kindOf turns a manifest title plus version into words a player knows.

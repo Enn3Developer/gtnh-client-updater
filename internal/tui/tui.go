@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/Enn3Developer/gtnh-client-updater/internal/appcfg"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/selfupdate"
@@ -35,6 +36,7 @@ type Config struct {
 	UpdateCheck bool   // look for a newer gtnh-update on GitHub
 	Create      bool   // start by creating a new instance instead of updating one
 	Name        string // preset name for a new instance
+	Play        bool   // start the chosen instance right away
 	// Configs preselects what happens to config files changed both by the player and by
 	// the new version: "new", "mine", or "" = update.Recommended.
 	Configs string
@@ -58,7 +60,9 @@ type screen int
 
 const (
 	scLoading screen = iota
-	scInstance
+	scHome
+	scLaunching
+	scPlaying
 	scInstalled
 	scTarget
 	scServerMods
@@ -128,6 +132,17 @@ type model struct {
 	newer    *selfupdate.Release
 	restart  bool
 	quitting bool
+
+	app          appcfg.Config
+	findLauncher func(dataDir, override string) (prism.Launcher, error)
+	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
+	isRunning    func(inst prism.Instance) (bool, error)
+	runUnknown   bool                // pickInstance couldn't tell whether the game runs
+	home         map[string]homeInfo // card data per instance Dir, filled by showHome
+	playGen      int
+	playState    string // "starting" | "slow" | "running" | "closed" | "unknown"
+	playStart    time.Time
+	runningSince time.Time
 }
 
 func newModel(cfg Config) *model {
@@ -141,7 +156,8 @@ func newModel(cfg Config) *model {
 	ni.CharLimit = 100
 	return &model{
 		cfg: cfg, spin: sp, input: ti, nameIn: ni, width: 80, height: 24,
-		bar: progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
+		bar:          progress.New(progress.WithGradient("#7FB4CA", "#98BB6C")),
+		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 	}
 }
 
@@ -161,6 +177,14 @@ type (
 	errMsg      struct{ err error }
 	newerMsg    struct{ r *selfupdate.Release }
 	selfDoneMsg struct{}
+	launchedMsg struct{}
+	pollTick    struct{ gen int }
+	pollMsg     struct {
+		gen     int
+		running bool
+		err     error
+	}
+	reloadedMsg struct{ insts []prism.Instance }
 )
 
 func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }
@@ -177,6 +201,9 @@ func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.spin.Tick, m.load}
 	if m.cfg.UpdateCheck {
 		cmds = append(cmds, m.checkSelf)
+	}
+	if c, err := appcfg.Load(); err == nil {
+		m.app = c
 	}
 	return tea.Batch(cmds...)
 }
@@ -224,6 +251,14 @@ func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case selfDoneMsg:
 		m.screen = scSelfUpdated
 		return m, nil
+	case launchedMsg:
+		return m.onLaunched()
+	case pollTick:
+		return m.onPollTick(msg)
+	case pollMsg:
+		return m.onPoll(msg)
+	case reloadedMsg:
+		return m.onReloaded(msg)
 	case errMsg:
 		return m.onError(msg)
 	case tea.KeyMsg:
@@ -289,7 +324,7 @@ func (m *model) onError(msg errMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) isListScreen() bool {
-	return m.screen == scInstance || m.screen == scInstalled || m.screen == scTarget || m.choosingConfigs()
+	return m.screen == scHome || m.screen == scInstalled || m.screen == scTarget || m.choosingConfigs()
 }
 
 // choosingConfigs reports whether a config-choice list is on screen; those belong to a

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
+	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
 )
 
@@ -420,6 +421,90 @@ func TestHeadlessReportsServerModsSyncFailure(t *testing.T) { // C1
 	}
 	if !strings.Contains(out, "heads up: your server's extra mods couldn't be synced:") {
 		t.Errorf("output = %q, want the server-mods sync warning", out)
+	}
+}
+
+// ---- -play (home spec C13) ----
+
+func TestCheckPlayFlagsRejectsPlayWithCreate(t *testing.T) { // C13
+	err := checkPlayFlags(true, true, false, "")
+	if err == nil || err.Error() != "-play can't be used with -create" {
+		t.Errorf("checkPlayFlags(-play -create) = %v, want %q", err, "-play can't be used with -create")
+	}
+}
+
+func TestCheckPlayFlagsPlayYesNeedsInstance(t *testing.T) { // C13
+	err := checkPlayFlags(true, false, true, "")
+	if err == nil || err.Error() != "-play -yes needs -instance" {
+		t.Errorf("checkPlayFlags(-play -yes) = %v, want %q", err, "-play -yes needs -instance")
+	}
+}
+
+func TestCheckPlayFlagsAcceptsValidCombinations(t *testing.T) { // C13
+	cases := []struct {
+		name              string
+		play, create, yes bool
+		instance          string
+	}{
+		{"-play alone", true, false, false, ""},
+		{"-play -yes -instance", true, false, true, "X"},
+		{"-create -yes without -play", false, true, true, ""},
+		{"-yes without -play or -instance", false, false, true, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if err := checkPlayFlags(c.play, c.create, c.yes, c.instance); err != nil {
+				t.Errorf("checkPlayFlags = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestDataDirOfPicksDirHoldingTheInstance(t *testing.T) { // C13
+	d1, d2 := t.TempDir(), t.TempDir()
+	inst := prism.Instance{Dir: filepath.Join(d2, "instances", "X"), Name: "X"}
+	if got := dataDirOf([]string{d1, d2}, inst); got != d2 {
+		t.Errorf("dataDirOf(instance under the second dir) = %q, want %q", got, d2)
+	}
+}
+
+func TestDataDirOfFallsBackToFirstDir(t *testing.T) { // C13
+	d1, d2 := t.TempDir(), t.TempDir()
+	inst := prism.Instance{Dir: filepath.Join(t.TempDir(), "instances", "X"), Name: "X"}
+	if got := dataDirOf([]string{d1, d2}, inst); got != d1 {
+		t.Errorf("dataDirOf(instance elsewhere) = %q, want %q", got, d1)
+	}
+}
+
+func TestDataDirOfIgnoresSiblingWithSamePrefix(t *testing.T) { // C13
+	d1, d2 := t.TempDir(), t.TempDir()
+	inst := prism.Instance{Dir: filepath.Join(d2, "instances-old", "X"), Name: "X"}
+	if got := dataDirOf([]string{d1, d2}, inst); got != d1 {
+		t.Errorf("dataDirOf(instance under instances-old) = %q, want %q", got, d1)
+	}
+}
+
+func TestPlayHeadlessUnknownInstanceFailsBeforeNetwork(t *testing.T) { // C13
+	client := &http.Client{Transport: failTransport{t}}
+	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "", "", update.TakeNew)
+	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
+		t.Errorf("playHeadless(nope) = %v, want an error naming \"nope\"", err)
+	}
+}
+
+func TestPlayHeadlessWithVersionUpdatesFirstAndStopsOnItsError(t *testing.T) { // C13
+	client := &http.Client{Transport: errTransport{}}
+	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "2.8.4", "none", update.TakeNew)
+	if !errors.Is(err, errOffline) {
+		t.Errorf("playHeadless(-version, offline) = %v, want the update's network error", err)
+	}
+}
+
+func TestPlayHeadlessWithoutPrismFails(t *testing.T) { // C13
+	client := &http.Client{Transport: failTransport{t}}
+	err := playHeadless(client, nil, "nope", "", "", "", update.TakeNew)
+	if err == nil || err.Error() != "Prism Launcher not found -- pass -prism-dir" {
+		t.Errorf("playHeadless(no dirs) = %v, want %q", err, "Prism Launcher not found -- pass -prism-dir")
 	}
 }
 

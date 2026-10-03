@@ -288,7 +288,7 @@ func TestResolveQQuits(t *testing.T) { // C6
 // ---- C7 list screens ----
 
 func TestIsListScreenExactlyForListScreens(t *testing.T) { // C7
-	lists := []screen{scInstance, scInstalled, scTarget, scConflicts, scResolve}
+	lists := []screen{scHome, scInstalled, scTarget, scConflicts, scResolve}
 	for sc := scLoading; sc <= scSelfUpdated; sc++ {
 		m := &model{screen: sc}
 		if got, want := m.isListScreen(), slices.Contains(lists, sc); got != want {
@@ -301,11 +301,12 @@ func TestSelfUpdateKeyIsHelpedOnVersionListButNotOnConflicts(t *testing.T) { // 
 	m := routeModel(t)
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	m.showTargets()
-	onTargets := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), func(b key.Binding) bool { return b.Help().Key == "u" })
+	isSelfUpd := func(b key.Binding) bool { return b.Help().Key == "v" && b.Help().Desc == "new version" }
+	onTargets := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), isSelfUpd)
 	prepared(t, m)
-	onConflicts := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), func(b key.Binding) bool { return b.Help().Key == "u" })
+	onConflicts := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), isSelfUpd)
 	if !onTargets || onConflicts {
-		t.Errorf("u in help: version list %v, conflicts %v; want true, false", onTargets, onConflicts)
+		t.Errorf("\"v new version\" in help: version list %v, conflicts %v; want true, false", onTargets, onConflicts)
 	}
 }
 
@@ -315,8 +316,8 @@ func TestVersionListEscReturnsToInstances(t *testing.T) {
 	m := routeModel(t)
 	m.showTargets()
 	press(m, keyEsc)
-	if m.screen != scInstance {
-		t.Errorf("esc on versions: screen %d, want scInstance (%d)", m.screen, scInstance)
+	if m.screen != scHome {
+		t.Errorf("esc on versions: screen %d, want scHome (%d)", m.screen, scHome)
 	}
 }
 
@@ -360,10 +361,10 @@ func TestCreateVersionListIgnoresI(t *testing.T) { // C9
 
 func TestInstanceListIgnoresI(t *testing.T) {
 	m := routeModel(t)
-	m.showInstances()
+	m.showHome()
 	press(m, runes("i"))
-	if m.screen != scInstance {
-		t.Errorf("i on instances: screen %d, want scInstance (%d)", m.screen, scInstance)
+	if m.screen != scHome {
+		t.Errorf("i on instances: screen %d, want scHome (%d)", m.screen, scHome)
 	}
 }
 
@@ -381,8 +382,8 @@ func TestLoadWithOnlyOtherInstancesListsThem(t *testing.T) {
 	m := sizedModel(t)
 	other := prism.Instance{Dir: t.TempDir(), Name: "Vanilla"}
 	m.Update(loadedMsg{routeManifest(t), []prism.Instance{other}})
-	if m.screen != scInstance || m.creating {
-		t.Errorf("loaded with one non-GTNH instance: screen %d, creating %v; want scInstance (%d), false", m.screen, m.creating, scInstance)
+	if m.screen != scHome || m.creating {
+		t.Errorf("loaded with one non-GTNH instance: screen %d, creating %v; want scHome (%d), false", m.screen, m.creating, scHome)
 	}
 }
 
@@ -489,7 +490,7 @@ func TestScrollResetsWhenScreenChanges(t *testing.T) { // C8
 
 func TestInstanceListNStartsCreate(t *testing.T) { // C9
 	m := routeModel(t)
-	m.showInstances()
+	m.showHome()
 	press(m, runes("n"))
 	if m.screen != scTarget || !m.creating {
 		t.Errorf("n on instances: screen %d, creating %v; want scTarget (%d), true", m.screen, m.creating, scTarget)
@@ -699,8 +700,8 @@ func TestErrorEscGoesBack(t *testing.T) {
 		{"failed download goes to versions", true, false, scPreparing, scTarget},
 		{"failed self-update goes to versions", true, false, scSelfUpdate, scTarget},
 		{"failed create download goes to versions", false, true, scPreparing, scTarget},
-		{"no instance picked goes to instances", false, false, scPreparing, scInstance},
-		{"instance pick failure goes to instances", true, false, scInstance, scInstance},
+		{"no instance picked goes to instances", false, false, scPreparing, scHome},
+		{"instance pick failure goes to instances", true, false, scHome, scHome},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1000,7 +1001,7 @@ func TestLoadResolvesLatestStableTarget(t *testing.T) { // C13
 func TestLoadResolvesLatestTargetForUpdate(t *testing.T) { // C13
 	m := sizedModel(t)
 	m.cfg.Target, m.cfg.ServerMods = "latest", "none"
-	m.cfg.Installed = "2.8.4"
+	m.cfg.Installed, m.cfg.Instance = "2.8.4", "Pack" // C2: -version only skips home together with -instance
 	inst := prism.Instance{Dir: t.TempDir(), Name: "Pack", GTNH: true}
 	press(m, loadedMsg{routeManifest(t), []prism.Instance{inst}})
 	if m.target != "2.9.0-RC-1" || m.screen != scPreparing {
@@ -1058,7 +1059,6 @@ func TestListHelpLinesFitHundredColumns(t *testing.T) { // C14
 		name  string
 		setup func(t *testing.T, m *model)
 	}{
-		{"instances", func(t *testing.T, m *model) { m.showAll = true; m.showInstances() }},
 		{"update versions", func(t *testing.T, m *model) { m.showTargets() }},
 		{"create versions", func(t *testing.T, m *model) { m.startCreate() }},
 		{"conflicts", func(t *testing.T, m *model) { prepared(t, m) }},

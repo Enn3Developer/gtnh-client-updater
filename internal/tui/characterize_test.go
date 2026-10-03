@@ -332,14 +332,9 @@ func pageText(m *model) string {
 	return fmt.Sprintf("[header]\n%s\n[body]\n%s\n[footer]\n%s\n[scroll %d]", cleanLines(header), cleanLines(body), cleanLines(footer), scroll)
 }
 
-// expectedGolden fills in what depends on the OS: the instances path and, where Prism
-// can't tell whether the game runs, the confirm screen's "close Minecraft" note.
+// expectedGolden fills in what depends on the OS: the instances path.
 func expectedGolden(g string) string {
-	g = strings.ReplaceAll(g, goldenInstancesDir, filepath.Join("prism", "instances"))
-	if !prism.CanDetectRunning {
-		g = strings.ReplaceAll(g, "just in case.\n", "just in case.\n\n  Make sure Minecraft is closed before you continue.\n")
-	}
-	return g
+	return strings.ReplaceAll(g, goldenInstancesDir, filepath.Join("prism", "instances"))
 }
 
 // firstDiff describes the first differing line of two texts.
@@ -384,7 +379,7 @@ func TestC1PageGoldens(t *testing.T) {
 // synced" warning starts at the normal bullet indentation.
 var pageGoldens = map[string]string{
 	"loading": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 ⣾  Looking for your GTNH instances…
@@ -392,7 +387,7 @@ GTNH Updater 1.2.3
 
 [scroll 2147483647]`,
 	"server mods empty": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Does your server have its own extra mods?
@@ -409,7 +404,7 @@ No link? Leave it empty — you can add one later with m on the version list.
 enter continue    esc back
 [scroll 0]`,
 	"server mods bad link": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Does your server have its own extra mods?
@@ -427,7 +422,7 @@ No link? Leave it empty — you can add one later with m on the version list.
 enter continue    esc back
 [scroll 0]`,
 	"server mods create": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Does your server have its own extra mods?
@@ -444,7 +439,7 @@ No link? Leave it empty — you can add one later with m on the version list.
 enter continue    esc back
 [scroll 0]`,
 	"name": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 What should the new instance be called?
@@ -459,7 +454,7 @@ It'll be created in {INSTANCES}
 enter continue    esc back
 [scroll 0]`,
 	"name with error": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 What should the new instance be called?
@@ -476,7 +471,7 @@ It'll be created in {INSTANCES}
 enter continue    esc back
 [scroll 0]`,
 	"preparing update": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Getting GTNH 2.9.0-RC-1 ready for Pack
@@ -497,7 +492,7 @@ to wrap onto another line of the terminal
 ctrl+c cancel
 [scroll 2147483647]`,
 	"preparing create": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Getting GTNH 2.8.4 ready
@@ -515,7 +510,7 @@ to wrap onto another line of the terminal
 ctrl+c cancel
 [scroll 2147483647]`,
 	"preparing create cancelling": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Getting GTNH 2.8.4 ready
@@ -530,7 +525,7 @@ to wrap onto another line of the terminal
 Stopping and cleaning up…
 [scroll 2147483647]`,
 	"applying update": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Updating Pack to GTNH 2.9.0-RC-1
@@ -546,7 +541,7 @@ to wrap onto another line of the terminal
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"applying create": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Creating My Pack
@@ -564,7 +559,7 @@ to wrap onto another line of the terminal
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"self update": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Updating gtnh-update itself
@@ -582,7 +577,7 @@ to wrap onto another line of the terminal
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"confirm update": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Ready to update Pack from 2.8.4 to 2.9.0-RC-1
@@ -614,7 +609,7 @@ to wrap onto another line of the terminal
 enter update now    esc go back
 [scroll 0]`,
 	"confirm downgrade nothing to do": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Ready to update Pack from 2.8.4 to 2.8.1
@@ -636,7 +631,7 @@ to wrap onto another line of the terminal
 enter update now    esc go back
 [scroll 0]`,
 	"confirm refresh singular": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Ready to refresh Pack on GTNH 2.8.4
@@ -659,7 +654,7 @@ to wrap onto another line of the terminal
 enter update now    esc go back
 [scroll 0]`,
 	"confirm create": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Ready to create My Pack with GTNH 2.8.4
@@ -679,7 +674,7 @@ to wrap onto another line of the terminal
 enter create it    esc go back
 [scroll 0]`,
 	"confirm create java 8": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Ready to create My Pack with GTNH 2.8.4
@@ -698,7 +693,7 @@ to wrap onto another line of the terminal
 enter create it    esc go back
 [scroll 0]`,
 	"done update": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 All done! Pack is now on GTNH 2.9.0-RC-1.
@@ -725,13 +720,13 @@ updater/backup-20260101-120000
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-You can start the game from Prism now. Have fun!
+Press p to start the game now, or enter to go back.
 [footer]
 
-enter exit
+enter back    p play now    q quit
 [scroll 0]`,
 	"done update singular removed old server mods": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 All done! Pack is now on GTNH 2.8.4.
@@ -749,13 +744,13 @@ many mods rewrite their own config when the game starts.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-You can start the game from Prism now. Have fun!
+Press p to start the game now, or enter to go back.
 [footer]
 
-enter exit
+enter back    p play now    q quit
 [scroll 0]`,
 	"done update nothing changed": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 All done! Pack is now on GTNH 2.8.4.
@@ -766,13 +761,13 @@ All done! Pack is now on GTNH 2.8.4.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-You can start the game from Prism now. Have fun!
+Press p to start the game now, or enter to go back.
 [footer]
 
-enter exit
+enter back    p play now    q quit
 [scroll 0]`,
 	"done create": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 All done! My Pack is ready in Prism.
@@ -787,13 +782,13 @@ All done! My Pack is ready in Prism.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-You can start the game from Prism now. Have fun!
+Press p to start the game now, or enter to go back.
 [footer]
 
-enter exit
+enter back    p play now    q quit
 [scroll 0]`,
 	"error update preparing": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -806,7 +801,7 @@ Nothing in your instance was changed.
 esc go back    enter exit
 [scroll 0]`,
 	"error update applying rolled back": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -819,7 +814,7 @@ Everything was put back the way it was, so your instance is exactly as before.
 enter exit
 [scroll 0]`,
 	"error update applying says rolled back without ErrRolledBack": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -833,7 +828,7 @@ inside the instance.
 enter exit
 [scroll 0]`,
 	"error update applying": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -847,7 +842,7 @@ inside the instance.
 enter exit
 [scroll 0]`,
 	"error loading": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -858,7 +853,7 @@ I couldn't find Prism Launcher on this computer.
 enter exit
 [scroll 0]`,
 	"error create preparing": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -871,7 +866,7 @@ Nothing was created.
 esc go back    enter exit
 [scroll 0]`,
 	"error create applying": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -884,7 +879,7 @@ I removed the half-made instance, so there's nothing to clean up.
 enter exit
 [scroll 0]`,
 	"error create preparing leftover": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -897,7 +892,7 @@ trying again. It's here: /x/My Pack (access denied)
 esc go back    enter exit
 [scroll 0]`,
 	"error create applying leftover": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 Something went wrong
@@ -910,7 +905,7 @@ trying again. It's here: /x/My Pack (access denied)
 enter exit
 [scroll 0]`,
 	"self updated": `[header]
-GTNH Updater 1.2.3
+GTNH Launcher 1.2.3
 
 [body]
 gtnh-update is now version 9.9.9.
@@ -1046,24 +1041,20 @@ func TestC3InstalledEscGoesToInstances(t *testing.T) {
 	m := routeModel(t)
 	m.showInstalled()
 	press(m, keyEsc)
-	if m.screen != scInstance {
-		t.Errorf("esc on installed: screen %d, want scInstance (%d)", m.screen, scInstance)
+	if m.screen != scHome {
+		t.Errorf("esc on installed: screen %d, want scHome (%d)", m.screen, scHome)
 	}
 }
 
 // ---- C4 end screens ----
 
-func TestC4DoneKeysQuit(t *testing.T) {
-	for _, k := range []tea.KeyMsg{runes("q"), keyEnter, keyEsc} {
-		t.Run(k.String(), func(t *testing.T) {
-			m := routeModel(t)
-			m.session = &update.Session{Plan: &update.Plan{}}
-			m.Update(appliedMsg{&update.Result{From: "2.8.4", To: "2.8.4"}})
-			cmd := press(m, k)
-			if !m.quitting || !isQuit(cmd) {
-				t.Errorf("%s on done: quitting %v, quit cmd %v; want true, true", k, m.quitting, isQuit(cmd))
-			}
-		})
+func TestC4DoneKeysQuit(t *testing.T) { // home spec C11: enter/esc go home now, only q quits
+	m := routeModel(t)
+	m.session = &update.Session{Plan: &update.Plan{}}
+	m.Update(appliedMsg{&update.Result{From: "2.8.4", To: "2.8.4"}})
+	cmd := press(m, runes("q"))
+	if !m.quitting || !isQuit(cmd) {
+		t.Errorf("q on done: quitting %v, quit cmd %v; want true, true", m.quitting, isQuit(cmd))
 	}
 }
 
@@ -1102,8 +1093,8 @@ func TestC4ErrorEscGoesBackOrQuits(t *testing.T) {
 	}{
 		{"preparing with instance goes to versions", scPreparing, true, true, scTarget, false},
 		{"self-update goes to versions", scSelfUpdate, true, true, scTarget, false},
-		{"preparing without instance goes to instances", scPreparing, false, true, scInstance, false},
-		{"instance phase goes to instances", scInstance, true, true, scInstance, false},
+		{"preparing without instance goes to instances", scPreparing, false, true, scHome, false},
+		{"instance phase goes to instances", scHome, true, true, scHome, false},
 		{"applying quits", scApplying, true, true, scError, true},
 		{"loading quits", scLoading, true, true, scError, true},
 		{"no manifest quits", scPreparing, true, false, scError, true},
@@ -1143,43 +1134,44 @@ func TestC4ErrorQAndEnterQuitEvenWhenGoingBackIsPossible(t *testing.T) {
 func TestC5InstanceAShowsAllAndRebuilds(t *testing.T) {
 	m := routeModel(t)
 	m.insts = append(m.insts, prism.Instance{Dir: t.TempDir(), Name: "Vanilla"})
-	m.showInstances()
+	m.showHome()
 	before := len(m.list.Items())
 	press(m, runes("a"))
-	if !m.showAll || len(m.list.Items()) != 2 || before != 1 || m.screen != scInstance {
-		t.Errorf("a on instances: showAll %v, items %d -> %d, screen %d; want true, 1 -> 2, scInstance", m.showAll, before, len(m.list.Items()), m.screen)
+	if !m.showAll || len(m.list.Items()) != 2 || before != 1 || m.screen != scHome {
+		t.Errorf("a on instances: showAll %v, items %d -> %d, screen %d; want true, 1 -> 2, scHome", m.showAll, before, len(m.list.Items()), m.screen)
 	}
 }
 
 func TestC5InstanceATwiceHidesOthersAgain(t *testing.T) {
 	m := routeModel(t)
 	m.insts = append(m.insts, prism.Instance{Dir: t.TempDir(), Name: "Vanilla"})
-	m.showInstances()
+	m.showHome()
 	press(m, runes("a"), runes("a"))
 	if m.showAll || len(m.list.Items()) != 1 {
 		t.Errorf("a twice on instances: showAll %v, items %d; want false, 1", m.showAll, len(m.list.Items()))
 	}
 }
 
-func TestC5UWithNewerStartsSelfUpdate(t *testing.T) {
+func TestC5VWithNewerStartsSelfUpdate(t *testing.T) { // home spec C5: the self-update key is v
 	m := routeModel(t)
 	m.showTargets()
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	m.warns, m.steps, m.done, m.total = []string{"w"}, []string{"s"}, 5, 10
-	cmd := press(m, runes("u"))
+	cmd := press(m, runes("v"))
 	if m.screen != scSelfUpdate || m.step != "Downloading gtnh-update 9.9.9" || cmd == nil ||
 		m.warns != nil || m.steps != nil || m.done != 0 || m.total != 0 {
-		t.Errorf("u with newer: screen %d, step %q, cmd nil %v, warns %v, steps %v, done/total %d/%d; want scSelfUpdate, the download step, a cmd, all reset",
+		t.Errorf("v with newer: screen %d, step %q, cmd nil %v, warns %v, steps %v, done/total %d/%d; want scSelfUpdate, the download step, a cmd, all reset",
 			m.screen, m.step, cmd == nil, m.warns, m.steps, m.done, m.total)
 	}
 }
 
-func TestC5UWithoutNewerStaysOnList(t *testing.T) {
+func TestC5UOnVersionListNoLongerSelfUpdates(t *testing.T) { // home spec C5
 	m := routeModel(t)
 	m.showTargets()
+	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	press(m, runes("u"))
 	if m.screen != scTarget {
-		t.Errorf("u without newer: screen %d, want scTarget (%d)", m.screen, scTarget)
+		t.Errorf("u on versions with newer: screen %d, want scTarget (%d)", m.screen, scTarget)
 	}
 }
 
@@ -1688,20 +1680,26 @@ func lookupModel(t *testing.T, want string) (*model, prism.Instance, prism.Insta
 	return m, a, b
 }
 
-func TestC11InstanceFlagFindsByName(t *testing.T) {
+// selectedKey is the key of the list item under the cursor ("" if none).
+func selectedKey(m *model) string {
+	sel, _ := m.list.SelectedItem().(item)
+	return sel.key
+}
+
+func TestC11InstanceFlagFindsByName(t *testing.T) { // home spec C2: without -version it lands on home
 	m, _, b := lookupModel(t, "Beta")
 	m.afterLoad()
-	if m.inst.Dir != b.Dir || m.screen != scTarget {
-		t.Errorf("-instance Beta: picked %q, screen %d; want %q, scTarget", m.inst.Name, m.screen, b.Name)
+	if selectedKey(m) != b.Dir || m.screen != scHome {
+		t.Errorf("-instance Beta: selected %q, screen %d; want %q, scHome (%d)", selectedKey(m), m.screen, b.Dir, scHome)
 	}
 }
 
-func TestC11InstanceFlagFindsByDir(t *testing.T) {
+func TestC11InstanceFlagFindsByDir(t *testing.T) { // home spec C2
 	m, _, b := lookupModel(t, "")
 	m.cfg.Instance = b.Dir
 	m.afterLoad()
-	if m.inst.Dir != b.Dir {
-		t.Errorf("-instance <Beta's dir>: picked %q, want Beta", m.inst.Name)
+	if selectedKey(m) != b.Dir || m.screen != scHome {
+		t.Errorf("-instance <Beta's dir>: selected %q, screen %d; want %q, scHome (%d)", selectedKey(m), m.screen, b.Dir, scHome)
 	}
 }
 
@@ -1710,8 +1708,8 @@ func TestC11InstanceFlagLoadsUnlistedInstanceFolder(t *testing.T) {
 	dir := prismInstance(t, t.TempDir(), "g", "Gamma")
 	m.cfg.Instance = dir
 	m.afterLoad()
-	if m.inst.Name != "Gamma" || len(m.insts) != 3 || m.insts[2].Dir != dir {
-		t.Errorf("-instance <unlisted folder>: picked %q, %d instances; want Gamma added as the third", m.inst.Name, len(m.insts))
+	if len(m.insts) != 3 || m.insts[2].Dir != dir || m.insts[2].Name != "Gamma" || m.screen != scHome {
+		t.Errorf("-instance <unlisted folder>: %d instances, screen %d; want Gamma added as the third, scHome (%d)", len(m.insts), m.screen, scHome)
 	}
 }
 
@@ -1724,23 +1722,24 @@ func TestC11InstanceFlagUnknownIsAnError(t *testing.T) {
 	}
 }
 
-func TestC11InstanceListEnterPicksSelectedInstance(t *testing.T) {
+func TestC11HomeUPicksSelectedInstanceForUpdate(t *testing.T) { // home spec C5: u is the update path
 	m, _, b := lookupModel(t, "")
 	m.cfg.Instance = ""
-	m.showInstances()
-	press(m, keyDown, keyEnter)
+	m.showHome()
+	press(m, keyDown, runes("u"))
 	if m.inst.Dir != b.Dir || m.screen != scTarget {
-		t.Errorf("enter on the second instance: picked %q, screen %d; want Beta, scTarget", m.inst.Name, m.screen)
+		t.Errorf("u on the second instance: picked %q, screen %d; want Beta, scTarget", m.inst.Name, m.screen)
 	}
 }
 
-func TestC11InstanceListSaysWhenPlayed(t *testing.T) {
+func TestC11InstanceListSaysWhenPlayed(t *testing.T) { // home spec C3: unknown version reads "update available"
 	m := routeModel(t)
 	m.insts[0].LastLaunch = time.Now().Add(-3 * 24 * time.Hour)
-	m.showInstances()
+	m.inst = prism.Instance{}
+	m.showHome()
 	desc := m.list.Items()[0].(item).desc
-	if desc != "GTNH version unknown · played 3 days ago" {
-		t.Errorf("instance desc = %q, want %q", desc, "GTNH version unknown · played 3 days ago")
+	if want := "GTNH version unknown · played 3 days ago · update available"; desc != want {
+		t.Errorf("instance desc = %q, want %q", desc, want)
 	}
 }
 
@@ -1757,7 +1756,7 @@ func TestC11ListViewShowsNewVersionBanner(t *testing.T) {
 	m := routeModel(t)
 	m.showTargets()
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
-	if v := words(m.View()); !strings.Contains(v, "A new version of this updater is out (9.9.9) — press u to get it") {
+	if v := words(m.View()); !strings.Contains(v, "A new version of this updater is out (9.9.9) — press v to get it") {
 		t.Errorf("list view %q lacks the new-version banner", v)
 	}
 }
