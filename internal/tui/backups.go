@@ -47,28 +47,21 @@ func (m *model) keyBackups(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.list.FilterState() == list.Filtering {
-		return m.updateList(k) // typing into the filter: let the list have every key
+	if md, cmd, ok := m.listKey(k, m.showHome); ok {
+		return md, cmd
 	}
-	switch k.String() {
-	case "enter":
-		sel, ok := m.list.SelectedItem().(item)
+	if k.String() == "enter" {
+		dir, ok := m.selectedKey()
 		if !ok {
 			return m, nil
 		}
 		for _, b := range m.backups {
-			if b.Dir == sel.key {
+			if b.Dir == dir {
 				m.backup, m.screen = b, scRestoreConfirm
 				return m, nil
 			}
 		}
 		return m, nil
-	case "esc":
-		if m.list.FilterState() == list.Unfiltered {
-			return m.showHome()
-		}
-	case "q":
-		return m.quit()
 	}
 	return m.updateList(k)
 }

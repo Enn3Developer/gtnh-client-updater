@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
@@ -73,25 +72,23 @@ func (m *model) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) keyList(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.list.FilterState() == list.Filtering {
-		return m.updateList(k) // typing into the filter: let the list have every key
+	var back func() (tea.Model, tea.Cmd)
+	if len(m.insts) > 0 {
+		back = m.showHome
+	}
+	if md, cmd, ok := m.listKey(k, back); ok {
+		return md, cmd
 	}
 	switch k.String() {
 	case "enter":
-		if sel, ok := m.list.SelectedItem().(item); ok {
-			return m.choose(sel.key)
+		if key, ok := m.selectedKey(); ok {
+			return m.choose(key)
 		}
 		return m, nil
 	case "v":
 		if m.newer != nil {
 			return m.startSelfUpdate()
 		}
-	case "esc":
-		if m.list.FilterState() == list.Unfiltered && len(m.insts) > 0 {
-			return m.showHome()
-		}
-	case "q":
-		return m.quit()
 	case "i":
 		if m.screen == scTarget && !m.creating {
 			return m.showInstalled()
@@ -213,14 +210,14 @@ func (m *model) keyConfirmCreate(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) keyConflicts(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.list.FilterState() == list.Filtering {
-		return m.updateList(k) // typing into the filter: let the list have every key
+	if md, cmd, ok := m.listKey(k, m.dropSession); ok {
+		return md, cmd
 	}
 	pl := m.session.Plan
 	switch k.String() {
 	case "enter":
-		sel, _ := m.list.SelectedItem().(item)
-		switch sel.key {
+		key, _ := m.selectedKey()
+		switch key {
 		case "new":
 			pl.ChooseAll(update.TakeNew)
 		case "mine":
@@ -232,29 +229,23 @@ func (m *model) keyConflicts(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = scConfirm
 		return m, nil
-	case "esc":
-		if m.list.FilterState() == list.Unfiltered {
-			return m.dropSession()
-		}
-	case "q":
-		return m.quit()
 	}
 	return m.updateList(k)
 }
 
 func (m *model) keyResolve(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.list.FilterState() == list.Filtering {
-		return m.updateList(k) // typing into the filter: let the list have every key
+	if md, cmd, ok := m.listKey(k, m.showConflicts); ok {
+		return md, cmd
 	}
 	pl := m.session.Plan
 	switch k.String() {
 	case " ":
-		if sel, ok := m.list.SelectedItem().(item); ok {
+		if key, ok := m.selectedKey(); ok {
 			c := update.TakeNew
-			if pl.ChoiceOf(sel.key) == update.TakeNew {
+			if pl.ChoiceOf(key) == update.TakeNew {
 				c = update.KeepMine
 			}
-			pl.Choose(sel.key, c)
+			pl.Choose(key, c)
 			return m, m.refreshResolve()
 		}
 		return m, nil
@@ -267,12 +258,6 @@ func (m *model) keyResolve(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		m.screen = scConfirm
 		return m, nil
-	case "esc":
-		if m.list.FilterState() == list.Unfiltered {
-			return m.showConflicts()
-		}
-	case "q":
-		return m.quit()
 	}
 	return m.updateList(k)
 }

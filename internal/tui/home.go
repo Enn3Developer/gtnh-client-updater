@@ -89,7 +89,7 @@ func homeStatus(info homeInfo) string {
 
 // selectedHome is the selected home item's key and card data.
 func (m *model) selectedHome() (string, homeInfo, bool) {
-	sel, ok := m.list.SelectedItem().(item)
+	sel, ok := m.selectedItem()
 	if !ok {
 		return "", homeInfo{}, false
 	}
@@ -103,7 +103,8 @@ func (m *model) cardView() string {
 	if !ok {
 		return ""
 	}
-	name := m.list.SelectedItem().(item).title
+	sel, _ := m.selectedItem()
+	name := sel.title
 	if in, ok := m.instanceOf(dir); ok {
 		name = in.Name
 	}
@@ -185,8 +186,8 @@ func (m *model) instanceOf(dir string) (prism.Instance, bool) {
 }
 
 func (m *model) keyHome(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.list.FilterState() == list.Filtering {
-		return m.updateList(k) // typing into the filter: let the list have every key
+	if md, cmd, ok := m.listKey(k, nil); ok {
+		return md, cmd
 	}
 	switch k.String() {
 	case "n":
@@ -194,8 +195,6 @@ func (m *model) keyHome(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		m.showAll = !m.showAll
 		return m.showHome()
-	case "q":
-		return m.quit()
 	case "v":
 		if m.newer != nil {
 			return m.startSelfUpdate()

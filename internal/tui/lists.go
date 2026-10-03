@@ -32,6 +32,36 @@ func (i item) Title() string       { return i.title }
 func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
 
+// selectedItem is the item under the list cursor; false when there is none.
+func (m *model) selectedItem() (item, bool) {
+	sel, ok := m.list.SelectedItem().(item)
+	return sel, ok
+}
+
+// selectedKey is the key of the item under the list cursor; false when there is none.
+func (m *model) selectedKey() (string, bool) {
+	sel, ok := m.selectedItem()
+	return sel.key, ok
+}
+
+// listKey handles the keys every list screen treats alike: while the filter is being typed
+// the list gets every key, esc on an unfiltered list goes back (when back isn't nil) and q
+// quits. handled is false for any other key, which is the caller's to handle.
+func (m *model) listKey(k tea.KeyMsg, back func() (tea.Model, tea.Cmd)) (md tea.Model, cmd tea.Cmd, handled bool) {
+	switch {
+	case m.list.FilterState() == list.Filtering:
+		md, cmd = m.updateList(k) // typing into the filter: let the list have every key
+		return md, cmd, true
+	case k.String() == "esc" && m.list.FilterState() == list.Unfiltered && back != nil:
+		md, cmd = back()
+		return md, cmd, true
+	case k.String() == "q":
+		md, cmd = m.quit()
+		return md, cmd, true
+	}
+	return nil, nil, false
+}
+
 func (m *model) showList(sc screen, title string, items []list.Item, selected string, help ...key.Binding) (tea.Model, tea.Cmd) {
 	return m.showListWith(sc, title, m.listDelegate(), items, selected, help...)
 }

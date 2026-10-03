@@ -154,31 +154,25 @@ func (m *model) keySettings(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.savedRow = ""
 	m.list.SetDelegate(m.settingsDelegate())
 	prev := m.list.Index()
-	if m.list.FilterState() == list.Filtering {
-		md, cmd := m.updateList(k)
+	if md, cmd, ok := m.listKey(k, m.reloadHome); ok {
+		// A no-op after reloadHome or quit: neither moves the cursor, which is never left on a heading.
 		m.skipSections(prev)
 		return md, cmd
 	}
 	switch k.String() {
 	case "enter":
-		sel, ok := m.list.SelectedItem().(item)
+		row, ok := m.selectedKey()
 		if !ok {
 			return m, nil
 		}
-		if sel.key == "" { // a section heading
+		if row == "" { // a section heading
 			return m, nil
 		}
-		m.setting = sel.key
-		if sel.key == "after" {
+		m.setting = row
+		if row == "after" {
 			return m.toggleAfterPlay()
 		}
-		return m.editSetting(sel.key)
-	case "esc":
-		if m.list.FilterState() == list.Unfiltered {
-			return m.reloadHome()
-		}
-	case "q":
-		return m.quit()
+		return m.editSetting(row)
 	}
 	md, cmd := m.updateList(k)
 	m.skipSections(prev)
