@@ -3,7 +3,7 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   ▶ Play                                                                    enter
+○ Vanilla        │   Play                                                                      enter
                  │   Play and join play.example.org                                                j
                  │
                  │ Update
@@ -13,7 +13,8 @@ Instances        │ Older
                  │
                  │ Settings
                  │ ▸ Memory         6144
-                 │   How much memory the game may use, in MB — GTNH runs well with 6144 to 8192. Em…
+                 │   How much memory the game may use, in MB — GTNH runs well with 6144 to 8192.
+                 │   Empty means Prism's default.
                  │   Java arguments Prism's default
                  │   Java           Prism's default
                  │   Window         Prism's default
@@ -21,9 +22,8 @@ Instances        │ Older
                  │   Server mods    mods.example.org
                  │
                  │ Launcher
-                 │   After I start the game stay open and show whether it's running
-                 │   Prism Launcher found automatically
-                 │
+                 │   After I start the game  stay open
+                 │   Prism Launcher          found automatically
                  │
                  │
                  │

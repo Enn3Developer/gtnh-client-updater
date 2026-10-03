@@ -170,18 +170,18 @@ func TestC5EnterOnTheJobRowDoesNothing(t *testing.T) {
 	}
 }
 
-// C5: progress line: bar, percentage and how much.
+// C5/polish2 C2: the bar line ends in the percentage; the next line says how much.
 func TestC5ProgressLineSaysHowFarAlong(t *testing.T) {
 	cases := []struct {
 		name        string
 		done, total int64
-		want        string
+		pct, detail string
 	}{
-		{"files", 500, 1000, "  50% · 500 of 1,000 files"},
-		{"integer percent", 2, 3, "  66% · 2 of 3 files"},
-		{"a million is files", 500_000, 1_000_000, "  50% · 500,000 of 1,000,000 files"},
-		{"above a million is bytes", 0, 1_000_001, "  0% · 0 MB of 1 MB"},
-		{"bytes", 300_000_000, 600_000_000, "  50% · 300 MB of 600 MB"},
+		{"files", 500, 1000, "  50%", "  500 of 1,000 files"},
+		{"integer percent", 2, 3, "  66%", "  2 of 3 files"},
+		{"a million is files", 500_000, 1_000_000, "  50%", "  500,000 of 1,000,000 files"},
+		{"above a million is bytes", 0, 1_000_001, "  0%", "  0 MB of 1 MB"},
+		{"bytes", 300_000_000, 600_000_000, "  50%", "  300 MB of 600 MB"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -191,14 +191,14 @@ func TestC5ProgressLineSaysHowFarAlong(t *testing.T) {
 
 			got := plainLines(m.jobLines(100))
 
-			if len(got) != 3 || !strings.HasPrefix(got[1], "  ") || !strings.HasSuffix(got[1], c.want) {
-				t.Errorf("jobLines = %q, want line 2 ending in %q", got, c.want)
+			if len(got) != 4 || !strings.HasPrefix(got[1], "  ") || !strings.HasSuffix(got[1], c.pct) || got[2] != c.detail {
+				t.Errorf("jobLines = %q, want line 2 ending in %q and line 3 = %q", got, c.pct, c.detail)
 			}
 		})
 	}
 }
 
-// C5
+// C5/polish2 C2
 func TestC5ProgressLineAddsTheTimeLeft(t *testing.T) {
 	m, _ := jobModel(t, "prepare")
 	m.Update(stepMsg("Downloading GTNH 2.8.4"))
@@ -207,14 +207,14 @@ func TestC5ProgressLineAddsTheTimeLeft(t *testing.T) {
 
 	got := plainLines(m.jobLines(100))
 
-	if len(got) < 2 || !strings.HasSuffix(got[1], "  50% · 500 of 1,000 files · about 20 seconds left") {
+	if len(got) < 3 || got[2] != "  500 of 1,000 files · about 20 seconds left" {
 		t.Errorf("jobLines = %q", got)
 	}
 }
 
-// C5: bar width max(min(width-14, 48), 8).
+// polish2 C2: bar width min(rowWidth-12, 40).
 func TestC5ProgressBarWidth(t *testing.T) {
-	cases := []struct{ width, bar int }{{100, 48}, {62, 48}, {61, 47}, {30, 16}, {22, 8}, {20, 8}}
+	cases := []struct{ width, bar int }{{100, 40}, {52, 40}, {51, 39}, {30, 18}, {22, 10}, {20, 8}}
 	for _, c := range cases {
 		t.Run(fmt.Sprint(c.width), func(t *testing.T) {
 			m, _ := jobModel(t, "prepare")
@@ -308,13 +308,13 @@ func TestC5ViewShowsTheJobBlock(t *testing.T) {
 
 	lines := screen(m)
 
-	for _, want := range []string{"◐ " + checking284, "50% · 500 of 1,000 files",
+	for _, want := range []string{"◐ " + checking284, "  50%", "500 of 1,000 files",
 		"✓ Downloading GTNH 2.8.4 ·", "Checking your files", "Heads up: Your server mods link is down"} {
 		if !containsLine(lines, want) {
 			t.Errorf("view lacks %q:\n%s", want, strings.Join(lines, "\n"))
 		}
 	}
-	if containsLine(lines, "▶ Play") {
+	if containsLine(lines, "Play") {
 		t.Errorf("view still has the Play row")
 	}
 }
@@ -402,7 +402,7 @@ func TestC11StatusBarAsksNotToCloseWhileApplying(t *testing.T) {
 	cases := []struct {
 		phase, want string
 	}{
-		{"apply", "↑↓,move,enter,run,n,new instance,updating,please don't close this window"},
+		{"apply", "↑↓,move,enter,run,,updating — please don't close this window"},
 		{"prepare", "↑↓,move,enter,run,n,new instance,q,quit"},
 	}
 	for _, c := range cases {
@@ -430,7 +430,7 @@ func TestC11StatusBarAsksNotToCloseForAJobElsewhere(t *testing.T) {
 
 	got := strings.Join(m.statusPairs(), ",")
 
-	if got != "↑↓,instance,enter,play,tab,page,n,new instance,updating,please don't close this window" {
+	if got != "↑↓,instance,enter,play,tab,page,,updating — please don't close this window" {
 		t.Errorf("statusPairs = %s", got)
 	}
 }

@@ -49,7 +49,7 @@ func (m *model) editSetting(id string) tea.Cmd {
 	}
 	field := textinput.New()
 	field.Prompt = ""
-	field.Width = max(m.pageWidth()-2-15-2, 10)
+	field.Width = max(m.pageWidth()-2-labelWidth(id)-2, 10)
 	field.Cursor.SetMode(cursor.CursorStatic)
 	field.SetValue(rawSettingValue(id, info, m.app))
 	field.CursorEnd()

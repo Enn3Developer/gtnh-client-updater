@@ -18,7 +18,10 @@ func statusBar(width int, pairs ...string) string {
 	labelSty := dimSty.Background(barBg)
 	text, room := "", width-1
 	for i := 0; i+1 < len(pairs); i += 2 {
-		pair := keySty.Render(pairs[i]) + bg.Render(" ") + labelSty.Render(pairs[i+1])
+		pair := labelSty.Render(pairs[i+1])
+		if pairs[i] != "" {
+			pair = keySty.Render(pairs[i]) + bg.Render(" ") + pair
+		}
 		if text == "" {
 			text = ansi.Truncate(pair, room, "…")
 			continue
@@ -39,7 +42,7 @@ func (m *model) statusPairs() []string {
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
 	case m.dialog != nil && m.dialog.buttons == nil && m.dialog.list == nil && m.dialog.input == nil:
-		return []string{"updating", "please don't close this window"} // the progress dialog (C14)
+		return []string{"", "updating the launcher — please don't close this window"} // the progress dialog (C6)
 	case m.dialog != nil:
 		return m.dialogPairs()
 	case m.edit != nil:
@@ -58,12 +61,12 @@ func (m *model) statusPairs() []string {
 			pairs = append(pairs, "tab", "instances")
 		}
 	}
+	if m.busyApplying() {
+		return append(pairs, "", "updating — please don't close this window")
+	}
 	pairs = append(pairs, "n", "new instance")
 	if m.showAll || slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH }) {
 		pairs = append(pairs, "a", "show all")
-	}
-	if m.busyApplying() {
-		return append(pairs, "updating", "please don't close this window")
 	}
 	if m.quitAfterCancel && m.job != nil {
 		return append(pairs, "stopping", "cleaning up…")

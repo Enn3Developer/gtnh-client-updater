@@ -74,7 +74,7 @@ func TestC1ListBoxShowsTheIntroAndTheItems(t *testing.T) {
 
 	m.openList("Pick a pack", "Pick one.", threeItems(), "b", nil)
 
-	want := []string{"Pick one.", "  Alpha  first one", "▸ Bravo  second", "  Charlie"}
+	want := []string{"Pick one.", "  Alpha    first one", "▸ Bravo    second", "  Charlie"}
 	if got := boxText(m); !eq(got, want) {
 		t.Errorf("box\n%q\nwant\n%q", got, want)
 	}
@@ -86,7 +86,7 @@ func TestC1AnEmptyIntroIsSkipped(t *testing.T) {
 
 	m.openList("Pick a pack", "", threeItems(), "a", nil)
 
-	want := []string{"▸ Alpha  first one", "  Bravo  second", "  Charlie"}
+	want := []string{"▸ Alpha    first one", "  Bravo    second", "  Charlie"}
 	if got := boxText(m); !eq(got, want) {
 		t.Errorf("box\n%q\nwant\n%q", got, want)
 	}
@@ -101,7 +101,7 @@ func TestC1NoteAndButtonsFollowTheItems(t *testing.T) {
 
 	got := boxText(m)
 
-	if len(got) != 6 || !eq(got[:5], []string{"▸ Alpha  first one", "  Bravo  second", "  Charlie", "A note.", ""}) {
+	if len(got) != 6 || !eq(got[:5], []string{"▸ Alpha    first one", "  Bravo    second", "  Charlie", "A note.", ""}) {
 		t.Fatalf("box %q", got)
 	}
 	if last := got[5]; strings.TrimSpace(last) != "[ Done ]" || !strings.HasPrefix(last, "   ") {
@@ -119,6 +119,9 @@ func TestC1ListWidthFitsTheLongestItem(t *testing.T) {
 		{"short items get 50", threeItems(), 50},
 		{"title and desc + 6", []ditem{{title: strings.Repeat("x", 40), desc: strings.Repeat("y", 20), key: "x"}}, 68},
 		{"title only + 6", []ditem{{title: strings.Repeat("x", 55), key: "x"}}, 61},
+		// polish2 C5: the desc column starts after the widest title, even one without a desc
+		{"widest title + longest desc + 8", []ditem{{title: strings.Repeat("x", 40), key: "x"},
+			{title: "b", desc: strings.Repeat("y", 20), key: "b"}}, 68},
 		{"capped by the terminal", []ditem{{title: strings.Repeat("x", 100), key: "x"}}, 74},
 	}
 	for _, c := range cases {
@@ -734,7 +737,7 @@ func TestC11StatusPairsFollowTheDialogKind(t *testing.T) {
 			openTestConfirm(m, nil, nil, &calls)
 		}, "←→,choose,enter,ok,esc,cancel"},
 		{"error", func(m *model) { m.errorDialog(errors.New("boom"), "Nothing was changed.") },
-			"←→,choose,enter,ok,esc,cancel"},
+			"enter,ok,esc,close"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

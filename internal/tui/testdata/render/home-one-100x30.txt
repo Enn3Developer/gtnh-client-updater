@@ -3,7 +3,7 @@
   Main
   GTNH 2.8.4 · Java 17+ · never played
 
-  ▸ ▶ Play                                                                                     enter
+  ▸ Play                                                                                       enter
 
   Update
     You have the newest stable version.
@@ -18,8 +18,8 @@
     Server mods    none
 
   Launcher
-    After I start the game stay open and show whether it's running
-    Prism Launcher found automatically
+    After I start the game  stay open
+    Prism Launcher          found automatically
 
 
 

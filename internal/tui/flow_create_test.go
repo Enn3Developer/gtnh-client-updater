@@ -518,12 +518,12 @@ func TestC8ThePendingPageShowsTheProgress(t *testing.T) {
 
 	got := pageLines(m, 100)
 
-	for _, want := range []string{"◐ Getting GTNH 2.8.1 ready", "50% · 500 of 1,000 files", "Downloading GTNH 2.8.1"} {
+	for _, want := range []string{"◐ Getting GTNH 2.8.1 ready", "  50%", "  500 of 1,000 files", "Downloading GTNH 2.8.1"} {
 		if !containsLine(got, want) {
 			t.Errorf("page lacks %q:\n%s", want, strings.Join(got, "\n"))
 		}
 	}
-	for _, not := range []string{"▶ Play", "Update", "Settings", "Launcher"} {
+	for _, not := range []string{"Play", "Update", "Settings", "Launcher"} {
 		if containsLine(got, not) {
 			t.Errorf("page has %q:\n%s", not, strings.Join(got, "\n"))
 		}
@@ -887,8 +887,8 @@ func TestC10QuitKeysDoNothingWhileWriting(t *testing.T) {
 				t.Errorf("%s acted while writing: quitting %v quitAfterCancel %v", k, m.quitting, m.quitAfterCancel)
 			}
 			pairs := m.statusPairs()
-			if n := len(pairs); n < 2 || pairs[n-2] != "updating" || pairs[n-1] != "please don't close this window" {
-				t.Errorf("statusPairs %q, want them to end with updating, please don't close this window", pairs)
+			if n := len(pairs); n < 2 || pairs[n-2] != "" || pairs[n-1] != "updating — please don't close this window" {
+				t.Errorf("statusPairs %q, want them to end with the keyless updating — please don't close this window", pairs)
 			}
 		})
 	}

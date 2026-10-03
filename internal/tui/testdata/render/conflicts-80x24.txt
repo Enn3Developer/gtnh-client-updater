@@ -6,19 +6,19 @@ Instances        │ Older
 ○ Vanilla        │ ▸ ◐ Checking what GTNH 2.8.4 changes
                  │
                  │ Update
-                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago          u
-   ╭─ 3 config files changed both on your side and in the new version ──────╮  o
-   │ What should I do with them?                                            │  b
-   │ ▸ Use the new versions  Recommended. Your old copies go to the backup… │
-   │   Keep mine  The new ones are saved next to them with .mcnew at the e… │
+   ╭─ 3 config files changed both on your side and in the new version ──────╮
+   │ What should I do with them?                                            │
+   │ ▸ Use the new versions  Recommended — your old copies go to the backup │
+   │                         folder.                                        │
+   │   Keep mine             The new ones are saved next to yours with      │
+   │                         .mcnew at the end.                             │
    │   Decide file by file                                                  │
    ╰────────────────────────────────────────────────────────────────────────╯
-                 │   Java           Prism's default
-                 │   Window         Prism's default
-                 │   Server         play.example.org
                  │   Server mods    mods.example.org
                  │
                  │ Launcher
-                 │   After I start the game stay open and show whether it's run…
-                 │   Prism Launcher found automatically
+                 │   After I start the game  stay open
+                 │   Prism Launcher          found automatically
+                 │
+                 │
  ↑↓ move   enter choose   esc cancel

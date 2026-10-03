@@ -3,7 +3,7 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   ▶ Play                                                enter
+○ Vanilla        │   Play                                                  enter
                  │   Play and join play.example.org                            j
           ╭─ Something went wrong ───────────────────────────────────╮
           │ I couldn't reach the GTNH download server to see what    │
@@ -21,4 +21,4 @@ Instances        │ Older
                  │
                  │ Launcher
                  │ ↓ 1 more
- ←→ choose   enter ok   esc cancel
+ enter ok   esc close

@@ -4,9 +4,9 @@ Instances        │ My Pack
 ▲ Older          │ GTNH 2.8.4 · being created
 ● Main           │
 ○ Vanilla        │ ▸ ◐ Getting GTNH 2.8.4 ready
-◐ My Pack        │   ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  12% · 87 …
+◐ My Pack        │   █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  12%
+                 │   87 MB of 727 MB · about a minute left
                  │   ⣾ Downloading GTNH 2.8.4
-                 │
                  │
                  │
                  │

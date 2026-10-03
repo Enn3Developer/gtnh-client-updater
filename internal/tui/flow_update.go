@@ -308,8 +308,8 @@ func (m *model) conflictsDialog() {
 	}
 	m.openList(fmt.Sprintf("%d %s changed both on your side and in the new version", n, plural(n, "config file", "config files")),
 		"What should I do with them?", []ditem{
-			{title: "Use the new versions", desc: "Recommended. Your old copies go to the backup folder.", key: "new"},
-			{title: "Keep mine", desc: "The new ones are saved next to them with .mcnew at the end.", key: "mine"},
+			{title: "Use the new versions", desc: "Recommended — your old copies go to the backup folder.", key: "new"},
+			{title: "Keep mine", desc: "The new ones are saved next to yours with .mcnew at the end.", key: "mine"},
 			{title: "Decide file by file", key: "pick"},
 		}, selected, func(m *model, key string) tea.Cmd {
 			switch key {

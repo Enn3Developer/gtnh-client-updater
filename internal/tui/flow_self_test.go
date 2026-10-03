@@ -251,7 +251,7 @@ func TestC14StatusBarDuringTheLauncherUpdate(t *testing.T) {
 		{"progress dialog", func(m *model) {
 			m.job = &job{kind: jobSelf, title: "Downloading GTNH Launcher 9.9.9", phase: "apply"}
 			m.progressDialog(progressTitle)
-		}, []string{"updating", "please don't close this window"}},
+		}, []string{"", "updating the launcher — please don't close this window"}},
 		{"restart offer", func(m *model) {
 			m.job = &job{kind: jobSelf, title: "Downloading GTNH Launcher 9.9.9", phase: "apply"}
 			m.progressDialog(progressTitle)

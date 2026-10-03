@@ -19,7 +19,7 @@ func TestC4GTNHPageTopToBottom(t *testing.T) {
 		"Home",
 		"GTNH 2.8.1 · Java 17+ · played 2 days ago",
 		"",
-		hinted("▸ ", "▶ Play", "enter", w),
+		hinted("▸ ", "Play", "enter", w),
 		hinted("  ", "Play and join play.example.org", "j", w),
 		"",
 		"Update",
@@ -36,21 +36,16 @@ func TestC4GTNHPageTopToBottom(t *testing.T) {
 		"  Server mods    mods.example.org",
 		"",
 		"Launcher",
+		"  After I start the game  stay open",
+		"  Prism Launcher          found automatically",
 	}
-	if len(got) < len(want)+2 {
-		t.Fatalf("page has %d lines, want at least %d:\n%s", len(got), len(want)+2, strings.Join(got, "\n"))
+	if len(got) < len(want) {
+		t.Fatalf("page has %d lines, want at least %d:\n%s", len(got), len(want), strings.Join(got, "\n"))
 	}
 	for i, l := range want {
 		if got[i] != l {
 			t.Errorf("page line %d = %q, want %q", i+1, got[i], l)
 		}
-	}
-	after, prism := got[len(want)], got[len(want)+1]
-	if !strings.HasPrefix(after, "  After I start the game") || !strings.HasSuffix(after, "stay open and show whether it's running") {
-		t.Errorf("after row = %q", after)
-	}
-	if !strings.HasPrefix(prism, "  Prism Launcher") || !strings.HasSuffix(prism, "found automatically") {
-		t.Errorf("prism row = %q", prism)
 	}
 }
 
@@ -63,11 +58,11 @@ func TestC4LauncherRowsShowTheAppSettings(t *testing.T) {
 	got := pageLines(m, 78)
 
 	after, prism := lineWith(got, "After I start the game"), lineWith(got, "Prism Launcher")
-	if !strings.HasSuffix(after, " quit") {
-		t.Errorf("after row = %q, want value quit", after)
+	if after != "  After I start the game  quit" {
+		t.Errorf("after row = %q, want value quit in the 24-column label layout", after)
 	}
-	if !strings.HasSuffix(prism, "/opt/prism/bin/prismlauncher") {
-		t.Errorf("prism row = %q, want the exe path", prism)
+	if prism != "  Prism Launcher          /opt/prism/bin/prismlauncher" {
+		t.Errorf("prism row = %q, want the exe path in the 24-column label layout", prism)
 	}
 }
 
@@ -86,7 +81,7 @@ func TestC4NonGTNHPageHasNoUpdateNoJoinAndFourSettings(t *testing.T) {
 		"Vanilla",
 		"Not a GTNH instance · never played",
 		"",
-		hinted("▸ ", "▶ Play", "enter", w),
+		hinted("▸ ", "Play", "enter", w),
 		"",
 		"Settings",
 		"  Memory         Prism's default",

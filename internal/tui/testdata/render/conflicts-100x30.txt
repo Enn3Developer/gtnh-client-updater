@@ -6,21 +6,21 @@ Instances        │ Older
 ○ Vanilla        │ ▸ ◐ Checking what GTNH 2.8.4 changes
                  │
                  │ Update
-                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago                              u
-                 │   Choose another version…                                                       o
-                 │   Last update 2.8.0 → 2.8.1, 3 days ago · undo                                  b
+                 │   Busy — wait for it to finish.
                  │
-         ╭─ 3 config files changed both on your side and in the new version ─────────────╮
-         │ What should I do with them?                                                   │
-         │ ▸ Use the new versions  Recommended. Your old copies go to the backup folder. │
-         │   Keep mine  The new ones are saved next to them with .mcnew at the end.      │
-         │   Decide file by file                                                         │
-         ╰───────────────────────────────────────────────────────────────────────────────╯
-                 │   Server mods    mods.example.org
-                 │
+                 │ Settings
+                 │   Memory         8192 MB (at least 4096 MB)
+      ╭─ 3 config files changed both on your side and in the new version ────────────────────╮
+      │ What should I do with them?                                                          │
+      │ ▸ Use the new versions  Recommended — your old copies go to the backup folder.       │
+      │   Keep mine             The new ones are saved next to yours with .mcnew at the end. │
+      │   Decide file by file                                                                │
+      ╰──────────────────────────────────────────────────────────────────────────────────────╯
                  │ Launcher
-                 │   After I start the game stay open and show whether it's running
-                 │   Prism Launcher found automatically
+                 │   After I start the game  stay open
+                 │   Prism Launcher          found automatically
+                 │
+                 │
                  │
                  │
                  │

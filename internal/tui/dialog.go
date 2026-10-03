@@ -47,12 +47,13 @@ func closeOnly(m *model, _ string) tea.Cmd {
 // item keyed selected (C1).
 func (m *model) openList(title, intro string, items []ditem, selected string, onPick func(*model, string) tea.Cmd) {
 	l := &dlist{items: items}
+	widest := titleWidth(items)
 	longest := 0
 	for i, it := range items {
 		if it.key == selected {
 			l.cursor = i
 		}
-		w := ansi.StringWidth(it.title)
+		w := widest
 		if it.desc != "" {
 			w += 2 + ansi.StringWidth(it.desc)
 		}
@@ -188,7 +189,7 @@ func (m *model) dialogLines(inner int) []string {
 	}
 	switch {
 	case d.list != nil:
-		out = append(out, m.listWindow()...)
+		out = append(out, m.listWindow(inner)...)
 	case d.input != nil:
 		// the field's view is prompt + Width + the cursor cell: one column of padding over
 		out = append(out, ansi.Truncate(d.input.View(), inner, ""))
@@ -207,22 +208,46 @@ func (m *model) listRows() int {
 	return max(min(12, m.height-9), 3)
 }
 
-// listWindow is the item lines of the open list dialog, windowed around the cursor.
-func (m *model) listWindow() []string {
+// titleWidth is the width of the widest item title.
+func titleWidth(items []ditem) int {
+	widest := 0
+	for _, it := range items {
+		widest = max(widest, ansi.StringWidth(it.title))
+	}
+	return widest
+}
+
+// listWindow is the item lines of the open list dialog at inner columns, a table of
+// titles and descs, windowed around the cursor item (C5).
+func (m *model) listWindow(inner int) []string {
 	l := m.dialog.list
-	lines := make([]string, len(l.items))
+	widest := titleWidth(l.items)
+	column := 2 + widest + 2
+	var lines []string
+	var span [2]int
 	for i, it := range l.items {
 		prefix, title := "  ", it.title
 		if i == l.cursor {
 			prefix, title = "▸ ", titleSty.Render(it.title)
+			span[0] = len(lines)
 		}
-		lines[i] = prefix + title
-		if it.desc != "" {
-			lines[i] += "  " + dimSty.Render(it.desc)
+		if it.desc == "" {
+			lines = append(lines, prefix+title)
+		} else {
+			for j, d := range wrapAtMost(it.desc, max(inner-column, 1), 3) {
+				lead := strings.Repeat(" ", column)
+				if j == 0 {
+					lead = prefix + title + strings.Repeat(" ", widest-ansi.StringWidth(it.title)) + "  "
+				}
+				lines = append(lines, lead+dimSty.Render(d))
+			}
+		}
+		if i == l.cursor {
+			span[1] = len(lines)
 		}
 	}
 	rows := m.listRows()
-	l.off = scrollTo(l.off, [2]int{l.cursor, l.cursor + 1}, len(lines), rows)
+	l.off = scrollTo(l.off, span, len(lines), rows)
 	visible, _ := bodyWindow(lines, rows, l.off)
 	return visible
 }
@@ -304,6 +329,8 @@ func (m *model) dialogPairs() []string {
 		return pairs
 	case d.input != nil:
 		return []string{"enter", "continue", "esc", "cancel"}
+	case len(d.buttons) == 1:
+		return []string{"enter", "ok", "esc", "close"}
 	}
 	return []string{"←→", "choose", "enter", "ok", "esc", "cancel"}
 }

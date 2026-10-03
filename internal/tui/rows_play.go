@@ -35,12 +35,12 @@ func (m *model) playRows() []row {
 	return rows
 }
 
-// playLines draws the play row: "▶ Play", or how the watched game of this instance is
+// playLines draws the play row: "Play", or how the watched game of this instance is
 // doing.
 func (m *model) playLines(w int, sel bool) []string {
 	in, _ := m.current()
 	if !m.gameShown(in.Dir) {
-		return []string{rowLine(w, sel, "▶ Play", "enter")}
+		return []string{rowLine(w, sel, "Play", "enter")}
 	}
 	switch m.play.state {
 	case "starting":
@@ -73,6 +73,16 @@ func wrappedRow(w int, sel bool, text string) []string {
 // wrapLines word-wraps s to width columns (hard-breaking words longer than that).
 func wrapLines(s string, width int) []string {
 	return strings.Split(ansi.Wrap(s, max(width, 1), ""), "\n")
+}
+
+// wrapAtMost is wrapLines cut to n lines, the last ending in "…" when text was dropped.
+func wrapAtMost(s string, width, n int) []string {
+	lines := wrapLines(s, width)
+	if len(lines) > n {
+		lines = lines[:n]
+		lines[n-1] = ansi.Truncate(lines[n-1]+" …", max(width, 1), "…")
+	}
+	return lines
 }
 
 // playEntries are the hero (name, meta line, blank), the play rows and a blank line.

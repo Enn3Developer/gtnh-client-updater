@@ -6,9 +6,9 @@ Instances        │ Older
 ○ Vanilla        │ ▸ ◐ Checking what GTNH 2.8.0 changes
               ╭─ Go back to GTNH 2.8.0? ─────────────────────────────────────────────╮
               │ 1,204 files updated, 18 removed                                      │
-              │ 3 config files you changed stay as they are                          │             u
-              │ 2 config files you changed get the new version — your old ones go to │             o
-              │ the backup                                                           │             b
+              │ 3 config files you changed stay as they are                          │
+              │ 2 config files you changed get the new version — your old ones go to │
+              │ the backup                                                           │
               │ 1 config file you changed stays yours — the new one is saved next to │
               │ it as .mcnew                                                         │
               │ Mods you added yourself stay: optifine.jar, journeymap-extra.jar     │

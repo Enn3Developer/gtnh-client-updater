@@ -3,7 +3,7 @@
 Instances        │ Older
 ● Older          │ GTNH 2.8.4 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │ ▸ ▶ Play                                                enter
+○ Vanilla        │ ▸ Play                                                  enter
                  │   Play and join play.example.org                            j
                  │
                  │ Update

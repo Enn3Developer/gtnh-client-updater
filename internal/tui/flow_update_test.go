@@ -589,8 +589,8 @@ func TestC6ConflictsDialogCountsTheFilesAndOffersThreeWays(t *testing.T) {
 				t.Errorf("title %q, want %q", dialogTitle(m), c.title)
 			}
 			want := []ditem{
-				{title: "Use the new versions", desc: "Recommended. Your old copies go to the backup folder.", key: "new"},
-				{title: "Keep mine", desc: "The new ones are saved next to them with .mcnew at the end.", key: "mine"},
+				{title: "Use the new versions", desc: "Recommended — your old copies go to the backup folder.", key: "new"},
+				{title: "Keep mine", desc: "The new ones are saved next to yours with .mcnew at the end.", key: "mine"},
 				{title: "Decide file by file", key: "pick"},
 			}
 			if got := listOf(t, m).items; !reflect.DeepEqual(got, want) {

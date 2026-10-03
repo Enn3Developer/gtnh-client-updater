@@ -206,7 +206,7 @@ func TestC8StatusBarOffersTheDialogKeys(t *testing.T) {
 
 	got := strings.Join(m.statusPairs(), ",")
 
-	if got != "←→,choose,enter,ok,esc,cancel" {
+	if got != "enter,ok,esc,close" {
 		t.Errorf("statusPairs = %s", got)
 	}
 }

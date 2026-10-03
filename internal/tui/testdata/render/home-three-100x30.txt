@@ -3,7 +3,7 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   ▶ Play                                                                    enter
+○ Vanilla        │   Play                                                                      enter
                  │   Play and join play.example.org                                                j
                  │
                  │ Update
@@ -20,8 +20,8 @@ Instances        │ Older
                  │   Server mods    mods.example.org
                  │
                  │ Launcher
-                 │   After I start the game stay open and show whether it's running
-                 │   Prism Launcher found automatically
+                 │   After I start the game  stay open
+                 │   Prism Launcher          found automatically
                  │
                  │
                  │

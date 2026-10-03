@@ -137,7 +137,9 @@ func (m *model) jobBlock(width int, sel bool) []string {
 	}
 	lines := []string{styledRow(width, prefix, sty, "◐ "+m.job.title, hint)}
 	if m.total > 0 {
-		lines = append(lines, m.progressLine(width))
+		for _, l := range m.progressLines(width-2, min(width-12, 40)) {
+			lines = append(lines, "  "+l)
+		}
 	}
 	if text := m.stepText(); text != "" {
 		for _, l := range wrapLines(text, width-2) {
@@ -156,10 +158,13 @@ func (m *model) jobBlock(width int, sel bool) []string {
 	return lines
 }
 
-// progressLine is the bar, the percentage and how much of what is done.
-func (m *model) progressLine(width int) string {
+// progressLines are the bar line (bar of barWidth, percentage) and the dim detail
+// line(s) of how much of what is done, wrapped to width (C2).
+func (m *model) progressLines(width, barWidth int) []string {
+	barWidth = max(barWidth, 1) // a tiny page asks for a negative bar
 	bar := progress.New(progress.WithGradient(string(accent), string(okColor)),
-		progress.WithWidth(max(min(width-14, 48), 8)), progress.WithoutPercentage())
+		progress.WithWidth(barWidth), progress.WithoutPercentage())
+	lines := []string{bar.ViewAs(float64(m.done)/float64(m.total)) + fmt.Sprintf("  %d%%", m.done*100/m.total)}
 	detail := num(m.done) + " of " + num(m.total) + " files"
 	if m.total > 1_000_000 {
 		detail = mb(m.done) + " of " + mb(m.total)
@@ -167,8 +172,10 @@ func (m *model) progressLine(width int) string {
 	if e := eta(m.done, m.total, m.now().Sub(m.stepStart)); e != "" {
 		detail += " · " + e
 	}
-	return "  " + bar.ViewAs(float64(m.done)/float64(m.total)) +
-		fmt.Sprintf("  %d%%", m.done*100/m.total) + dimSty.Render(" · "+detail)
+	for _, l := range wrapLines(detail, width) {
+		lines = append(lines, dimSty.Render(l))
+	}
+	return lines
 }
 
 // stepText is the finished steps and the current one behind a spinner frame.

@@ -199,8 +199,8 @@ func styledRow(width int, prefix string, sty lipgloss.Style, text, hint string) 
 	return prefix + sty.Render(text) + strings.Repeat(" ", gap) + dimSty.Render(hint)
 }
 
-// labelled is a setting row's text: the label padded to 15 columns (at least one space
-// after it), then the value.
-func labelled(label, value string) string {
-	return label + strings.Repeat(" ", max(15-ansi.StringWidth(label), 1)) + value
+// labelled is a setting row's text: the label padded to width columns (at least one
+// space after it), then the value.
+func labelled(label, value string, width int) string {
+	return label + strings.Repeat(" ", max(width-ansi.StringWidth(label), 1)) + value
 }

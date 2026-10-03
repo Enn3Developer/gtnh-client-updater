@@ -64,9 +64,13 @@ func bodyWindow(body []string, rows, scroll int) (visible []string, offset int) 
 }
 
 // overlay splices box into the full view base (height lines), centred horizontally and
-// vertically between the blank line under the title bar and the status bar (C8).
+// vertically between the blank line under the title bar and the status bar (C8). The
+// workspace lines under it are dimmed (C1).
 func overlay(base, box string, width, height int) string {
 	lines := strings.Split(base, "\n")
+	for n := 2; n <= height-2 && n < len(lines); n++ {
+		lines[n] = backdrop(lines[n])
+	}
 	boxLines := strings.Split(box, "\n")
 	bw := 0
 	for _, l := range boxLines {
@@ -87,6 +91,11 @@ func overlay(base, box string, width, height int) string {
 		lines[n] = ansi.Truncate(left+bl+ansi.TruncateLeft(lines[n], x+bw, ""), width, "")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// backdrop is one workspace line dimmed for showing under a dialog (C1).
+func backdrop(line string) string {
+	return dimSty.Render(ansi.Strip(line))
 }
 
 func wrap(s string, width int) string {

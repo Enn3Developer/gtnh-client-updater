@@ -131,7 +131,7 @@ func TestC8DialogIsOverlaidOnTheView(t *testing.T) {
 	if !strings.Contains(lineWith(lines, "Heads up"), "╭─ Heads up ") {
 		t.Errorf("no dialog border with the title:\n%s", strings.Join(lines, "\n"))
 	}
-	if got := lines[23]; got != " ←→ choose   enter ok   esc cancel" {
+	if got := lines[23]; got != " enter ok   esc close" {
 		t.Errorf("status bar = %q", got)
 	}
 }

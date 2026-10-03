@@ -15,14 +15,14 @@ const cantReadCfg = "I couldn't read this instance's settings"
 
 // settingRow is a row showing label and value; enter edits the setting id. While id is
 // being edited the row is the field, its help and its error; after a save it's marked (C2).
-func (m *model) settingRow(id, label, value string) row {
-	text := labelled(label, value)
+func (m *model) settingRow(id, label, value string, width int) row {
+	text := labelled(label, value, width)
 	return row{id: id,
 		lines: func(w int, sel bool) []string {
 			if e := m.edit; e != nil && e.id == id {
-				out := []string{
-					ansi.Truncate("▸ "+titleSty.Render(labelled(label, ""))+e.input.View(), w, "…"),
-					infoLine(settingHelp(id)),
+				out := []string{ansi.Truncate("▸ "+titleSty.Render(labelled(label, "", width))+e.input.View(), w, "…")}
+				for _, l := range wrapAtMost(settingHelp(id), w-2, 3) {
+					out = append(out, infoLine(l))
 				}
 				if e.err != "" {
 					out = append(out, "  "+badSty.Render(e.err))
@@ -35,6 +35,15 @@ func (m *model) settingRow(id, label, value string) row {
 			return []string{rowLine(w, sel, text, "")}
 		},
 		run: func(m *model) tea.Cmd { return m.editSetting(id) }}
+}
+
+// labelWidth is the label column width of setting id: the launcher rows have longer
+// labels (C3).
+func labelWidth(id string) int {
+	if id == "after" || id == "prism" {
+		return 24
+	}
+	return 15
 }
 
 // settingsRows are the instance's setting rows: memory, jvm, java, window, and for a
@@ -53,7 +62,7 @@ func (m *model) settingsRows() []row {
 	}
 	var out []row
 	for _, k := range keys {
-		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info)))
+		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info), labelWidth(k.id)))
 	}
 	return out
 }
@@ -62,15 +71,15 @@ func (m *model) settingsRows() []row {
 func (m *model) launcherRows() []row {
 	after := "quit"
 	if m.app.StaysOpen() {
-		after = "stay open and show whether it's running"
+		after = "stay open"
 	}
 	exe := m.app.PrismExe
 	if exe == "" {
 		exe = "found automatically"
 	}
 	return []row{
-		m.settingRow("after", "After I start the game", after),
-		m.settingRow("prism", "Prism Launcher", exe),
+		m.settingRow("after", "After I start the game", after, labelWidth("after")),
+		m.settingRow("prism", "Prism Launcher", exe, labelWidth("prism")),
 	}
 }
 

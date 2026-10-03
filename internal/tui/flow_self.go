@@ -72,7 +72,7 @@ func (m *model) progressDialog(title string) {
 		onButton: func(*model, string) tea.Cmd { return nil },
 		body: func(w int) string {
 			if m.total > 0 {
-				return strings.TrimPrefix(m.progressLine(w), "  ") + "\n" + m.stepText()
+				return strings.Join(m.progressLines(w, w-8), "\n") + "\n" + m.stepText()
 			}
 			return m.stepText()
 		},

@@ -326,8 +326,8 @@ func TestC6EnterOrEscOnAFinishedPlayRowResetsIt(t *testing.T) {
 
 				press(m, k)
 
-				if m.play.state != "" || !strings.Contains(playRow(m)[0], "▶ Play") {
-					t.Errorf("state %q row %q, want back to ▶ Play", m.play.state, playRow(m))
+				if m.play.state != "" || playRow(m)[0] != hinted("  ", "Play", "enter", 78) {
+					t.Errorf("state %q row %q, want back to Play", m.play.state, playRow(m))
 				}
 			})
 		}
@@ -364,7 +364,7 @@ func TestC6AnotherInstanceShowsPlainPlay(t *testing.T) {
 
 	press(m, "down")
 
-	if got := playRow(m); !strings.Contains(got[0], "▶ Play") {
+	if got := playRow(m); got[0] != hinted("  ", "Play", "enter", 78) {
 		t.Errorf("Bravo's play row = %q", got)
 	}
 }

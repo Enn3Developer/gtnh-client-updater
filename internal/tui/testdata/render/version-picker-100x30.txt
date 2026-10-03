@@ -3,25 +3,25 @@
 Instances        │ Older
 ▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
 ● Main           │
-○ Vanilla        │   ▶ Play                                                                    enter
+○ Vanilla        │   Play                                                                      enter
                  │   Play and join play.example.org                                                j
                  │
                  │ Update
-              ╭─ Which GTNH version do you want? ───────────────────────────────────╮              u
-              │   2.9.0-beta-2  beta · 3 days ago                                   │              o
-              │   2.9.0-beta-1  beta · 10 days ago                                  │              b
-              │ ▸ 2.8.4  stable release · 2 weeks ago · recommended                 │
-              │   2.8.3  stable release · 7 weeks ago                               │
-              │   2.8.2  stable release · 2 months ago                              │
-              │   2.8.1  stable release · 4 months ago · you have this one          │
-              │   2.8.0  stable release · 6 months ago                              │
-              │   2.7.4  stable release · 10 months ago                             │
-              │   2.7.3  stable release · a year ago · not available for your Java  │
-              │   2.7.2  stable release · 2 years ago · not available for your Java │
-              ╰─────────────────────────────────────────────────────────────────────╯
+           ╭─ Which GTNH version do you want? ──────────────────────────────────────────╮          u
+           │   2.9.0-beta-2  beta · 3 days ago                                          │          o
+           │   2.9.0-beta-1  beta · 10 days ago                                         │          b
+           │ ▸ 2.8.4         stable release · 2 weeks ago · recommended                 │
+           │   2.8.3         stable release · 7 weeks ago                               │
+           │   2.8.2         stable release · 2 months ago                              │
+           │   2.8.1         stable release · 4 months ago · you have this one          │
+           │   2.8.0         stable release · 6 months ago                              │
+           │   2.7.4         stable release · 10 months ago                             │
+           │   2.7.3         stable release · a year ago · not available for your Java  │
+           │   2.7.2         stable release · 2 years ago · not available for your Java │
+           ╰────────────────────────────────────────────────────────────────────────────╯
                  │ Launcher
-                 │   After I start the game stay open and show whether it's running
-                 │   Prism Launcher found automatically
+                 │   After I start the game  stay open
+                 │   Prism Launcher          found automatically
                  │
                  │
                  │

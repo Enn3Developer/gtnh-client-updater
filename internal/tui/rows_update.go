@@ -33,6 +33,9 @@ func (m *model) updateEntries() []entry {
 	info := m.home[in.Dir]
 	now := m.now()
 	es := textEntries(heading("Update"))
+	if m.jobShown(in.Dir) {
+		return append(es, entry{text: infoLine("Busy — wait for it to finish.")}, entry{})
+	}
 	if n, ok := m.notices[in.Dir]; ok {
 		es = append(es, textEntries(m.noticeLines(m.pageWidth(), n)...)...)
 	}

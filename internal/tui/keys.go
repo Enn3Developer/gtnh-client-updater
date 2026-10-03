@@ -75,6 +75,9 @@ func (m *model) runRow(id string) tea.Cmd {
 			return r.run(m)
 		}
 	}
+	if in, _ := m.current(); (id == "update" || id == "versions" || id == "undo") && m.jobShown(in.Dir) {
+		m.notifyBusy()
+	}
 	return nil
 }
 
