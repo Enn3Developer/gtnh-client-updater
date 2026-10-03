@@ -150,7 +150,7 @@ func (m *model) restoredView() (body, footer string) {
 func (m *model) restoreErrorNote() string {
 	b := m.blocks()
 	if errors.Is(m.err, update.ErrGameRunning) {
-		b.note(okSty, "Nothing was changed.")
+		b.note(okSty, nothingChangedNote)
 	} else {
 		b.note(badSty, "Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir)
 	}

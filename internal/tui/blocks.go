@@ -13,6 +13,9 @@ import (
 // worldsStayBullet promises the player's own data is left alone.
 const worldsStayBullet = "Your worlds, screenshots, maps and game settings stay exactly as they are."
 
+// nothingChangedNote tells the player a failed run left the instance as it was.
+const nothingChangedNote = "Nothing was changed."
+
 // downgradeWarning warns that going back to an older pack can break worlds played on ver.
 func downgradeWarning(ver string) string {
 	return fmt.Sprintf("This goes BACK to an older version. Worlds you played on %s may lose "+

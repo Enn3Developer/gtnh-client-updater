@@ -13,14 +13,16 @@ var (
 	titleSty  = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	okColor   = lipgloss.Color("#98BB6C")
 	okSty     = lipgloss.NewStyle().Foreground(okColor)
-	warnSty   = lipgloss.NewStyle().Foreground(lipgloss.Color("#E6C384"))
+	warnColor = lipgloss.Color("#E6C384")
+	warnSty   = lipgloss.NewStyle().Foreground(warnColor)
 	badSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E46876")).Bold(true)
 	dimSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("#727169"))
 	barBg     = lipgloss.Color("#2A2A37")
 	chipBg    = lipgloss.Color("#363646")
 	keySty    = lipgloss.NewStyle().Bold(true).Foreground(accent).Background(chipBg) // no padding: a hint is as wide as its text
-	btnSelSty = lipgloss.NewStyle().Background(accent).Foreground(lipgloss.Color("#1F1F28")).Bold(true)
-	bannerSty = lipgloss.NewStyle().Foreground(lipgloss.Color("#1F1F28")).Background(lipgloss.Color("#E6C384")).Padding(0, 1)
+	inkColor  = lipgloss.Color("#1F1F28")
+	btnSelSty = lipgloss.NewStyle().Background(accent).Foreground(inkColor).Bold(true)
+	bannerSty = lipgloss.NewStyle().Foreground(inkColor).Background(warnColor).Padding(0, 1)
 )
 
 func (m *model) bodyWidth() int  { return m.width - 4 }

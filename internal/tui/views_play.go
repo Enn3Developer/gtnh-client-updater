@@ -19,5 +19,8 @@ func (m *model) playingView() (body, footer string) {
 	case "unknown":
 		state = dimSty.Render(wrap("The game should be starting from Prism now. I can't tell on this computer whether it's running.", m.bodyWidth()))
 	}
-	return titleSty.Render(wrap(m.inst.Name, m.bodyWidth())) + "\n\n" + state, m.buttonFooter("enter", "back", "q", "quit")
+	b := m.blocks()
+	b.title(m.inst.Name)
+	b.raw(state)
+	return b.String(), m.buttonFooter("enter", "back", "q", "quit")
 }

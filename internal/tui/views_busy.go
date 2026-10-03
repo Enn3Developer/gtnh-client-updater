@@ -33,7 +33,11 @@ func (m *model) busyView() (body, footer string) {
 		pct := float64(m.done) / float64(m.total)
 		steps = append(steps, "", m.bar.ViewAs(pct), dimSty.Render(m.progressDetail()))
 	}
-	body = titleSty.Render(wrap(title, m.bodyWidth())) + "\n\n" + panel("", strings.Join(steps, "\n"), m.bodyWidth()) + "\n" + m.headsUp()
+	b := m.blocks()
+	b.title(title)
+	b.raw(panel("", strings.Join(steps, "\n"), m.bodyWidth()) + "\n")
+	b.headsUp()
+	body = b.String()
 	switch {
 	case m.screen != scPreparing:
 		footer = warnSty.Render(indentWrap("Please don't close this window until I'm done.", m.bodyWidth(), 0))

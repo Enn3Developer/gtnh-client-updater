@@ -19,7 +19,7 @@ func (m *model) errorView() (body, footer string) {
 	case m.creating && m.errPhase == scApplying:
 		b.note(okSty, "I removed the half-made instance, so there's nothing to clean up.")
 	case m.errPhase == scPreparing:
-		b.note(okSty, "Nothing was changed.")
+		b.note(okSty, nothingChangedNote)
 	case m.errPhase == scApplying && errors.Is(m.err, update.ErrRolledBack):
 		b.note(okSty, "Everything was put back the way it was, so your instance is exactly as before.")
 	case m.errPhase == scApplying:
