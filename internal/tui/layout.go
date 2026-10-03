@@ -314,28 +314,3 @@ func hintRows(limit int, pairs ...string) string {
 	}
 	return strings.Join(rows, "\n")
 }
-
-// bullet renders "  • text" with wrapped lines indented under the text.
-func (m *model) bullet(s string) string {
-	lines := strings.Split(wrap(s, m.bodyWidth()-4), "\n")
-	for i, l := range lines {
-		prefix := "    "
-		if i == 0 {
-			prefix = "  • "
-		}
-		lines[i] = prefix + strings.TrimRight(l, " ")
-	}
-	return strings.Join(lines, "\n") + "\n"
-}
-
-// indentWrap wraps s to width and indents the continuation lines by indent spaces.
-func indentWrap(s string, width, indent int) string {
-	return strings.ReplaceAll(strings.TrimRight(wrap(s, width), " "), "\n", "\n"+strings.Repeat(" ", indent))
-}
-
-func wrap(s string, width int) string {
-	if width < 20 {
-		return s
-	}
-	return lipgloss.NewStyle().Width(width).Render(s)
-}

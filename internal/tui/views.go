@@ -76,7 +76,9 @@ func (m *model) page() (body, footer string, scroll int) {
 	case scError:
 		body, footer = m.errorView()
 	case scSelfUpdated:
-		body = okSty.Bold(true).Render(wrap("The launcher is now version "+m.newer.Version+".", m.bodyWidth()))
+		b := m.blocks()
+		b.success("The launcher is now version " + m.newer.Version + ".")
+		body = b.String()
 		footer = m.buttonFooter("enter", "restart now", "q", "quit")
 	}
 	return strings.TrimRight(body, "\n"), footer, scroll
@@ -196,44 +198,44 @@ func (m *model) progressDetail() string {
 
 func (m *model) confirmView() (body, footer string) {
 	s, pl := m.session, m.session.Plan
-	var b strings.Builder
+	b := m.blocks()
 	title := fmt.Sprintf("Ready to refresh %s on GTNH %s", m.inst.Name, m.target)
 	if m.target != m.detect.Version {
 		title = fmt.Sprintf("Ready to update %s from %s to %s", m.inst.Name, m.detect.Version, m.target)
 	}
-	b.WriteString(titleSty.Render(wrap(title, m.bodyWidth())) + "\n\n" + m.confirmWarnings())
-	bullet := func(s string) { b.WriteString(m.bullet(s)) }
+	b.title(title)
+	b.raw(m.confirmWarnings())
 	if ins, rem := pl.Count(update.Install), pl.Count(update.Remove); ins+rem == 0 {
-		bullet("Your GTNH files are already exactly as they should be.")
+		b.bullet("Your GTNH files are already exactly as they should be.")
 	} else {
-		bullet(fmt.Sprintf("%s %s will be updated and %s removed.", num(int64(ins)), plural(ins, "file", "files"), num(int64(rem))))
+		b.bullet(fmt.Sprintf("%s %s will be updated and %s removed.", num(int64(ins)), plural(ins, "file", "files"), num(int64(rem))))
 	}
-	bullet("Your worlds, screenshots, maps and game settings stay exactly as they are.")
+	b.bullet(worldsStayBullet)
 	if n := len(pl.Kept); n > 0 {
-		bullet(fmt.Sprintf("%s config %s you changed will be kept as you have %s.", num(int64(n)), plural(n, "file", "files"), plural(n, "it", "them")))
+		b.bullet(fmt.Sprintf("%s config %s you changed will be kept as you have %s.", num(int64(n)), plural(n, "file", "files"), plural(n, "it", "them")))
 	}
 	if n := len(pl.Chosen(update.TakeNew)); n > 0 {
-		bullet(fmt.Sprintf("%d config %s you changed %s the new version. Your old %s %s to the backup folder.",
+		b.bullet(fmt.Sprintf("%d config %s you changed %s the new version. Your old %s %s to the backup folder.",
 			n, plural(n, "file", "files"), plural(n, "gets", "get"), plural(n, "one", "ones"), plural(n, "goes", "go")))
 	}
 	if n := len(pl.Chosen(update.KeepMine)); n > 0 {
-		bullet(fmt.Sprintf("%d config %s you changed %s as you have %s; the new %s saved next to %s with .mcnew at the end.",
+		b.bullet(fmt.Sprintf("%d config %s you changed %s as you have %s; the new %s saved next to %s with .mcnew at the end.",
 			n, plural(n, "file", "files"), plural(n, "stays", "stay"), plural(n, "it", "them"),
 			plural(n, "one is", "ones are"), plural(n, "it", "them")))
 	}
 	if len(pl.ExtraMods) > 0 {
-		bullet(fmt.Sprintf("Mods you added yourself stay: %s. Make sure they work with %s.",
+		b.bullet(fmt.Sprintf("Mods you added yourself stay: %s. Make sure they work with %s.",
 			ansi.Truncate(strings.Join(pl.ExtraMods, ", "), 120, "…"), m.target))
 	}
 	if m.serverMods != "" {
-		bullet("Your server's extra mods will be synced from " + hostOf(m.serverMods) + ".")
+		b.bullet("Your server's extra mods will be synced from " + hostOf(m.serverMods) + ".")
 	}
 	if s.Flavor == manifest.Java8 {
-		bullet("This instance uses the Java 8 version of the pack, so that's what you'll get.")
+		b.bullet("This instance uses the Java 8 version of the pack, so that's what you'll get.")
 	}
-	bullet("Everything that gets replaced is backed up first, just in case.")
-	b.WriteString(m.closeMinecraftNote())
-	b.WriteString(m.headsUp())
+	b.bullet("Everything that gets replaced is backed up first, just in case.")
+	b.closeMinecraftNote()
+	b.headsUp()
 	return b.String(), m.buttonFooter("enter", "update now", "esc", "back")
 }
 
@@ -241,30 +243,16 @@ func (m *model) confirmView() (body, footer string) {
 // installed version that's probably wrong.
 func (m *model) confirmWarnings() string {
 	pl := m.session.Plan
-	var bad []string
+	b := m.blocks()
 	if update.IsDowngrade(m.target, m.detect.Version) {
-		bad = append(bad, fmt.Sprintf("This goes BACK to an older version. Worlds you played on %s may lose "+
-			"blocks and items or not load at all. Copy your saves folder somewhere safe first.", m.detect.Version))
+		b.danger(downgradeWarning(m.detect.Version))
 	}
 	if pl.BaselineSuspect() {
-		bad = append(bad, fmt.Sprintf("Only %.0f%% of the mods that come with %s are in this instance, so it's "+
+		b.danger(fmt.Sprintf("Only %.0f%% of the mods that come with %s are in this instance, so it's "+
 			"probably not on %s. Press esc, then i to tell me the right version — otherwise old mods could be left behind.",
 			pl.BaselineMatch*100, m.detect.Version, m.detect.Version))
 	}
-	var b strings.Builder
-	for _, w := range bad {
-		b.WriteString(badSty.Render(wrap("! "+w, m.bodyWidth())) + "\n\n")
-	}
 	return b.String()
-}
-
-// closeMinecraftNote asks the player to close the game when pickInstance couldn't tell
-// whether it runs.
-func (m *model) closeMinecraftNote() string {
-	if !m.runUnknown {
-		return ""
-	}
-	return "\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n"
 }
 
 // doneFooter is the footer of the screens after a finished update, creation or restore.
@@ -274,141 +262,123 @@ func (m *model) doneFooter() string {
 
 func (m *model) doneView() (body, footer string) {
 	r, pl := m.result, m.session.Plan
-	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To), m.bodyWidth())) + "\n\n")
-	bullet := func(s string) { b.WriteString(m.bullet(s)) }
+	b := m.blocks()
+	b.success(fmt.Sprintf("All done! %s is now on GTNH %s.", m.inst.Name, r.To))
 	if ins, rem := pl.Count(update.Install), pl.Count(update.Remove); ins+rem == 0 {
-		bullet("Your GTNH files were already up to date.")
+		b.bullet("Your GTNH files were already up to date.")
 	} else {
-		bullet(fmt.Sprintf("%s %s updated, %s removed.", num(int64(ins)), plural(ins, "file", "files"), num(int64(rem))))
+		b.bullet(fmt.Sprintf("%s %s updated, %s removed.", num(int64(ins)), plural(ins, "file", "files"), num(int64(rem))))
 	}
 	if r.Renamed != "" {
-		bullet("Renamed the instance in Prism to \"" + r.Renamed + "\".")
+		b.bullet(renamedBullet(r.Renamed))
 	}
-	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
+	b.raw(m.customModsSummary(r.CustomMods, r.CustomErr))
 	if n := len(pl.Chosen(update.TakeNew)); n > 0 {
-		bullet(fmt.Sprintf("%d config %s you had changed %s replaced with the new version; the old %s in the backup folder.",
+		b.bullet(fmt.Sprintf("%d config %s you had changed %s replaced with the new version; the old %s in the backup folder.",
 			n, plural(n, "file", "files"), plural(n, "was", "were"), plural(n, "one is", "ones are")))
 	}
 	if c := pl.Chosen(update.KeepMine); len(c) > 0 {
-		b.WriteString("\n" + wrap(fmt.Sprintf("%d config %s changed on your side and in the new version. "+
+		b.blank()
+		b.raw(wrap(fmt.Sprintf("%d config %s changed on your side and in the new version. "+
 			"I kept yours and saved the new %s next to %s as .mcnew. It's usually fine to ignore this — "+
 			"many mods rewrite their own config when the game starts.",
 			len(c), plural(len(c), "file was", "files were"), plural(len(c), "one", "ones"), plural(len(c), "it", "them")), m.bodyWidth()) + "\n")
 		const limit = 20
 		for i, p := range c {
 			if i == limit {
-				b.WriteString(dimSty.Render(fmt.Sprintf("    … and %d more", len(c)-limit)) + "\n")
+				b.raw(dimSty.Render(fmt.Sprintf("    … and %d more", len(c)-limit)) + "\n")
 				break
 			}
-			b.WriteString(dimSty.Render("    "+strings.TrimPrefix(p, ".minecraft/")) + "\n")
+			b.raw(dimSty.Render("    "+strings.TrimPrefix(p, ".minecraft/")) + "\n")
 		}
 	}
 	if r.BackupDir != "" {
-		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.bodyWidth())) + "\n")
+		b.blank()
+		b.raw(dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.bodyWidth())) + "\n")
 	}
-	b.WriteString(m.headsUp())
+	b.headsUp()
 	return b.String(), m.doneFooter()
 }
 
 // customModsSummary describes what the server-mods sync did (cm nil = it didn't run).
 func (m *model) customModsSummary(cm *update.CustomModsResult, cerr error) string {
-	var b strings.Builder
-	bullet := func(s string) { b.WriteString(m.bullet(s)) }
+	b := m.blocks()
 	if cm != nil {
 		switch {
 		case m.serverMods == "" && len(cm.Removed) > 0:
-			bullet(fmt.Sprintf("Removed %d extra %s from your old server.", len(cm.Removed), plural(len(cm.Removed), "mod", "mods")))
+			b.bullet(fmt.Sprintf("Removed %d extra %s from your old server.", len(cm.Removed), plural(len(cm.Removed), "mod", "mods")))
 		case len(cm.Installed) == 0:
-			bullet("Your server has no extra mods right now.")
+			b.bullet("Your server has no extra mods right now.")
 		default:
 			line := fmt.Sprintf("%d extra %s from your server installed", len(cm.Installed), plural(len(cm.Installed), "mod", "mods"))
 			if len(cm.Added)+len(cm.Removed) > 0 {
 				line += fmt.Sprintf(" (%d new or updated, %d removed)", len(cm.Added), len(cm.Removed))
 			}
-			bullet(line + ".")
+			b.bullet(line + ".")
 		}
 		if len(cm.Skipped) > 0 {
-			bullet("Skipped " + strings.Join(cm.Skipped, ", ") + " — GTNH already ships a mod with that name.")
+			b.bullet("Skipped " + strings.Join(cm.Skipped, ", ") + " — GTNH already ships a mod with that name.")
 		}
 	}
 	if cerr != nil {
-		text := m.bullet("Your server's extra mods couldn't be synced this time (" + cerr.Error() + "). Run me again later to retry.")
-		lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-		for i, l := range lines {
-			lines[i] = warnSty.Render(l) // per line, so the bullet and wrapped lines keep the colour
-		}
-		b.WriteString(strings.Join(lines, "\n") + "\n")
+		b.warnBullet("Your server's extra mods couldn't be synced this time (" + cerr.Error() + "). Run me again later to retry.")
 	}
 	return b.String()
 }
 
 func (m *model) confirmCreateView() (body, footer string) {
 	c := m.creation
-	var b strings.Builder
-	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to create %s with GTNH %s", m.newName, m.target), m.bodyWidth())) + "\n\n")
-	bullet := func(s string) { b.WriteString(m.bullet(s)) }
-	bullet("It'll be a new instance in Prism, in " + c.Dir + ".")
-	bullet(num(int64(c.Files)) + " files will be installed.")
-	bullet("Your other instances aren't touched.")
+	b := m.blocks()
+	b.title(fmt.Sprintf("Ready to create %s with GTNH %s", m.newName, m.target))
+	b.bullet("It'll be a new instance in Prism, in " + c.Dir + ".")
+	b.bullet(num(int64(c.Files)) + " files will be installed.")
+	b.bullet("Your other instances aren't touched.")
 	if m.serverMods != "" {
-		bullet("Your server's extra mods will be installed from " + hostOf(m.serverMods) + ".")
+		b.bullet("Your server's extra mods will be installed from " + hostOf(m.serverMods) + ".")
 	}
 	if c.Flavor == manifest.Java8 {
-		bullet("This version only comes as a Java 8 pack, so that's what you'll get.")
+		b.bullet("This version only comes as a Java 8 pack, so that's what you'll get.")
 	} else {
-		bullet("It uses the Java 17+ version of the pack.")
+		b.bullet("It uses the Java 17+ version of the pack.")
 	}
-	b.WriteString(m.headsUp())
+	b.headsUp()
 	return b.String(), m.buttonFooter("enter", "create it", "esc", "back")
 }
 
 func (m *model) createdView() (body, footer string) {
 	r := m.created
-	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is ready in Prism.", r.Instance.Name), m.bodyWidth())) + "\n\n")
-	b.WriteString(m.bullet(num(int64(r.Files)) + " files installed."))
-	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
-	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
-	b.WriteString(m.headsUp())
+	b := m.blocks()
+	b.success(fmt.Sprintf("All done! %s is ready in Prism.", r.Instance.Name))
+	b.bullet(num(int64(r.Files)) + " files installed.")
+	b.raw(m.customModsSummary(r.CustomMods, r.CustomErr))
+	b.bullet("If Prism is already open and doesn't show it, restart Prism.")
+	b.headsUp()
 	return b.String(), m.doneFooter()
 }
 
 func (m *model) errorView() (body, footer string) {
-	var b strings.Builder
-	b.WriteString(badSty.Render(wrap("Something went wrong", m.bodyWidth())) + "\n\n")
-	b.WriteString(wrap(m.err.Error(), m.bodyWidth()) + "\n\n")
+	b := m.blocks()
+	b.note(badSty, "Something went wrong")
+	b.para(m.err.Error())
 	var leftover *update.LeftoverError
 	switch {
 	case m.creating && (m.errPhase == scPreparing || m.errPhase == scApplying) && errors.As(m.err, &leftover):
 		// The error itself says the folder is still there and what to do.
 	case m.creating && m.errPhase == scPreparing:
-		b.WriteString(okSty.Render(wrap("Nothing was created.", m.bodyWidth())) + "\n\n")
+		b.note(okSty, "Nothing was created.")
 	case m.creating && m.errPhase == scApplying:
-		b.WriteString(okSty.Render(wrap("I removed the half-made instance, so there's nothing to clean up.", m.bodyWidth())) + "\n\n")
+		b.note(okSty, "I removed the half-made instance, so there's nothing to clean up.")
 	case m.errPhase == scPreparing:
-		b.WriteString(okSty.Render(wrap("Nothing was changed.", m.bodyWidth())) + "\n\n")
+		b.note(okSty, "Nothing was changed.")
 	case m.errPhase == scApplying && errors.Is(m.err, update.ErrRolledBack):
-		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.bodyWidth())) + "\n\n")
+		b.note(okSty, "Everything was put back the way it was, so your instance is exactly as before.")
 	case m.errPhase == scApplying:
-		b.WriteString(badSty.Render(wrap("Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.", m.bodyWidth())) + "\n\n")
+		b.note(badSty, "Some files may have changed. The originals are in the .gtnh-updater folder inside the instance.")
 	case m.errPhase == scRestoring:
-		b.WriteString(m.restoreErrorNote())
+		b.raw(m.restoreErrorNote())
 	}
 	if m.canGoBack() {
 		return b.String(), m.buttonFooter("enter", "back", "q", "quit")
 	}
 	return b.String(), m.buttonFooter("enter", "quit")
-}
-
-// headsUp lists the warnings of the current run, set off by blank lines; "" without any.
-func (m *model) headsUp() string {
-	if len(m.warns) == 0 {
-		return ""
-	}
-	blocks := make([]string, len(m.warns))
-	for i, w := range m.warns {
-		blocks[i] = warnSty.Render(indentWrap("Heads up: "+w, m.bodyWidth(), 10))
-	}
-	return "\n" + strings.Join(blocks, "\n") + "\n"
 }

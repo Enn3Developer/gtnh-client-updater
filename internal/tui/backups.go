@@ -110,61 +110,58 @@ func (m *model) startRestore() (tea.Model, tea.Cmd) {
 
 // backupsView is the screen shown when m.inst has no backups to restore.
 func (m *model) backupsView() (body, footer string) {
-	body = titleSty.Render(wrap("Nothing to undo for "+m.inst.Name, m.bodyWidth())) + "\n\n" +
-		wrap("I only keep the files from the last update I did here, and there isn't one.", m.bodyWidth())
-	return body, m.buttonFooter("esc", "back")
+	b := m.blocks()
+	b.title("Nothing to undo for " + m.inst.Name)
+	b.para("I only keep the files from the last update I did here, and there isn't one.")
+	return b.String(), m.buttonFooter("esc", "back")
 }
 
 // restoreConfirmView tells the player what restoring m.backup will do and asks first.
 func (m *model) restoreConfirmView() (body, footer string) {
 	info := m.backup.Info
-	var b strings.Builder
-	b.WriteString(titleSty.Render(wrap(fmt.Sprintf("Ready to put %s back on GTNH %s", m.inst.Name, info.From), m.bodyWidth())) + "\n\n")
+	b := m.blocks()
+	b.title(fmt.Sprintf("Ready to put %s back on GTNH %s", m.inst.Name, info.From))
 	if update.IsDowngrade(info.From, info.To) {
-		b.WriteString(badSty.Render(wrap(fmt.Sprintf("! This goes BACK to an older version. Worlds you played on %s may lose "+
-			"blocks and items or not load at all. Copy your saves folder somewhere safe first.", info.To), m.bodyWidth())) + "\n\n")
+		b.danger(downgradeWarning(info.To))
 	}
-	bullet := func(s string) { b.WriteString(m.bullet(s)) }
-	bullet("Files that update added are removed and the files it replaced are put back exactly as they were.")
-	bullet("Your worlds, screenshots, maps and game settings stay exactly as they are.")
-	bullet("If you changed settings since, they're kept (server address, server mods link, Java and memory).")
+	b.bullet("Files that update added are removed and the files it replaced are put back exactly as they were.")
+	b.bullet(worldsStayBullet)
+	b.bullet("If you changed settings since, they're kept (server address, server mods link, Java and memory).")
 	if info.To != info.From && strings.Contains(m.inst.Name, info.To) {
-		bullet("The instance name in Prism goes back too.")
+		b.bullet("The instance name in Prism goes back too.")
 	}
-	b.WriteString(m.closeMinecraftNote())
-	b.WriteString(m.headsUp())
+	b.closeMinecraftNote()
+	b.headsUp()
 	return b.String(), m.buttonFooter("enter", "undo now", "esc", "back")
 }
 
 // restoredView tells the player what the restore did.
 func (m *model) restoredView() (body, footer string) {
 	r := m.restored
-	var b strings.Builder
-	b.WriteString(okSty.Bold(true).Render(wrap(fmt.Sprintf("All done! %s is back on GTNH %s.", m.inst.Name, r.To), m.bodyWidth())) + "\n\n")
-	b.WriteString(m.bullet(fmt.Sprintf("%s %s put back, %s removed.", num(int64(r.MovedBack)), plural(r.MovedBack, "file", "files"), num(int64(r.Removed)))))
+	b := m.blocks()
+	b.success(fmt.Sprintf("All done! %s is back on GTNH %s.", m.inst.Name, r.To))
+	b.bullet(fmt.Sprintf("%s %s put back, %s removed.", num(int64(r.MovedBack)), plural(r.MovedBack, "file", "files"), num(int64(r.Removed))))
 	if r.Renamed != "" {
-		b.WriteString(m.bullet("Renamed the instance in Prism to \"" + r.Renamed + "\"."))
+		b.bullet(renamedBullet(r.Renamed))
 	}
 	if len(r.Skipped) > 0 {
-		text := m.bullet("I couldn't put these back myself (they live outside the instance folder): " +
+		b.warnBullet("I couldn't put these back myself (they live outside the instance folder): " +
 			strings.Join(r.Skipped, ", ") + ". They're still in " + m.backup.Dir + ".")
-		lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-		for i, l := range lines {
-			lines[i] = warnSty.Render(l) // per line, so the bullet and wrapped lines keep the colour
-		}
-		b.WriteString(strings.Join(lines, "\n") + "\n")
 	}
-	b.WriteString(m.headsUp())
+	b.headsUp()
 	return b.String(), m.doneFooter()
 }
 
 // restoreErrorNote is what the error screen adds after a failed restore: what state the
 // instance is in and what to do next.
 func (m *model) restoreErrorNote() string {
+	b := m.blocks()
 	if errors.Is(m.err, update.ErrGameRunning) {
-		return okSty.Render(wrap("Nothing was changed.", m.bodyWidth())) + "\n\n"
+		b.note(okSty, "Nothing was changed.")
+	} else {
+		b.note(badSty, "Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir)
 	}
-	return badSty.Render(wrap("Some files may have changed. The backup folder is still there, so you can try again: "+m.backup.Dir, m.bodyWidth())) + "\n\n"
+	return b.String()
 }
 
 // backupDesc is the line under a backup on the list: which update it undoes and when
