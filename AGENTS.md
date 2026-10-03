@@ -6,13 +6,14 @@ before changing code; the "Invariants" section is the part that bites.
 ## What this is
 
 `gtnh-update` is a launcher front end for **GT: New Horizons** (GTNH, Minecraft 1.7.10
-modpack) instances in **Prism Launcher**. Its home screen lists the instances; per instance
-the player can **Play**, **Play & join** the saved server, **Update** in place to any version
-in the official GTNH manifest (keeping worlds, settings and config tweaks), change
-**Settings**, **Undo** the last update, or make a **New** instance. Starting the game always
-goes through Prism (login, Java, launch). Players run it by double-clicking (Windows) or
-from a terminal; it is a bubbletea TUI with a scriptable `-yes` mode. The binary, the
-module and the AUR package stay `gtnh-update`.
+modpack) instances in **Prism Launcher**. One persistent workspace lists the instances in a
+sidebar next to the selected instance's page, where the player can **Play**, **Play and
+join** the saved server, **Update** in place to any version in the official GTNH manifest
+(keeping worlds, settings and config tweaks), change **Settings**, **Undo** the last
+update, or make a **New** instance. Starting the game always goes through Prism (login,
+Java, launch). Players run it by double-clicking (Windows) or from a terminal; it is a
+bubbletea TUI with a scriptable `-yes` mode. The binary, the module and the AUR package
+stay `gtnh-update`.
 
 - Public repo: https://github.com/Enn3Developer/gtnh-client-updater (MIT)
 - Module: `github.com/Enn3Developer/gtnh-client-updater`, Go version from `go.mod`
@@ -55,24 +56,33 @@ internal/update/restore.go   undo: BackupInfo manifest (gtnh-backup.json in each
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
-internal/tui/                bubbletea UI, a screen state machine: tui.go model/messages/
-                             update loop; keys.go key dispatch (listKey/selectedKey live in
-                             lists.go); nav.go navigation; home.go home list + card panel;
-                             lists.go showList/showListWith, list delegate, listKeyPairs,
-                             listKey dispatcher; views.go View/page (the single rendering
-                             path) + views_update.go/views_create.go/views_play.go/
-                             views_input.go/views_busy.go/views_error.go (screen bodies by
-                             flow); blocks.go message blocks (titles, bullets, notes,
-                             heads-up, shared texts); buttons.go button screens (labels,
-                             footer, keys, back); settings.go settings form (formDelegate,
-                             sections, saved marker, validation, persistence); backups.go
-                             undo screens; layout.go chrome (titleBar/crumb/banner/keyBar/
-                             frame), panel/badge/buttons primitives, styles and named
-                             colours, bodyWidth; format.go number/time formatting;
-                             flow_load.go/flow_create.go/flow_update.go/flow_self.go/
-                             flow_play.go background commands (flow_play.go: Play and the
-                             game monitor); reporter.go engine progress -> messages;
-                             arch_test.go architecture ratchets (see "Working on it")
+internal/tui/                bubbletea UI, one persistent workspace (see "TUI workspace"):
+                             tui.go Config/Run/Outcome, model, messages, Init/Update/View,
+                             workspace layout, key routing (`key`), visible/current/refresh;
+                             layout.go styles + named colours, titleBar, bodyWindow, overlay,
+                             wrap; sidebar.go sidebarShows/sidebarWidth/sidebarView, glyph;
+                             page.go row/entry, entries/rows, render, pageView + scrollTo,
+                             rowLine/styledRow/labelled, heading/infoLine; rows_play.go the
+                             hero (`playEntries`), Play/Join rows, play-row states,
+                             wrappedRow/wrapLines; rows_update.go the Update section,
+                             notices, release/kindOf/releaseDesc/defaultTarget,
+                             chooseVersion; rows_settings.go + settings_edit.go the
+                             Settings/Launcher rows, settingValue, in-place editing
+                             (`editSetting`/`keyEdit`/`saveEdit`), settingHelp, checkSetting,
+                             saveSetting; jobs.go jobKind/job, the pending instance,
+                             jobBlock/progressLine/stepText, jobOutcome, notifyBusy;
+                             dialog.go dialog/dlist, openList/openInput/confirmDialog/
+                             errorDialog/notify, dialogView, keyDialog/keyInput, dialogPairs;
+                             status.go statusBar, statusPairs; flow_load.go load, afterLoad,
+                             cfgInstance, reload; flow_update.go startUpdate -> askServerMods
+                             -> prepare -> conflicts/resolve/confirm -> apply -> notice;
+                             flow_create.go new instance; flow_restore.go undo; flow_self.go
+                             launcher self-update (incl. progressDialog); flow_play.go
+                             playCmd and the game monitor; reporter.go engine progress ->
+                             messages; format.go number/time formatting. Tests:
+                             fixture_test.go shared fixtures (testManifest, instSpec/
+                             makeInst, newTestModel, press), workspace_test.go a rapid
+                             property over terminal sizes, and per-file *_test.go
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
 .github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
@@ -107,8 +117,11 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
      player's; both changed → **Conflict**, resolved by the player's `Choice`
      (`Plan.Choose`/`ChooseAll`, unset = KeepMine): TakeNew replaces C with N (C goes to
      the backup dir), KeepMine writes N as `<file>.mcnew` and keeps C. The TUI asks after
-     Prepare (screens `scConflicts`/`scResolve`; preselected: `-configs` if given, else
-     `update.Recommended` = new); `-yes` uses `-configs new|mine` (default new).
+     Prepare in a list dialog ("N config files changed both on your side and in the new
+     version": Use the new versions / Keep mine / Decide file by file → a per-file list
+     where space switches a file; `conflictsDialog`/`resolveDialog`), preselected from
+     `-configs` if given, else `update.Recommended` = new; esc there cancels the update.
+     `-yes` uses `-configs new|mine` (default new).
    - `instance.cfg` is never reconciled (player's Java/memory/JVM args). Only its
      `name=` line gets the version string swapped (`prism.RenameVersion`).
 5. **Apply** (`update.Apply`): journaled. Every replaced/removed file is *moved* into
@@ -137,17 +150,28 @@ Order of writes: see "How an update works" above. `update.PrepareCreate` checks 
 `update.NewInstanceFlavor` (Java 17+ pack when the version has one, else Java 8). The
 saved state makes the pack the baseline; `instance.cfg` gets the chosen name
 (`prism.SetName`) and its presence marks the instance finished. On any error, or `Close`
-without a finished Apply, the folder is removed. The TUI enters this flow with `n` on the
-home screen, `-create`, or when Prism has no instances, and passes a cancellable
-`CreateOptions.Context` to the download; headless is
+without a finished Apply, the folder is removed. Headless is
 `-create -version … [-name …] [-server-mods …] -yes`. Instances dir =
 `prism.InstancesDir(PrismDirs[0])`.
 
+TUI (flow_create.go): `n` (or `-create`, or the "Press n to make one." page when Prism has
+no instances) → version picker list dialog "Which GTNH version do you want to install?"
+(recommended / Java 8 only marked; `-version` is used once instead) → the server-mods
+input dialog unless `-server-mods` settles it → name input dialog "What should the new
+instance be called?" (default `update.DefaultInstanceName`, `-name` once;
+`CheckInstanceName` errors shown in the dialog) → the pending instance appears in the
+sidebar and is selected while the job "Getting GTNH X ready" downloads (with a
+cancellable `CreateOptions.Context`) → confirm dialog "Create NAME with GTNH X?"
+(`[ Create ]  [ Cancel ]`; Cancel removes the folder) → job "Creating NAME" → notice
+"Created just now with GTNH X · N files installed" on the new instance, which is
+selected. ctrl+c/q during the download cancel it and quit once the cleanup is done.
+
 ## How Play works
 
-`enter`/`p` on home = Play, `j` = Play & join (only when the instance has a
-`State.ServerAddress`); also `p` or the "Play now" button on the done screens after an
-update/create/restore.
+`p`, `enter` in the sidebar or on the "▶ Play" row = Play; `j` or the "Play and join
+<server>" row = Play and join (that row exists only for a GTNH instance with a
+`State.ServerAddress`). `playCmd` does nothing while the instance's game is starting or
+running.
 
 1. Data dir = the Prism dir whose instances folder holds the instance, else `PrismDirs[0]`
    (`prism.DataDirOf`).
@@ -167,20 +191,25 @@ update/create/restore.
    `CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS`), releases the handle and returns without
    waiting. Closing the TUI never stops the game.
 5. `AfterPlay`: `"quit"` → the TUI quits right after the launch; anything else (`"stay"`,
-   empty, unknown) → monitor screen `scPlaying`.
-6. Monitor: `prism.IsRunning` every 2 s (`pollLater`), `playState`:
-   `starting` → `running` once seen (shows the time it started) → `closed` when it
-   disappears (polling stops); not seen after `slowStart` = 90 s → `slow` (tells the player
-   to look at Prism's window; keeps polling); an `IsRunning` error → `unknown` (polling
-   stops). Buttons Back / Quit: `enter` activates the selected one (Back by default), `esc`
-   back to home, `q` quits. A poll tick from an older run
-   (`playGen`) or off-screen is dropped.
+   empty, unknown) → the Play row of that instance shows the monitor (`playMonitor`).
+6. Monitor: `prism.IsRunning` every 2 s (`pollLater`), `playMonitor.state`:
+   `starting` "◐ Prism Launcher is starting the game…" → `running` "● The game is running
+   since HH:MM" plus the dim line "Leave me open or quit — the game keeps running either
+   way." → `closed` "The game closed." when it disappears (polling stops); not seen after
+   `slowStart` = 90 s → `slow` "I haven't seen the game start yet — have a look at Prism's
+   window." (keeps polling); an `IsRunning` error → `unknown` (polling stops). A poll from
+   an older watch (`playMonitor.gen`) is dropped. `enter` or `esc` on the row dismisses a
+   finished state (closed/slow/unknown) back to "▶ Play". The sidebar shows ◐ for the
+   instance while it's watched.
+
+A launcher that can't be found → dialog "I couldn't start the game" telling the player to
+start the game from Prism or set Prism's location in the settings.
 
 Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
 (same as `-yes` update), then finds and launches Prism and exits; it never joins a server
-and never monitors. `-play` without `-yes` opens the TUI and plays `-instance` straight
-away (with `-version` it goes to the update flow instead). `-play` with `-create` is
-refused; `-play -yes` needs `-instance`.
+and never monitors. `-play` without `-yes` opens the TUI and plays `-instance` right after
+load (with `-version` it starts the update instead). `-play` with `-create` is refused;
+`-play -yes` needs `-instance`.
 
 ## Undo
 
@@ -204,11 +233,16 @@ kept (`pruneBackups` after a run that made one). Backup dirs without a readable 
 5. `prism.RenameVersion(To → From)`; a failure is only a warning.
 6. Delete the backup dir, only if nothing was skipped.
 
-A failed restore is never rolled back: the backup dir stays so the player can retry, and
-the TUI says some files may have changed (or "Nothing was changed." for the game-running
-refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Back button) →
-`scRestoreConfirm` (red warning when it's a downgrade; buttons Undo now / Back) →
-`scRestoring` → `scRestored` (buttons Back / Play now / Quit).
+A failed restore is never rolled back: the backup dir stays so the player can retry.
+
+TUI (flow_restore.go): the Update section shows "Last update A → B, <ago> · undo" when a
+restorable backup exists; `b` or `enter` on that row → refused while a job runs ("One thing
+at a time") or the game runs ("The game is running") → confirm dialog "Go back to GTNH
+<from>?" (what it does; red downgrade warning when it's a downgrade; `[ Undo ]  [ Cancel ]`)
+→ inline restore job "Going back to GTNH <from>" → notice "Back on GTNH X just now · N files
+put back, M removed [· renamed to "…"]", with a warning listing skipped `_external/` files.
+A failure ends in an error dialog: "Nothing was changed." for the game-running refusal,
+else that some files may have changed and the backup folder is still there.
 
 ## Invariants (do not break)
 
@@ -232,8 +266,9 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
   There is **no default server-mods URL** in the public build; it's asked once per
   instance and stored as `State.CustomModsURL` / `CustomModsAsked`.
 - **Prepare never writes to the instance** except `.gtnh-updater/` (download, state dir).
-- **Never quit mid-apply**: the TUI ignores ctrl+c during `scApplying`/`scSelfUpdate`;
-  during a create download ctrl+c cancels and waits for cleanup before quitting.
+- **Never quit mid-apply**: the TUI refuses q/ctrl+c while a job is in its apply phase
+  (`busyApplying`: update, create, restore, self-update); during a create download they
+  cancel it and wait for cleanup before quitting.
   If killed anyway, an update self-heals on rerun: already-updated files match N, the rest
   still match B. ctrl+c during a creation cancels and removes the folder; a *killed*
   process leaves `<InstancesDir>/<name>/` without instance.cfg, which blocks the name
@@ -247,16 +282,19 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
   (omitempty, zero value = old behavior). Don't rename JSON keys.
 - **`instance.cfg` of an existing instance is never reconciled** by updates or restores.
   Its only writers are `prism.RenameVersion` (the `name=` line; update and restore) and
-  `prism.WriteSettings` (from the settings screen only), which rewrites exactly these 10
-  keys in place and keeps every other line and the line endings byte-for-byte:
+  `prism.WriteSettings` (from settings_edit.go `saveSetting` only, i.e. the in-place
+  Settings rows), which rewrites exactly these 10 keys in place and keeps every other
+  line and the line endings byte-for-byte:
   `OverrideMemory`, `MinMemAlloc`, `MaxMemAlloc`, `OverrideJavaArgs`, `JvmArgs`,
   `OverrideJavaLocation`, `JavaPath`, `OverrideWindow`, `MinecraftWinWidth`,
   `MinecraftWinHeight`. (`prism.SetName` only builds the instance.cfg of a *new*
   instance.) Clearing a setting turns its `Override*` flag off and keeps the values.
-- **Settings validation lives in `tui.checkSetting`**: server `host[:port]`; memory a whole
-  number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024, it));
-  Java path and Prism location must be existing regular files; window `WxH` (x or ×),
-  each 320–16384. Server and mods link go to state.json via `update.UpdateState`.
+- **Settings validation lives in `tui.checkSetting`** (settings_edit.go): server
+  `host[:port]` (`checkServerAddress`); mods link `update.CheckCustomModsURL`; memory a
+  whole number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024,
+  it)); Java path and Prism location must be existing regular files; window `WxH` (x or
+  ×), each 320–16384. An empty value means Prism's default / none. Server and mods link go
+  to state.json via `update.UpdateState`, the Prism location to appcfg.
 - **Restore only removes paths recorded in `Added`/`AddedMods`** and only moves back
   files the backup holds; nothing outside those lists is deleted. Never "guess" added
   files from a manifest-less backup.
@@ -268,24 +306,16 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
 - `appcfg` `config.json` is persisted on players' machines: **add fields only**
   (omitempty, zero value = old behavior: `PrismExe` "" = find Prism, `AfterPlay` "" =
   stay). Don't rename `prismExe`/`afterPlay`.
-- **Keys**: self-update is `v` (home and version lists, only when a newer release is
-  known). Home binds `enter`/`p` play, `j` join (no-op without a server), `u` update, `s`
-  settings, `b` undo, `n` new, `a` show all instances, `q` quit (`tui.keyHome`); `esc` on
-  home only clears a filter. The home key bar (`homeHelp`) shows `j` only with a server
-  and `a` only when there are non-GTNH instances (or all are shown).
-  On a button screen (`buttonLabels`) `enter` activates the selected button; the
-  selection resets to the first on every screen change, so the default is: Update now /
-  Create it / Undo now on the confirm screens, Back on done/restored/playing/"Nothing to
-  undo" and on the error screen (Quit there when it can't go back), Restart now after a
-  self-update. `←→`/tab/shift+tab move the selection; the old shortcuts are unchanged
-  (confirm screens: `y` goes ahead, `n`/`esc` go back, `q` quits; done screens: `esc`
-  back, `p` play, `q` quit; after a self-update `esc`/`q` quit). The bubbles list's own
-  quit keys are disabled (`DisableQuitKeybindings`): `q` quits through `m.quit` on every
-  screen, confirm screens included, except text fields (where it's typed) and busy
-  screens (only ctrl+c). The error screen: `enter` and `esc` go back when going back is
-  possible (`canGoBack`), quit otherwise. List and home key bars wrap whole pairs to the
-  terminal width (`hintRows`), so width is no longer a reason to hide a key; the
-  button-screen, text-field and busy footers are a single `hint` row, so keep those short.
+- **Keys** (`tui.key`, no dialog open): `p` play, `j` the join row, `u` the update row,
+  `o` choose another version, `b` the undo row (each a no-op when the page has no such
+  row), `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
+  `a` show all instances, `v` launcher update (only when a newer release is known),
+  `q`/`ctrl+c` quit. `↑↓` move the instance (sidebar) or the row (page);
+  tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and on the page runs the
+  row (play/join/update/versions/undo) or edits it (settings/launcher); `esc` on the play
+  row dismisses a finished game state. A dialog takes every key (`keyDialog`), and so does
+  a setting being edited (`keyEdit`). `q` and `ctrl+c` quit everywhere except mid-apply
+  (refused) and inside a text field or dialog (typed / handled by the dialog).
 
 ## Known quirks of the outside world
 
@@ -306,17 +336,18 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
   means the guess is probably wrong (TUI warns, `-yes` refuses).
 - Many GTNH mods rewrite their config on game start, so a few configs "changed on both
   sides" after an update are normal (hence TakeNew is the recommended choice,
-  `update.Recommended`; with KeepMine they show up as `.mcnew` files, and the UI says it's
-  usually fine).
+  `update.Recommended`; with KeepMine they show up as `.mcnew` files).
 - Prism: `prismlauncher.cfg` `InstanceDir=` may be relative or absolute;
-  `instance.cfg` `lastLaunchTime` is epoch ms (used to preselect the last-played instance).
+  `instance.cfg` `lastLaunchTime` is epoch ms (`prism.ListInstances` sorts GTNH first,
+  then most recently played, then by name, so without `-instance` the sidebar starts on
+  the most recently played GTNH instance of the first Prism data dir; the page's "played
+  <ago>" comes from it).
 - Prism CLI: `-l` takes the instance **folder name**, not the display name. A second
   `prismlauncher -l …` while Prism is open is handed to the running Prism (so Launch
   returns at once either way). Flatpak Prism has its own data dir inside the sandbox, so
   `-d` is omitted for it.
 - Prism re-reads `instance.cfg` at launch, but settings edited while Prism is open may
-  need a Prism restart to take effect (the instance settings' edit screens say so,
-  `instanceFoot`).
+  need a Prism restart to take effect.
 - Game detection: Linux reads `/proc` (a JVM whose cmdline contains the instance dir, or
   whose cwd is inside it); macOS runs `ps -axww -o command=` (`psTimeout` 10 s); Windows
   runs PowerShell `Get-CimInstance Win32_Process` (case-folded, `powershellTimeout` 15 s),
@@ -325,57 +356,126 @@ refusal). TUI: `b` on home → `scBackups` (list, or "Nothing to undo" with a Ba
   (deleted by `selfupdate.CleanupOld` on next start). Windows restart = child process the
   parent waits on (keeps a double-clicked console open).
 
-## TUI chrome
+## TUI workspace
 
-Every screen is `View()` = `chrome(page())`: `page()` (views.go) returns the body, the
-pinned footer and the scroll offset, and `chrome` (layout.go) lays them out with
-`frame(width, height, titleBar(header, crumb), banner, body, footer, scroll)`. There is no
-other rendering path.
+There is one persistent view. `View()` (tui.go) = `titleBar` · a blank line · the
+workspace (`workspace`: [sidebar │ page], or the page alone behind a 2-column margin) ·
+`statusBar`: exactly `height` lines, each truncated to `width`. An open dialog is overlaid
+centred over the workspace lines (`overlay`, layout.go). The view never does I/O: `refresh`
+reads what the page shows about each instance into `m.home`.
 
-- **Title bar**: full width; "GTNH Launcher <version>" (`header`) on the left, the crumb on
-  the right: "<instance> › <area>" (e.g. "Pack › Update › Config files"), just the area
-  for a non-GTNH or unnamed instance. "Home", "New instance", "Launcher update" and
-  "Problem" never name an instance; loading has no crumb. The right side gives way first.
-- **Banner** (second line): the self-update offer, only where `v` works (home, installed,
-  target); blank otherwise.
-- **Body**: indented 2, `bodyWidth()` = width − 4 wide, windowed by `bodyWindow` into the
-  rows the chrome leaves (`fitRows`); an overflowing body gets "↑ N more" / "↓ N more
-  (↑/↓ to scroll)" markers. Busy screens keep the newest line in view.
-- **Footer**: pinned at the bottom after a blank line. Decision screens put a button row
-  (`buttons`: `[ Update now ]  [ Back ]`, the selected one highlighted) above a key row
-  that starts with `←→ choose`; `←→`/tab move, enter activates, the old keys still work.
-  Elsewhere it's a key bar of key chips: `keyBar` on lists and `homeHelp` on home (both
-  `hintRows`), a one-row `hint` on text fields and busy screens.
-- **Lists** (`showListWith`): the bubbles help is off (the key bar replaces it), its quit
-  bindings are disabled (q/esc go through the TUI), and non-home titles are drawn by
-  `page()` (`titledList`), wrapped to the list width — the list would cut them to one
-  line. The "N choices" status bar shows only on installed/target/resolve with more than 8
-  items (`showsStatusBar`).
-- **Home**: each row ends in a status badge (`homeStatus`): `● up to date`, `▲ <version>
-  available`, `○ version unknown` / `○ not a GTNH instance`. At ≥ 90 columns
-  (`homeCardShows`) the selected instance's card sits next to the list: a 42-column
-  (`cardWidth`) `panel` titled with the instance name (cut to 34), labels padded to 13
-  (`cardLabelWidth`), "press u/b/j" hints when they fit.
-- **Settings**: a one-line-per-row form (`formDelegate`): label, padded to the widest one
-  shown, and value, under "── This instance" / "── The launcher" section rules. The cursor
-  (`▸`) skips the rules (`skipSections`); "✓ saved" (`savedMarker`) shows on the row just
-  saved until the next key.
-- **Busy screens** (preparing, applying, restoring, self-update): a title, then the
-  finished steps (✓), the current one and the progress bar boxed in an untitled `panel`
-  across the body width; the footer asks not to close the window, or offers `ctrl+c
-  cancel` while preparing.
+- **Title bar** (`titleBar`): full width on the bar background; "GTNH Launcher <version>"
+  on the left; on the right "v  launcher X is out" only when a newer release is known. The
+  right side gives way first.
+- **Sidebar** (sidebar.go): only when loaded and more than one instance is visible
+  (`sidebarShows`; `visible()` = the GTNH instances, or all of them after `a`, plus the
+  pending one). Width clamp(longest name + 4, 16, 28) (`sidebarWidth`). A dim "Instances"
+  heading, then one "<glyph> <name>" line per instance, scrolled to keep the selection
+  visible. Glyphs (`glyph`): ● up to date (ok colour), ▲ newer version out (warn), ○ not
+  GTNH or version unknown (dim), ◐ (accent) for the instance whose game is being watched
+  or whose job runs. The selected line is accent, on the bar background when the sidebar
+  has focus.
+- **Page** (page.go: `entries` → `render` → `pageView`), per instance, top to bottom:
+  - hero (`playEntries`): the bold name and a dim meta line ("GTNH <v> · Java 17+|Java 8 ·
+    played <ago>|never played", "GTNH · version unknown · …", or "Not a GTNH instance ·
+    …"), then the Play rows: "▶ Play" (hint `enter`) and, with a `State.ServerAddress`,
+    "Play and join <server>" (hint `j`).
+  - Update section (GTNH only, rows_update.go): bold "Update" heading, the last job's
+    notice lines (ok/warn/info), then the update row: "GTNH <rec> is out · <kind> · <ago>"
+    (hint `u`), "I'm not sure which version this is — tell me and I'll check for updates"
+    for an unknown version, or the dim info line "You have the newest stable version.";
+    "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
+    exists, "Last update A → B, <ago> · undo" (hint `b`).
+  - "Settings" heading (rows_settings.go): Memory, Java arguments, Java, Window and, for
+    GTNH instances, Server and Server mods; the label padded to 15 (`labelled`), values
+    like "6144 MB (at least 1024 MB)", "1920×1080", "Prism's default", "none", or the host
+    of the mods link (`settingValue`). When instance.cfg can't be read the rows give way
+    to the line "I couldn't read this instance's settings".
+  - "Launcher" heading: "After I start the game" (quit | stay open and show whether it's
+    running) and "Prism Launcher" (the path | found automatically).
+
+  A row is "▸ " + accent bold text when selected, else two spaces + text, with its key
+  hint right-aligned and dim (`rowLine`). The page scrolls so the selected row is fully
+  visible and off the "↑ N more" / "↓ N more" markers (`scrollTo`, `bodyWindow`). Before
+  load the page is a spinner "Looking for your GTNH instances…"; a load error shows in
+  red; with no visible instance it says "No GTNH instances in Prism yet." / "Press n to
+  make one.".
+- **Focus**: sidebar or page. After load the sidebar has focus (the page when the sidebar
+  is hidden). `↑↓` move the instance or the row (changing instance resets row and scroll);
+  tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and runs the row on the
+  page; `esc` on the play row dismisses a finished game state. Letter shortcuts work with
+  no dialog open (see "Keys" under Invariants).
+- **Status bar** (`statusPairs`, status.go): key/label chips on the bar background; pairs
+  that don't fit are dropped from the end. Before load: "q quit". With a dialog, its pairs
+  (`dialogPairs`; list: ↑↓ move · enter choose · esc cancel [· space switch]; input:
+  enter continue · esc cancel; buttons: ←→ choose · enter ok · esc cancel; the progress
+  dialog: "updating please don't close this window"). While editing a setting: "enter
+  save · esc cancel". Otherwise sidebar focus "↑↓ instance · enter play · tab page" or
+  page focus "↑↓ move · enter run|edit [· tab instances]", then "n new instance", "a show
+  all" (when non-GTNH instances exist or all are shown), then "updating please don't
+  close this window" while applying, "stopping cleaning up…" while a cancelled create
+  download cleans up, else "q quit".
+- **Dialogs** (dialog.go): one at a time (`m.dialog`), a rounded dim-bordered box with the
+  title in the top border, content on the bar background, buttons as right-aligned chips
+  with the selected one highlighted (`dialogView`). Kinds:
+  - list (`openList`): ▸ cursor, dim descriptions, a window of min(12, height − 9) ≥ 3
+    rows, optional space toggle;
+  - input (`openInput`): a one-line text field, a red error under it, a dim note, buttons;
+  - confirm (`confirmDialog`): lines, then yellow warn lines, then red bad lines,
+    `[ <ok> ]  [ Cancel ]`, width 72;
+  - error (`errorDialog`, "Something went wrong"): the error, then what it means — green
+    for "Nothing was changed." / "Everything was put back…", red otherwise; OK;
+  - notify (`notify`): title + text, OK;
+  - progress (`progressDialog`, flow_self.go): buttonless, shows the running job's
+    progress line and step text, takes and ignores every key; used by the launcher
+    self-update.
+
+  A dialog takes every key (`keyDialog`): esc = cancel/close, `←→`/tab/shift+tab move
+  between buttons, enter activates; in a list `↑↓` move and enter picks; in an input
+  dialog (`keyInput`) every key but enter/esc/tab/shift+tab goes to the field.
+- **Jobs** (jobs.go): kinds update, create, restore, self (`jobKind`); phase "prepare" |
+  "apply"; one at a time — starting another shows "One thing at a time" (`notifyBusy`).
+  The job block (`jobBlock`) replaces the Play rows of its instance: "◐ <title>" (hint
+  "please wait" while applying), a progress bar with percentage and "N of M files" / MB
+  and an ETA (`progressLine`), the step log "✓ step · ✓ step · <spinner> current"
+  (`stepText`), and yellow "Heads up: …" lines; the sidebar shows ◐ for that instance.
+  q/ctrl+c are refused while a job is in its apply phase (`busyApplying`); during a create
+  download they cancel it and quit once the cleanup is done. A failed job ends in an
+  error dialog whose outcome line comes from `jobOutcome`/`updateOutcome`:
+  - update: prepare → "Nothing was changed."; rolled back → "Everything was put back the
+    way it was…"; else "Some files may have changed. The originals are in the
+    .gtnh-updater folder…";
+  - restore: game running → "Nothing was changed."; else "Some files may have changed.
+    The backup folder is still there…";
+  - create: prepare → "Nothing was created."; apply → "I removed the half-made
+    instance…"; a `LeftoverError` speaks for itself (plain notify);
+  - self → "The launcher wasn't changed.".
+- **Pending instance** (`pending`): while a create job runs, a synthetic GTNH instance is
+  listed last in the sidebar and selected; its page is the hero (name, "GTNH <v> · being
+  created") and the job block.
+- **Settings edited in place** (settings_edit.go): enter on a setting row (`editSetting`)
+  turns it into "▸ <label>  <text field>" with a dim help line (`settingHelp`) and a red
+  error line. While editing (`keyEdit`) enter saves (`saveEdit`: `checkSetting` → on an
+  error the message stays in the row and editing continues; else `saveSetting`,
+  `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab/`←→` are
+  swallowed, other keys type. An empty value means Prism's default / none. The "After I
+  start the game" row toggles stay/quit on enter and saves at once. Editing is refused
+  while a dialog is open or a job runs on the instance; a save failure shows the dialog
+  "I couldn't save that setting".
 
 ## UI voice
 
-The TUI talks to players, not developers: first person ("I couldn't find…"), full
-sentences, no jargon ("baseline", "reconcile", "B/C/N" never appear on screen), always a
-visible next key in the footer (`keyBar`, `buttonFooter`, `hint`). Errors say whether
-anything was changed. Vocabulary: `esc` is always "back", `q` is always "quit", `enter`
-is labelled with its verb ("update now", "save", "continue"). On screen the product is
-"GTNH Launcher" / "the launcher", never `gtnh-update`; never "instance.cfg", "flatpak" or
-"host:port". The key bar carries the keys, so bodies don't repeat "press enter to…". Keep
-key labels to a word or two: list and home key bars wrap (`hintRows`), but the one-row
-footers of button, text-field and busy screens don't.
+The TUI talks to players, not developers: first person ("I couldn't find…"), no jargon
+("baseline", "reconcile", "B/C/N" never appear on screen). Rows are labels, not sentences
+("▶ Play", "Choose another version…", "Memory"); full first-person sentences live in
+dialogs, help lines, notices and the job block. Questions appear only as dialog titles
+("Update X to GTNH Y?"); section headings and row labels never are. Errors say whether
+anything was changed. The status bar carries the keys, so rows and dialog bodies don't
+repeat "press enter to…". Vocabulary: `esc` is always "cancel"/"back", `q` is always
+"quit", `enter` is labelled with its verb ("run", "edit", "save", "continue"). On screen
+the product is "GTNH Launcher" / "the launcher", never `gtnh-update`; never
+"instance.cfg", "flatpak" or "host:port". Keep key labels to a word or two: the status
+bar drops pairs that don't fit.
 
 ## Working on it
 
@@ -397,27 +497,22 @@ gofmt -l .                        # CI fails on unformatted files
   Prism dir (`prismlauncher.cfg` with `InstanceDir=<abs path>`), `-prism-dir <fake>`,
   drive it with `tmux send-keys`, read with `tmux capture-pane -p`. Never test against a
   real player instance.
-- Page goldens: `TestC1PageGoldens` (characterize_test.go, `pageGoldens`) pins `page()`
-  of every screen at 82x25 (`termW`/`termH` in layout_test.go) as ANSI-stripped inline
-  strings. There is no update flag or env var: when the layout changes on purpose, copy
-  the test's "got" output into `pageGoldens` by hand and say why in its comment.
-  backups_test.go, buttons_test.go and chrome_test.go pin the undo, button and chrome
-  screens with exact expected strings, mostly at the same size.
-- chrome_test.go `TestEveryScreenFitsTheTerminalAndShowsItsFooter` is a rapid property
-  over every screen (`chromeScreenNames`, 40–160 x 10–50): the view fits the terminal
-  and shows its footer.
-- arch_test.go (`TestArchitecture`) ratchets duplication: `m.width-4/-8/-10` exactly once,
-  in layout.go (`bodyWidth`); `list.Filtering`/`list.Unfiltered` and
-  `SelectedItem().(item)` only in lists.go; only `fail` (tui.go) assigns `scError`; colour
-  literals only in layout.go; message blocks (`okSty.Bold(true)`, warn bullets, no local
-  bullet helpers or `titleSty.Render(wrap`) only in blocks.go; shared texts written once in
-  blocks.go; file line budgets (300 lines; settings.go 500, tui.go 400, layout.go 330).
-  Read it before adding a `m.width-4` or a colour literal.
+- TUI tests build a model with `newTestModel` (fake launcher boundaries) over fake
+  instances on disk from `fixture_test.go` (`instSpec`/`makeInst`, `testManifest`,
+  `press` to send keys).
+- `workspace_test.go` holds a rapid property over 40–160 × 10–50 terminals: the view is
+  exactly `height` lines, none wider than `width`, with title bar, workspace and status
+  bar (also with a pending instance or the progress dialog open).
+- Each source file's `_test.go` (plus dialog_list_test.go, page_scroll_test.go and
+  rows_update_flow_test.go) pins its rows, dialogs and status pairs as ANSI-stripped
+  strings. There are no golden files or update flags: when the layout changes on purpose,
+  fix the expected strings by hand.
 - Version string: `main.version`, injected by `build.sh` (`-X main.version=…`, leading
   `v` stripped). `dev` builds never offer self-updates.
 - Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).
-  That disables the update check, the banner and `-self-update` (which then tells the user
-  to use their package manager): a packaged binary is owned by the package manager.
+  That disables the update check, the title bar's offer and `-self-update` (which then
+  tells the user to use their package manager): a packaged binary is owned by the package
+  manager.
 
 ## Releasing
 
