@@ -1,0 +1,30 @@
+ GTNH Launcher 1.2.3                                                       v  launcher 1.3.0 is out
+
+Instances        │ Older
+▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
+● Main           │
+○ Vanilla        │   ▶ Play                                                                    enter
+                 │   Play and join play.example.org                                                j
+                 │
+                 │ Update
+                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago                              u
+                 │   Choose another version…                                                       o
+                 │   Last update 2.8.0 → 2.8.1, 3 days ago · undo                                  b
+                 │  ╭─ Updating the launcher ──────────────────────────────────╮
+                 │ S│ █████████████████████████░░░░░░░░░░░░░░░░░  60% · 7 MB   │
+                 │  │ of 12 MB · almost done                                   │
+                 │  │ ⣾ Downloading GTNH Launcher 1.3.0                        │
+                 │  ╰──────────────────────────────────────────────────────────╯
+                 │   Window         Prism's default
+                 │   Server         play.example.org
+                 │   Server mods    mods.example.org
+                 │
+                 │ Launcher
+                 │   After I start the game stay open and show whether it's running
+                 │   Prism Launcher found automatically
+                 │
+                 │
+                 │
+                 │
+                 │
+ updating please don't close this window

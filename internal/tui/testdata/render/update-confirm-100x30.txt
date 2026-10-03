@@ -1,0 +1,30 @@
+ GTNH Launcher 1.2.3                                                       v  launcher 1.3.0 is out
+
+Instances        │ Older
+◐ Older          │ GTNH 2.8.1 · Java 17+ · never played
+● Main           │
+○ Vanilla        │ ▸ ◐ Checking what GTNH 2.8.0 changes
+              ╭─ Go back to GTNH 2.8.0? ─────────────────────────────────────────────╮
+              │ 1,204 files updated, 18 removed                                      │
+              │ 3 config files you changed stay as they are                          │             u
+              │ 2 config files you changed get the new version — your old ones go to │             o
+              │ the backup                                                           │             b
+              │ 1 config file you changed stays yours — the new one is saved next to │
+              │ it as .mcnew                                                         │
+              │ Mods you added yourself stay: optifine.jar, journeymap-extra.jar     │
+              │ Server mods synced from mods.example.org                             │
+              │ Worlds, maps and settings aren't touched. Everything replaced is     │
+              │ backed up first.                                                     │
+              │                                                                      │
+              │ This goes BACK to an older version. Worlds you played on 2.8.1 may   │
+              │ lose blocks and items or not load at all. Copy your saves folder     │
+              │ somewhere safe first.                                                │
+              │                                                                      │
+              │                                              [ Go back ]  [ Cancel ] │
+              ╰──────────────────────────────────────────────────────────────────────╯
+                 │
+                 │
+                 │
+                 │
+                 │
+ ←→ choose   enter ok   esc cancel

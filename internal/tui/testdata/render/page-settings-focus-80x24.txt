@@ -1,0 +1,24 @@
+ GTNH Launcher 1.2.3                                   v  launcher 1.3.0 is out
+
+Instances        │ Older
+▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
+● Main           │
+○ Vanilla        │   ▶ Play                                                enter
+                 │   Play and join play.example.org                            j
+                 │
+                 │ Update
+                 │   GTNH 2.8.4 is out · stable release · 2 weeks ago          u
+                 │   Choose another version…                                   o
+                 │   Last update 2.8.0 → 2.8.1, 3 days ago · undo              b
+                 │
+                 │ Settings
+                 │ ▸ Memory         8192 MB (at least 4096 MB)
+                 │   Java arguments Prism's default
+                 │   Java           Prism's default
+                 │   Window         Prism's default
+                 │   Server         play.example.org
+                 │   Server mods    mods.example.org
+                 │
+                 │ Launcher
+                 │ ↓ 1 more
+ ↑↓ move   enter edit   tab instances   n new instance   a show all   q quit

@@ -1,0 +1,24 @@
+ GTNH Launcher 1.2.3                                   v  launcher 1.3.0 is out
+
+Instances        │ Older
+▲ Older          │ GTNH 2.8.1 · Java 17+ · never played
+● Main           │
+○ Vanilla        │   ▶ Play                                                enter
+    ╭─ Which GTNH version do you want? ───────────────────────────────────╮    j
+    │   2.9.0-beta-2  beta · 3 days ago                                   │
+    │   2.9.0-beta-1  beta · 10 days ago                                  │
+    │ ▸ 2.8.4  stable release · 2 weeks ago · recommended                 │    u
+    │   2.8.3  stable release · 7 weeks ago                               │    o
+    │   2.8.2  stable release · 2 months ago                              │    b
+    │   2.8.1  stable release · 4 months ago · you have this one          │
+    │   2.8.0  stable release · 6 months ago                              │
+    │   2.7.4  stable release · 10 months ago                             │
+    │   2.7.3  stable release · a year ago · not available for your Java  │
+    │   2.7.2  stable release · 2 years ago · not available for your Java │
+    ╰─────────────────────────────────────────────────────────────────────╯
+                 │   Server         play.example.org
+                 │   Server mods    mods.example.org
+                 │
+                 │ Launcher
+                 │ ↓ 1 more
+ ↑↓ move   enter choose   esc cancel

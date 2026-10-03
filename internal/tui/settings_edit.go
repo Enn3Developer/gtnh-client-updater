@@ -92,6 +92,12 @@ func (m *model) keyEdit(k tea.KeyMsg) (tea.Cmd, bool) {
 	case "esc":
 		m.cancelEdit()
 		return nil, true
+	case "ctrl+c":
+		if m.busyApplying() {
+			return nil, true // never quit mid-apply; keep the field as typed
+		}
+		m.cancelEdit()
+		return m.quitKey(), true
 	case "up", "down", "tab", "shift+tab", "left", "right":
 		return nil, true
 	}

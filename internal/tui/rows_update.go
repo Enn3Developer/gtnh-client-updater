@@ -31,7 +31,7 @@ func hintedRow(id, key, text string, run func(m *model) tea.Cmd) row {
 func (m *model) updateEntries() []entry {
 	in, _ := m.current()
 	info := m.home[in.Dir]
-	now := time.Now()
+	now := m.now()
 	es := textEntries(heading("Update"))
 	if n, ok := m.notices[in.Dir]; ok {
 		es = append(es, textEntries(m.noticeLines(m.pageWidth(), n)...)...)
@@ -42,14 +42,11 @@ func (m *model) updateEntries() []entry {
 			"I'm not sure which version this is — tell me and I'll check for updates",
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
 	case info.rec != info.version:
-		parts := []string{"GTNH " + info.rec + " is out"}
+		text := "GTNH " + info.rec + " is out"
 		if r, ok := m.release(info.rec); ok {
-			parts = append(parts, strings.ToLower(kindOf(r)))
-			if a := ago(r.ReleaseDate, now); a != "" {
-				parts = append(parts, a)
-			}
+			text += " · " + releaseDesc(r, now)
 		}
-		es = append(es, entry{row: ptr(hintedRow("update", "u", strings.Join(parts, " · "),
+		es = append(es, entry{row: ptr(hintedRow("update", "u", text,
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
 	default:
 		es = append(es, entry{text: infoLine("You have the newest stable version.")})
@@ -127,20 +124,20 @@ func (m *model) chooseVersion() tea.Cmd {
 	}
 	in, _ := m.current()
 	info := m.home[in.Dir]
-	now := time.Now()
+	now := m.now()
 	items := make([]ditem, len(m.manifest.Releases))
 	for i, r := range m.manifest.Releases {
-		desc := releaseDesc(r, now)
+		var tags []string
 		if r.Version == info.rec {
-			desc += " · recommended"
+			tags = append(tags, "recommended")
 		}
 		if r.Version == info.version {
-			desc += " · you have this one"
+			tags = append(tags, "you have this one")
 		}
 		if !availableFor(r, info.flavor) {
-			desc += " · not available for your Java"
+			tags = append(tags, "not available for your Java")
 		}
-		items[i] = ditem{title: r.Version, desc: desc, key: r.Version}
+		items[i] = ditem{title: r.Version, desc: releaseDesc(r, now, tags...), key: r.Version}
 	}
 	m.openList("Which GTNH version do you want?", "", items, info.rec, func(m *model, v string) tea.Cmd {
 		if r, _ := m.release(v); !availableFor(r, info.flavor) {
@@ -160,11 +157,14 @@ func availableFor(r manifest.Release, flavor manifest.Flavor) bool {
 }
 
 // releaseDesc is how a version list describes r: its kind and, when dated, how long ago
-// it came out.
-func releaseDesc(r manifest.Release, now time.Time) string {
-	desc := kindOf(r)
+// it came out, then tags.
+func releaseDesc(r manifest.Release, now time.Time, tags ...string) string {
+	desc := strings.ToLower(kindOf(r))
 	if a := ago(r.ReleaseDate, now); a != "" {
 		desc += " · " + a
+	}
+	for _, t := range tags {
+		desc += " · " + t
 	}
 	return desc
 }

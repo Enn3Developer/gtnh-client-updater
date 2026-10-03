@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -61,21 +59,18 @@ func (m *model) newInstance() tea.Cmd {
 
 // pickCreateVersion asks which GTNH version the new instance gets (C5).
 func (m *model) pickCreateVersion() {
-	now := time.Now()
+	now := m.now()
 	rec := defaultTarget(m.manifest, "")
 	items := make([]ditem, len(m.manifest.Releases))
 	for i, r := range m.manifest.Releases {
-		desc := strings.ToLower(kindOf(r))
-		if a := ago(r.ReleaseDate, now); a != "" {
-			desc += " · " + a
-		}
+		var tags []string
 		if r.Version == rec {
-			desc += " · recommended"
+			tags = append(tags, "recommended")
 		}
 		if update.NewInstanceFlavor(r) == manifest.Java8 {
-			desc += " · Java 8 only"
+			tags = append(tags, "Java 8 only")
 		}
-		items[i] = ditem{title: r.Version, desc: desc, key: r.Version}
+		items[i] = ditem{title: r.Version, desc: releaseDesc(r, now, tags...), key: r.Version}
 	}
 	m.openList("Which GTNH version do you want to install?", "", items, rec, func(m *model, v string) tea.Cmd {
 		m.closeDialog()

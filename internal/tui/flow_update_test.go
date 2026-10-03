@@ -240,9 +240,9 @@ func TestC3UnknownVersionAsksWhichVersionItIsOn(t *testing.T) {
 	}
 	l := listOf(t, m)
 	want := []ditem{
-		{title: "2.8.4", desc: "Stable release · 5 days ago", key: "2.8.4"},
-		{title: "2.8.1", desc: "Stable release · 5 weeks ago", key: "2.8.1"},
-		{title: "2.8.0", desc: "Stable release · 2 months ago", key: "2.8.0"},
+		{title: "2.8.4", desc: "stable release · 5 days ago", key: "2.8.4"},
+		{title: "2.8.1", desc: "stable release · 5 weeks ago", key: "2.8.1"},
+		{title: "2.8.0", desc: "stable release · 2 months ago", key: "2.8.0"},
 	}
 	if !reflect.DeepEqual(l.items, want) || l.cursor != 0 {
 		t.Errorf("items %+v cursor %d, want %+v at 0", l.items, l.cursor, want)

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -91,7 +90,7 @@ func (m *model) startUpdate(target string) tea.Cmd {
 	if m.detect.Version != "" {
 		return m.askServerMods(inst, st, target)
 	}
-	now := time.Now()
+	now := m.now()
 	items := make([]ditem, len(m.manifest.Releases))
 	for i, r := range m.manifest.Releases {
 		items[i] = ditem{title: r.Version, desc: releaseDesc(r, now), key: r.Version}

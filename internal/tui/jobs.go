@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/lipgloss"
@@ -165,7 +164,7 @@ func (m *model) progressLine(width int) string {
 	if m.total > 1_000_000 {
 		detail = mb(m.done) + " of " + mb(m.total)
 	}
-	if e := eta(m.done, m.total, time.Since(m.stepStart)); e != "" {
+	if e := eta(m.done, m.total, m.now().Sub(m.stepStart)); e != "" {
 		detail += " · " + e
 	}
 	return "  " + bar.ViewAs(float64(m.done)/float64(m.total)) +

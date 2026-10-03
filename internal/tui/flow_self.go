@@ -82,7 +82,7 @@ func (m *model) progressDialog(title string) {
 // startSelfUpdate downloads m.newer over the running binary.
 func (m *model) startSelfUpdate() tea.Cmd {
 	m.startBusy()
-	m.step, m.stepStart, m.done, m.total = "Downloading GTNH Launcher "+m.newer.Version, time.Now(), 0, 0
+	m.step, m.stepStart, m.done, m.total = "Downloading GTNH Launcher "+m.newer.Version, m.now(), 0, 0
 	rel, rep, client := m.newer, m.reporter(), m.cfg.Client
 	return func() tea.Msg {
 		if err := rel.Apply(client, rep.Progress); err != nil {

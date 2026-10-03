@@ -115,6 +115,7 @@ type model struct {
 	isRunning    func(inst prism.Instance) (bool, error)
 	saveApp      func(appcfg.Config) error
 	restore      func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
+	now          func() time.Time
 
 	// job state
 	steps           []string // finished steps of the current job
@@ -145,7 +146,7 @@ func newModel(cfg Config) *model {
 	return &model{
 		cfg: cfg, spin: sp, width: 80, height: 24,
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
-		saveApp: appcfg.Save, restore: update.Restore,
+		saveApp: appcfg.Save, restore: update.Restore, now: time.Now,
 		notices: map[string]notice{},
 	}
 }
@@ -390,7 +391,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	info := homeInfo{
 		gtnh:    in.GTNH,
 		version: update.DetectVersion(in, st, m.manifest).Version,
-		played:  ago(in.LastLaunch, time.Now()),
+		played:  ago(in.LastLaunch, m.now()),
 		flavor:  update.FlavorOf(in),
 	}
 	if m.manifest != nil && len(m.manifest.Releases) > 0 {
@@ -414,121 +415,19 @@ func (m *model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-// key handles a key with no dialog open (C5).
-func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	m.savedRow = ""
-	s := k.String()
-	if s == "q" || s == "ctrl+c" {
-		if m.busyApplying() {
-			return m, nil // never quit mid-apply
-		}
-		if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
-			m.cancelCreate() // quit once the download has cleaned up (C10)
-			m.quitAfterCancel = true
-			return m, nil
-		}
-		return m.quit()
+// quitKey handles q and ctrl+c: never quits mid-apply, cancels a create download and
+// quits once it has cleaned up, else quits.
+func (m *model) quitKey() tea.Cmd {
+	if m.busyApplying() {
+		return nil // never quit mid-apply
 	}
-	if !m.loaded {
-		return m, nil
+	if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
+		m.cancelCreate() // quit once the download has cleaned up (C10)
+		m.quitAfterCancel = true
+		return nil
 	}
-	switch s {
-	case "up":
-		m.move(-1)
-	case "down":
-		m.move(1)
-	case "tab", "shift+tab", "left", "right":
-		if m.sidebarShows() && m.focus == focusPage {
-			m.focus = focusSidebar
-		} else if m.sidebarShows() {
-			m.focus = focusPage
-		}
-	case "enter":
-		if m.focus == focusSidebar {
-			return m, m.playCmd(false)
-		}
-		if rs := m.rows(); m.row < len(rs) && rs[m.row].run != nil {
-			return m, rs[m.row].run(m)
-		}
-	case "esc":
-		if m.focus == focusPage && m.row == 0 {
-			m.dismissPlay()
-		}
-	case "p":
-		return m, m.playCmd(false)
-	case "j":
-		return m, m.runRow("join") // only GTNH instances with a server have one
-	case "u":
-		return m, m.runRow("update")
-	case "o":
-		return m, m.runRow("versions")
-	case "b":
-		return m, m.runRow("undo")
-	case "s":
-		m.jumpToSettings()
-	case "n":
-		return m, m.newInstance()
-	case "a":
-		m.toggleShowAll()
-	case "v":
-		if m.newer != nil {
-			return m, m.selfUpdate()
-		}
-	}
-	return m, nil
-}
-
-// move moves the page row or, in the sidebar, the selected instance by d, clamped.
-func (m *model) move(d int) {
-	if m.focus == focusPage {
-		m.row = max(min(m.row+d, len(m.rows())-1), 0)
-		return
-	}
-	m.sel = max(min(m.sel+d, len(m.visible())-1), 0)
-	m.row, m.pageScroll = 0, 0
-}
-
-// runRow runs the page row with id, if the page has one.
-func (m *model) runRow(id string) tea.Cmd {
-	for _, r := range m.rows() {
-		if r.id == id && r.run != nil {
-			return r.run(m)
-		}
-	}
-	return nil
-}
-
-// jumpToSettings focuses the first settings row, or the first launcher row without one.
-func (m *model) jumpToSettings() {
-	m.focus = focusPage
-	ids := map[string]bool{}
-	for _, r := range m.settingsRows() {
-		ids[r.id] = true
-	}
-	if len(ids) == 0 {
-		for _, r := range m.launcherRows() {
-			ids[r.id] = true
-		}
-	}
-	for i, r := range m.rows() {
-		if ids[r.id] {
-			m.row = i
-			return
-		}
-	}
-}
-
-func (m *model) toggleShowAll() {
-	dir := ""
-	if in, ok := m.current(); ok {
-		dir = in.Dir
-	}
-	m.showAll = !m.showAll
-	m.selectDir(dir)
-	m.row, m.pageScroll = 0, 0
-	if !m.sidebarShows() {
-		m.focus = focusPage
-	}
+	_, cmd := m.quit()
+	return cmd
 }
 
 // onStep starts the next step of the running job. Unused until slice "updateflow".
@@ -536,7 +435,7 @@ func (m *model) onStep(msg stepMsg) {
 	if m.step != "" {
 		m.steps = append(m.steps, m.step)
 	}
-	m.step, m.stepStart, m.done, m.total = string(msg), time.Now(), 0, 0
+	m.step, m.stepStart, m.done, m.total = string(msg), m.now(), 0, 0
 }
 
 // startBusy starts a job with a fresh step log.

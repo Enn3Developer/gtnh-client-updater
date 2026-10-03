@@ -1,0 +1,24 @@
+ GTNH Launcher 1.2.3                                   v  launcher 1.3.0 is out
+
+Instances        │ Older
+◐ Ol╭─ Go back to GTNH 2.8.0? ─────────────────────────────────────────────╮
+● Ma│ 1,204 files updated, 18 removed                                      │
+○ Va│ 3 config files you changed stay as they are                          │
+    │ 2 config files you changed get the new version — your old ones go to │
+    │ the backup                                                           │
+    │ 1 config file you changed stays yours — the new one is saved next to │   u
+    │ it as .mcnew                                                         │   o
+    │ Mods you added yourself stay: optifine.jar, journeymap-extra.jar     │   b
+    │ Server mods synced from mods.example.org                             │
+    │ Worlds, maps and settings aren't touched. Everything replaced is     │
+    │ backed up first.                                                     │
+    │                                                                      │
+    │ This goes BACK to an older version. Worlds you played on 2.8.1 may   │
+    │ lose blocks and items or not load at all. Copy your saves folder     │
+    │ somewhere safe first.                                                │
+    │                                                                      │
+    │                                              [ Go back ]  [ Cancel ] │
+    ╰──────────────────────────────────────────────────────────────────────╯
+                 │   After I start the game stay open and show whether it's run…
+                 │   Prism Launcher found automatically
+ ←→ choose   enter ok   esc cancel
