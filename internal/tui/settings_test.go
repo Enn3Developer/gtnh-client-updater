@@ -168,8 +168,11 @@ func itemDescList(m *model) []string {
 
 func helpPairs(m *model) []string {
 	var out []string
-	for _, b := range m.list.AdditionalShortHelpKeys() {
-		out = append(out, b.Help().Key+" "+b.Help().Desc)
+	pairs := m.listKeyPairs() // chrome C8: "↑↓ move", the help bindings, then "/ filter"
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if pairs[i] != "↑↓" && pairs[i] != "/" {
+			out = append(out, pairs[i]+" "+pairs[i+1])
+		}
 	}
 	return out
 }
@@ -437,7 +440,7 @@ func TestSettingsEditScreensShowTitleIntroValueAndFootnote(t *testing.T) { // C4
 			writeState(t, f.dir, update.State{ServerAddress: "mc.x:1", CustomModsURL: "https://m.example/a.zip", CustomModsAsked: true})
 			f.m.app = appcfg.Config{PrismExe: "/opt/p"}
 			f.edit(t, c.key)
-			_, body, footer, _ := f.m.page()
+			body, footer, _ := f.m.page()
 			want := words(c.title + " " + c.intro)
 			if b := words(body); !strings.HasPrefix(b, want) || !strings.Contains(b, c.value) || !strings.HasSuffix(b, words(c.foot)) {
 				t.Errorf("body = %q, want title+intro %q, value %q and footnote %q", b, want, c.value, c.foot)

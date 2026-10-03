@@ -602,20 +602,20 @@ func TestHomeHelpOneRowAtWidth120(t *testing.T) { // polish C3
 	}
 }
 
-func TestHomeListGivesARowToTheWrappedHelp(t *testing.T) { // polish C3: 30 - 5 - 2 (newer) - 2 (help) - 1 (extra help row)
+func TestHomeListGivesARowToTheWrappedHelp(t *testing.T) { // polish C3, chrome C6: 30 - 2 (title, banner) - 2 (help) - 1 (blank)
 	h := fullHome(t, 100)
-	if got := h.m.listHeightFor(scHome); got != 20 {
-		t.Errorf("listHeightFor(scHome) at 100x30 with a two-row help = %d, want 20", got)
+	if got := h.m.listHeightFor(scHome); got != 25 {
+		t.Errorf("listHeightFor(scHome) at 100x30 with a two-row help = %d, want 25", got)
 	}
-	if got := h.m.list.Height(); got != 20 {
-		t.Errorf("home list height after showHome at 100x30 = %d, want 20 (size re-applied with the j key counted)", got)
+	if got := h.m.list.Height(); got != 25 {
+		t.Errorf("home list height after showHome at 100x30 = %d, want 25 (size re-applied with the j key counted)", got)
 	}
 }
 
-func TestHomeListHeightUnchangedWithOneRowHelp(t *testing.T) { // polish C3
+func TestHomeListHeightUnchangedWithOneRowHelp(t *testing.T) { // polish C3, chrome C6: 30 - 2 - 1 - 1
 	h := fullHome(t, 120)
-	if got := h.m.list.Height(); got != 21 {
-		t.Errorf("home list height at 120x30 with a one-row help = %d, want 21", got)
+	if got := h.m.list.Height(); got != 26 {
+		t.Errorf("home list height at 120x30 with a one-row help = %d, want 26", got)
 	}
 }
 

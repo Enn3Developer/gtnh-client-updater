@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -112,7 +111,7 @@ func onResolve(t *testing.T, m *model) *update.Plan {
 func words(s string) string { return strings.Join(strings.Fields(ansi.Strip(s)), " ") }
 
 func pageBody(m *model) string {
-	_, body, _, _ := m.page()
+	body, _, _ := m.page()
 	return words(body)
 }
 
@@ -301,10 +300,14 @@ func TestSelfUpdateKeyIsHelpedOnVersionListButNotOnConflicts(t *testing.T) { // 
 	m := routeModel(t)
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	m.showTargets()
-	isSelfUpd := func(b key.Binding) bool { return b.Help().Key == "v" && b.Help().Desc == "new version" }
-	onTargets := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), isSelfUpd)
+	// chrome C8: the key bar pairs replace the bubbles help.
+	isSelfUpd := func(pairs []string) bool {
+		i := slices.Index(pairs, "v")
+		return i >= 0 && i+1 < len(pairs) && pairs[i+1] == "new version"
+	}
+	onTargets := isSelfUpd(m.listKeyPairs())
 	prepared(t, m)
-	onConflicts := slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), isSelfUpd)
+	onConflicts := isSelfUpd(m.listKeyPairs())
 	if !onTargets || onConflicts {
 		t.Errorf("\"v new version\" in help: version list %v, conflicts %v; want true, false", onTargets, onConflicts)
 	}
@@ -401,11 +404,12 @@ func confirmModel(t *testing.T) *model {
 	return m
 }
 
-// bodyRows is how many body lines fit: the terminal minus the blank top line, header and footer.
+// bodyRows is how many body lines fit: the terminal minus the title bar, the banner line,
+// the blank line above the footer and the footer (chrome C4).
 func bodyRows(m *model) (lines, rows int) {
-	header, body, footer, _ := m.page()
+	body, footer, _ := m.page()
 	n := func(s string) int { return len(strings.Split(s, "\n")) }
-	return n(body), m.height - 1 - n(header) - n(footer)
+	return n(body), m.height - 2 - 1 - n(footer)
 }
 
 func TestScrollDownMovesOneLine(t *testing.T) { // C8
@@ -667,7 +671,7 @@ func TestCreateVersionListSaysWhenPrismIsEmpty(t *testing.T) { // C9
 
 func TestCreateVersionListOffersBackOnlyWithInstances(t *testing.T) { // C9
 	hasEsc := func(m *model) bool {
-		return slices.ContainsFunc(m.list.AdditionalShortHelpKeys(), func(b key.Binding) bool { return b.Help().Key == "esc" })
+		return slices.Contains(m.listKeyPairs(), "esc") // chrome C8: key bar pairs
 	}
 	m := routeModel(t)
 	m.startCreate()

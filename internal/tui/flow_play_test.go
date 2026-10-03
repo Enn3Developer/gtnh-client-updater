@@ -80,7 +80,7 @@ func runningSeq(m *model, answers ...bool) *[]prism.Instance {
 }
 
 func pageFooter(m *model) string {
-	_, _, footer, _ := m.page()
+	_, footer, _ := m.page()
 	return words(footer)
 }
 

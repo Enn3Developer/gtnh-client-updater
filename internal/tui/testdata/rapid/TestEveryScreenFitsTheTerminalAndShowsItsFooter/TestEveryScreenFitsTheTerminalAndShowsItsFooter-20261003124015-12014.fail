@@ -1,0 +1,14 @@
+# 2026/10/03 12:40:15.017210 [TestEveryScreenFitsTheTerminalAndShowsItsFooter] [rapid] draw width: 40
+# 2026/10/03 12:40:15.017213 [TestEveryScreenFitsTheTerminalAndShowsItsFooter] [rapid] draw height: 10
+# 2026/10/03 12:40:15.017214 [TestEveryScreenFitsTheTerminalAndShowsItsFooter] [rapid] draw screen: "home"
+# 2026/10/03 12:40:15.017498 [TestEveryScreenFitsTheTerminalAndShowsItsFooter] home at 40x10: view has 11 lines, want at most 10
+# 
+v0.4.8#16219637651400466254
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

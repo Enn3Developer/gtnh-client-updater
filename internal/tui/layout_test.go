@@ -148,104 +148,174 @@ func TestBodyWindowOneRowAtBottomIsTopMarker(t *testing.T) { // C2 rows == 1
 
 func frameLines(out string) []string { return strip(strings.Split(out, "\n")) }
 
-func TestFrameLaysOutBlankHeaderBodyFooterIndented(t *testing.T) { // C3
-	out := frame("H1\nH2", "b0\nb1", "F", 40, 10, 0)
-	lines := frameLines(out)
-	want := []string{"  H1", "  H2", "  b0", "  b1", "  F"}
-	if len(lines) != 6 || strings.TrimSpace(lines[0]) != "" || !slices.Equal(lines[1:], want) {
-		t.Errorf("frame(...) lines = %q, want blank line then %q", lines, want)
+func TestFrameLaysOutTitleBannerBodyAndFooter(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "TITLE", "BANNER", "b0\nb1", "F", 0))
+	want := []string{"TITLE", "BANNER", "  b0", "  b1", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 10, TITLE, BANNER, b0/b1, F, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameHasNoTrailingNewline(t *testing.T) { // C3
-	out := frame("H", "b", "F", 40, 10, 0)
-	if strings.HasSuffix(out, "\n") {
-		t.Errorf("frame(...) = %q, want no trailing newline", out)
+func TestFrameWithoutBannerLeavesLineTwoBlank(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "TITLE", "", "b0", "F", 0))
+	want := []string{"TITLE", "", "  b0", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 10, TITLE, \"\", b0, F, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameEmptyHeaderAndBodyAddNoLines(t *testing.T) { // C3
-	lines := frameLines(frame("", "", "F", 40, 10, 0))
-	if len(lines) != 2 || strings.TrimSpace(lines[0]) != "" || lines[1] != "  F" {
-		t.Errorf("frame(\"\", \"\", \"F\") lines = %q, want [blank, \"  F\"]", lines)
+func TestFrameIndentsEveryFooterLine(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "T", "", "b0", "F1\nF2", 0))
+	want := []string{"T", "", "  b0", "", "  F1", "  F2"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 10, T, \"\", b0, F1/F2, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameScrollsOverflowingBodyBetweenHeaderAndFooter(t *testing.T) { // C3
+func TestFrameWithoutFooterHasNoBlankLineAfterBody(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "T", "", "b0\nb1", "", 0))
+	want := []string{"T", "", "  b0", "  b1"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 10, T, \"\", b0/b1, \"\", 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameHasNoTrailingNewline(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "T", "B", "b", "F", 0))
+	if last := lines[len(lines)-1]; last != "  F" {
+		t.Errorf("frame(...) last line = %q, want the footer %q (no trailing newline)", last, "  F")
+	}
+}
+
+func TestFrameEmptyBodyAndFooterIsTitleAndBlankLine(t *testing.T) { // chrome C4
+	lines := frameLines(frame(40, 10, "T", "", "", "", 0))
+	want := []string{"T", ""}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 10, T, \"\", \"\", \"\", 0) lines = %q, want %q", lines, want)
+	}
+}
+
+// K2: 8 rows - title - banner - blank - footer leave 4 body rows; a 10-line body fills
+// exactly 8 lines with the footer on the last one.
+func TestFramePinsFooterToLastLineWhenBodyOverflows(t *testing.T) { // chrome C4, K2
 	body := strings.Join(tenLines(), "\n")
-	lines := frameLines(frame("H", body, "F", 40, 6, 0))
-	want := []string{"  H", "  l0", "  l1", "  ↓ 7 more (↑/↓ to scroll)", "  F"}
-	if len(lines) != 6 || !slices.Equal(lines[1:], want) {
-		t.Errorf("frame(H, 10 lines, F, 40, 6, 0) lines = %q, want blank then %q", lines, want)
+	lines := frameLines(frame(40, 8, "T", "", body, "F", 0))
+	want := []string{"T", "", "  l0", "  l1", "  l2", "  ↓ 6 more (↑/↓ to scroll)", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 8, T, \"\", 10 lines, F, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFramePassesScrollToBody(t *testing.T) { // C3
+func TestFrameBodyOneLineLongerThanRowsStillGivesExactlyHeightLines(t *testing.T) { // chrome C4, K2
+	body := "a\nb\nc\nd\ne" // 5 lines, 4 rows at height 8 with a one-line footer
+	lines := frameLines(frame(40, 8, "T", "", body, "F", 0))
+	want := []string{"T", "", "  a", "  b", "  c", "  ↓ 1 more (↑/↓ to scroll)", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 8, T, \"\", 5 lines, F, 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameBodyThatExactlyFitsIsNotWindowed(t *testing.T) { // chrome C4
+	body := "a\nb\nc\nd" // 4 lines, 4 rows at height 8 with a one-line footer
+	lines := frameLines(frame(40, 8, "T", "", body, "F", 0))
+	want := []string{"T", "", "  a", "  b", "  c", "  d", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 8, T, \"\", 4 lines, F, 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameTwoRowFooterTakesTwoBodyRows(t *testing.T) { // chrome C4
 	body := strings.Join(tenLines(), "\n")
-	lines := frameLines(frame("H", body, "F", 40, 6, 2))
-	want := []string{"  H", "  ↑ 2 more", "  l3", "  ↓ 5 more (↑/↓ to scroll)", "  F"}
-	if len(lines) != 6 || !slices.Equal(lines[1:], want) {
-		t.Errorf("frame(H, 10 lines, F, 40, 6, 2) lines = %q, want blank then %q", lines, want)
+	lines := frameLines(frame(40, 9, "T", "B", body, "F1\nF2", 0))
+	want := []string{"T", "B", "  l0", "  l1", "  l2", "  ↓ 6 more (↑/↓ to scroll)", "", "  F1", "  F2"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 9, T, B, 10 lines, F1/F2, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameMaxScrollShowsEndOfBody(t *testing.T) { // C5
+func TestFrameWithoutFooterGivesTheBlankLineToTheBody(t *testing.T) { // chrome C4
 	body := strings.Join(tenLines(), "\n")
-	lines := frameLines(frame("H", body, "F", 40, 6, math.MaxInt32))
-	want := []string{"  H", "  ↑ 7 more", "  l8", "  l9", "  F"}
-	if len(lines) != 6 || !slices.Equal(lines[1:], want) {
-		t.Errorf("frame(H, 10 lines, F, 40, 6, MaxInt32) lines = %q, want blank then %q", lines, want)
+	lines := frameLines(frame(40, 6, "T", "", body, "", 0))
+	want := []string{"T", "", "  l0", "  l1", "  l2", "  ↓ 6 more (↑/↓ to scroll)"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 6, T, \"\", 10 lines, \"\", 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameFloorsBodyRowsAtOne(t *testing.T) { // C3
-	lines := frameLines(frame("H", "a\nb\nc", "F", 40, 2, 0))
-	want := []string{"  H", "  ↓ 2 more (↑/↓ to scroll)", "  F"}
-	if len(lines) != 4 || !slices.Equal(lines[1:], want) {
-		t.Errorf("frame(H, 3 lines, F, 40, 2, 0) lines = %q, want blank then %q", lines, want)
+func TestFramePassesScrollToBody(t *testing.T) { // chrome C4
+	body := strings.Join(tenLines(), "\n")
+	lines := frameLines(frame(40, 8, "T", "", body, "F", 2))
+	want := []string{"T", "", "  ↑ 2 more", "  l3", "  l4", "  ↓ 4 more (↑/↓ to scroll)", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 8, T, \"\", 10 lines, F, 2) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameKeepsLineOfExactlyWidthColumns(t *testing.T) { // C3, K3
-	lines := frameLines(frame("", "abcdefgh", "", 10, 10, 0))
-	if len(lines) != 2 || lines[1] != "  abcdefgh" {
-		t.Errorf("frame(\"\", \"abcdefgh\", \"\", 10, ...) lines = %q, want [blank, \"  abcdefgh\"]", lines)
+func TestFrameMaxScrollShowsEndOfBody(t *testing.T) { // chrome C4
+	body := strings.Join(tenLines(), "\n")
+	lines := frameLines(frame(40, 8, "T", "", body, "F", math.MaxInt32))
+	want := []string{"T", "", "  ↑ 6 more", "  l7", "  l8", "  l9", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 8, T, \"\", 10 lines, F, MaxInt32) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameClipsLineOneColumnTooWide(t *testing.T) { // C3, K3
-	lines := frameLines(frame("", "abcdefghi", "", 10, 10, 0))
-	got := lines[len(lines)-1]
-	if ansi.StringWidth(got) > 10 || !strings.HasSuffix(got, "…") || !strings.HasPrefix(got, "  abcdef") {
-		t.Errorf("frame(\"\", \"abcdefghi\", \"\", 10, ...) last line = %q (width %d), want indented, <= 10 wide, ending in …",
-			got, ansi.StringWidth(got))
+func TestFrameShowsOneBodyRowAtTheSmallestHeight(t *testing.T) { // chrome C4: 5 - 2 - 1 - 1 = 1 row
+	lines := frameLines(frame(40, 5, "T", "", "a\nb\nc", "F", 0))
+	want := []string{"T", "", "  ↓ 2 more (↑/↓ to scroll)", "", "  F"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(40, 5, T, \"\", 3 lines, F, 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameMeasuresStyledLinesByVisibleWidth(t *testing.T) { // C4
+func TestFrameKeepsLineOfExactlyWidthColumns(t *testing.T) { // chrome C4
+	lines := frameLines(frame(10, 10, "", "", "abcdefgh", "", 0))
+	want := []string{"", "", "  abcdefgh"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(10, 10, \"\", \"\", abcdefgh, \"\", 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameClipsLineOneColumnTooWide(t *testing.T) { // chrome C4
+	lines := frameLines(frame(10, 10, "", "", "abcdefghi", "", 0))
+	want := []string{"", "", "  abcdefg…"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(10, 10, \"\", \"\", abcdefghi, \"\", 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameClipsFooterToWidth(t *testing.T) { // chrome C4
+	lines := frameLines(frame(10, 10, "", "", "b", "abcdefghi", 0))
+	want := []string{"", "", "  b", "", "  abcdefg…"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(10, 10, \"\", \"\", b, abcdefghi, 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameClipsTitleAndBannerToWidth(t *testing.T) { // chrome C4
+	lines := frameLines(frame(9, 10, "界界界界界界", "abcdefghijk", "b", "", 0))
+	want := []string{"界界界界…", "abcdefgh…", "  b"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(9, 10, 12-col wide title, 11-col banner, b, \"\", 0) lines = %q, want %q", lines, want)
+	}
+}
+
+func TestFrameMeasuresStyledLinesByVisibleWidth(t *testing.T) { // chrome C4
 	styled := "\x1b[1;31mabcdefgh\x1b[0m" // 8 visible columns, many more bytes
-	lines := frameLines(frame("", styled, "", 10, 10, 0))
-	if len(lines) != 2 || lines[1] != "  abcdefgh" {
-		t.Errorf("frame(\"\", styled 8 cols, \"\", 10, ...) lines = %q, want [blank, \"  abcdefgh\"]", lines)
+	lines := frameLines(frame(10, 10, "", "", styled, "", 0))
+	want := []string{"", "", "  abcdefgh"}
+	if !slices.Equal(lines, want) {
+		t.Errorf("frame(10, 10, \"\", \"\", styled 8 cols, \"\", 0) lines = %q, want %q", lines, want)
 	}
 }
 
-func TestFrameClipsStyledLineToVisibleWidth(t *testing.T) { // C4
+func TestFrameClipsStyledLineToVisibleWidth(t *testing.T) { // chrome C4
 	styled := "\x1b[1;31m" + strings.Repeat("x", 30) + "\x1b[0m"
-	out := frame("", styled, "", 20, 10, 0)
+	out := frame(20, 10, "", "", styled, "", 0)
 	raw := strings.Split(out, "\n")
 	last := raw[len(raw)-1]
-	if w := ansi.StringWidth(last); w > 20 || !strings.HasSuffix(ansi.Strip(last), "…") {
-		t.Errorf("frame(\"\", styled 30 cols, \"\", 20, ...) last line = %q (width %d), want <= 20 wide ending in …", last, w)
-	}
-}
-
-func TestFrameClipsWideRunesToWidth(t *testing.T) { // C4
-	out := frame("界界界界界界", "", "", 9, 10, 0)
-	raw := strings.Split(out, "\n")
-	last := raw[len(raw)-1]
-	if w := ansi.StringWidth(last); w > 9 || !strings.HasSuffix(ansi.Strip(last), "…") {
-		t.Errorf("frame(wide header, 9 cols) last line = %q (width %d), want <= 9 wide ending in …", last, w)
+	if w := ansi.StringWidth(last); w != 20 || ansi.Strip(last) != "  "+strings.Repeat("x", 17)+"…" {
+		t.Errorf("frame(20, ..., styled 30 cols, ...) last line = %q (width %d), want 20 wide ending in …", last, w)
 	}
 }
 
@@ -266,27 +336,44 @@ func genLines(t *rapid.T, label string, maxN int) []string {
 	return out
 }
 
-func TestFramePropertiesHold(t *testing.T) { // C3, C4
+func TestFramePropertiesHold(t *testing.T) { // chrome C4
 	rapid.Check(t, func(t *rapid.T) {
-		header := genLines(t, "header", 3)
-		body := genLines(t, "body", 30)
+		title := genLine(t, "title")
+		banner := ""
+		if rapid.Bool().Draw(t, "hasBanner") {
+			banner = genLine(t, "banner")
+		}
+		body := append([]string{genLine(t, "body")}, genLines(t, "moreBody", 30)...)
 		footer := genLines(t, "footer", 3)
 		width := rapid.IntRange(4, 120).Draw(t, "width")
-		height := 2 + len(header) + len(footer) + rapid.IntRange(0, 30).Draw(t, "extraHeight")
+		gap := 0
+		if len(footer) > 0 {
+			gap = 1
+		}
+		rows := rapid.IntRange(1, 30).Draw(t, "rows")
+		height := 2 + len(footer) + gap + rows
 		scroll := rapid.IntRange(-5, 50).Draw(t, "scroll")
 
-		out := frame(strings.Join(header, "\n"), strings.Join(body, "\n"), strings.Join(footer, "\n"), width, height, scroll)
+		out := frame(width, height, title, banner, strings.Join(body, "\n"), strings.Join(footer, "\n"), scroll)
 		lines := strings.Split(out, "\n")
 
-		rows := height - 1 - len(header) - len(footer)
-		wantCount := 1 + len(header) + min(len(body), rows) + len(footer)
+		wantCount := 2 + min(len(body), rows) + gap + len(footer)
 		if len(lines) != wantCount {
-			t.Fatalf("frame produced %d lines, want %d (height %d)", len(lines), wantCount, height)
+			t.Fatalf("frame produced %d lines, want %d (height %d, %d body lines, %d rows)", len(lines), wantCount, height, len(body), rows)
+		}
+		if len(lines) > height || (len(body) > rows && len(lines) != height) {
+			t.Fatalf("frame produced %d lines at height %d with %d body lines; want at most height, exactly height on overflow", len(lines), height, len(body))
 		}
 		for i, l := range lines {
 			if w := ansi.StringWidth(l); w > width {
 				t.Fatalf("line %d %q is %d columns wide, want <= %d", i, l, w, width)
 			}
+		}
+		if got, want := ansi.Strip(lines[0]), ansi.Strip(ansi.Truncate(title, width, "…")); got != want {
+			t.Fatalf("line 1 = %q, want the clipped title %q", got, want)
+		}
+		if got, want := ansi.Strip(lines[1]), ansi.Strip(ansi.Truncate(banner, width, "…")); got != want {
+			t.Fatalf("line 2 = %q, want the clipped banner %q", got, want)
 		}
 		for i, f := range footer {
 			want := "  " + ansi.Strip(f)

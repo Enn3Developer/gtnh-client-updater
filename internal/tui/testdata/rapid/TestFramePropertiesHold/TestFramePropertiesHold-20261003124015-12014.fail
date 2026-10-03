@@ -1,0 +1,45 @@
+# 2026/10/03 12:40:15.065383 [TestFramePropertiesHold] [rapid] draw title: []string{"a"}
+# 2026/10/03 12:40:15.065387 [TestFramePropertiesHold] [rapid] draw hasBanner: false
+# 2026/10/03 12:40:15.065388 [TestFramePropertiesHold] [rapid] draw body: []string{"a"}
+# 2026/10/03 12:40:15.065389 [TestFramePropertiesHold] [rapid] draw moreBodyN: 1
+# 2026/10/03 12:40:15.065390 [TestFramePropertiesHold] [rapid] draw moreBody0: []string{"a"}
+# 2026/10/03 12:40:15.065391 [TestFramePropertiesHold] [rapid] draw footerN: 1
+# 2026/10/03 12:40:15.065391 [TestFramePropertiesHold] [rapid] draw footer0: []string{"a"}
+# 2026/10/03 12:40:15.065392 [TestFramePropertiesHold] [rapid] draw width: 4
+# 2026/10/03 12:40:15.065392 [TestFramePropertiesHold] [rapid] draw rows: 1
+# 2026/10/03 12:40:15.065392 [TestFramePropertiesHold] [rapid] draw scroll: 0
+# 2026/10/03 12:40:15.065396 [TestFramePropertiesHold] frame produced 6 lines, want 5 (height 5, 2 body lines, 1 rows)
+# 
+v0.4.8#8111036790601106887
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

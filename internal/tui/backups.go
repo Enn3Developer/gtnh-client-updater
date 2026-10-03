@@ -133,7 +133,7 @@ func (m *model) restoreConfirmView() (body, footer string) {
 	}
 	b.WriteString(m.closeMinecraftNote())
 	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "undo now", "esc", "go back")
+	return b.String(), hint("enter", "undo now", "esc", "back")
 }
 
 // restoredView tells the player what the restore did.
@@ -155,7 +155,6 @@ func (m *model) restoredView() (body, footer string) {
 		b.WriteString(strings.Join(lines, "\n") + "\n")
 	}
 	b.WriteString(m.headsUp(""))
-	b.WriteString(haveFun)
 	return b.String(), doneFooter()
 }
 

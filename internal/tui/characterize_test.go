@@ -328,8 +328,8 @@ func cleanLines(s string) string {
 
 // pageText renders m.page() as plain text with section markers.
 func pageText(m *model) string {
-	header, body, footer, scroll := m.page()
-	return fmt.Sprintf("[header]\n%s\n[body]\n%s\n[footer]\n%s\n[scroll %d]", cleanLines(header), cleanLines(body), cleanLines(footer), scroll)
+	body, footer, scroll := m.page()
+	return fmt.Sprintf("[body]\n%s\n[footer]\n%s\n[scroll %d]", cleanLines(body), cleanLines(footer), scroll)
 }
 
 // expectedGolden fills in what depends on the OS: the instances path.
@@ -371,25 +371,21 @@ func TestC1PageGoldens(t *testing.T) {
 	}
 }
 
-// pageGoldens were recorded from the code at 82x25 (goldenModel). Lines are ANSI-stripped
-// with trailing spaces trimmed; {INSTANCES} is the instances path.
+// pageGoldens were recorded from the code at 82x25 (goldenModel) and re-recorded by hand
+// for the chrome spec (no header section, footers without a leading blank line, C9
+// labels, no "Press p…" sentence on the done screens). Lines are ANSI-stripped with
+// trailing spaces trimmed; {INSTANCES} is the instances path.
 //
 // Intended behaviour (spec): the counts sentence uses plural() for the install count
 // ("1 file will be updated", "1 file updated"), and the bullet after the "couldn't be
 // synced" warning starts at the normal bullet indentation.
 var pageGoldens = map[string]string{
-	"loading": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"loading": `[body]
 ⣾  Looking for your GTNH instances…
 [footer]
 
 [scroll 2147483647]`,
-	"server mods empty": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"server mods empty": `[body]
 Does your server have its own extra mods?
 
 Some servers add a few mods on top of GTNH. If the server owner gave you a
@@ -400,13 +396,9 @@ every time you update.
 
 No link? Leave it empty — you can add one later with m on the version list.
 [footer]
-
 enter continue    esc back
 [scroll 0]`,
-	"server mods bad link": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"server mods bad link": `[body]
 Does your server have its own extra mods?
 
 Some servers add a few mods on top of GTNH. If the server owner gave you a
@@ -418,13 +410,9 @@ That doesn't look like a download link — it should start with https://
 
 No link? Leave it empty — you can add one later with m on the version list.
 [footer]
-
 enter continue    esc back
 [scroll 0]`,
-	"server mods create": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"server mods create": `[body]
 Does your server have its own extra mods?
 
 Some servers add a few mods on top of GTNH. If the server owner gave you a
@@ -435,13 +423,9 @@ every time you update.
 
 No link? Leave it empty — you can add one later with m on the version list.
 [footer]
-
 enter continue    esc back
 [scroll 0]`,
-	"name": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"name": `[body]
 What should the new instance be called?
 
 That's the name you'll see in Prism; it's also the folder name.
@@ -450,13 +434,9 @@ That's the name you'll see in Prism; it's also the folder name.
 
 It'll be created in {INSTANCES}
 [footer]
-
 enter continue    esc back
 [scroll 0]`,
-	"name with error": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"name with error": `[body]
 What should the new instance be called?
 
 That's the name you'll see in Prism; it's also the folder name.
@@ -467,13 +447,9 @@ different one.
 
 It'll be created in {INSTANCES}
 [footer]
-
 enter continue    esc back
 [scroll 0]`,
-	"preparing update": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"preparing update": `[body]
 Getting GTNH 2.9.0-RC-1 ready for Pack
 
   ✓ Checking which version you have
@@ -488,13 +464,9 @@ Getting GTNH 2.9.0-RC-1 ready for Pack
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
 ctrl+c cancel
 [scroll 2147483647]`,
-	"preparing create": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"preparing create": `[body]
 Getting GTNH 2.8.4 ready
 
   ⣾ Downloading GTNH 2.8.4
@@ -506,13 +478,9 @@ Getting GTNH 2.8.4 ready
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
 ctrl+c cancel
 [scroll 2147483647]`,
-	"preparing create cancelling": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"preparing create cancelling": `[body]
 Getting GTNH 2.8.4 ready
 
   ⣾ Downloading GTNH 2.8.4
@@ -521,13 +489,9 @@ Getting GTNH 2.8.4 ready
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
 Stopping and cleaning up…
 [scroll 2147483647]`,
-	"applying update": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"applying update": `[body]
 Updating Pack to GTNH 2.9.0-RC-1
 
   ✓ Backing up
@@ -537,13 +501,9 @@ Updating Pack to GTNH 2.9.0-RC-1
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
-	"applying create": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"applying create": `[body]
 Creating My Pack
 
   ⣾ Writing files
@@ -555,13 +515,9 @@ Creating My Pack
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
-	"self update": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"self update": `[body]
 Updating gtnh-update itself
 
   ⣾ Downloading gtnh-update 9.9.9
@@ -573,13 +529,9 @@ Updating gtnh-update itself
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
   Please don't close this window until I'm done.
 [scroll 2147483647]`,
-	"confirm update": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"confirm update": `[body]
 Ready to update Pack from 2.8.4 to 2.9.0-RC-1
 
 ! Only 50% of the mods that come with 2.8.4 are in this instance, so it's
@@ -605,13 +557,9 @@ otherwise old mods could be left behind.
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
-enter update now    esc go back
+enter update now    esc back
 [scroll 0]`,
-	"confirm downgrade nothing to do": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"confirm downgrade nothing to do": `[body]
 Ready to update Pack from 2.8.4 to 2.8.1
 
 ! This goes BACK to an older version. Worlds you played on 2.8.4 may lose
@@ -627,13 +575,9 @@ first.
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
-enter update now    esc go back
+enter update now    esc back
 [scroll 0]`,
-	"confirm refresh singular": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"confirm refresh singular": `[body]
 Ready to refresh Pack on GTNH 2.8.4
 
   • 1 file will be updated and 0 removed.
@@ -650,13 +594,9 @@ Ready to refresh Pack on GTNH 2.8.4
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
-enter update now    esc go back
+enter update now    esc back
 [scroll 0]`,
-	"confirm create": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"confirm create": `[body]
 Ready to create My Pack with GTNH 2.8.4
 
   • It'll be a new instance in Prism, in /x/My Pack.
@@ -670,13 +610,9 @@ Ready to create My Pack with GTNH 2.8.4
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
-enter create it    esc go back
+enter create it    esc back
 [scroll 0]`,
-	"confirm create java 8": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"confirm create java 8": `[body]
 Ready to create My Pack with GTNH 2.8.4
 
   • It'll be a new instance in Prism, in /x/My Pack.
@@ -689,13 +625,9 @@ Ready to create My Pack with GTNH 2.8.4
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
 [footer]
-
-enter create it    esc go back
+enter create it    esc back
 [scroll 0]`,
-	"done update": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"done update": `[body]
 All done! Pack is now on GTNH 2.9.0-RC-1.
 
   • 3 files updated, 2 removed.
@@ -720,15 +652,10 @@ updater/backup-20260101-120000
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-Press p to start the game now, or enter to go back.
 [footer]
-
 enter back    p play now    q quit
 [scroll 0]`,
-	"done update singular removed old server mods": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"done update singular removed old server mods": `[body]
 All done! Pack is now on GTNH 2.8.4.
 
   • 1 file updated, 0 removed.
@@ -744,15 +671,10 @@ many mods rewrite their own config when the game starts.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-Press p to start the game now, or enter to go back.
 [footer]
-
 enter back    p play now    q quit
 [scroll 0]`,
-	"done update nothing changed": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"done update nothing changed": `[body]
 All done! Pack is now on GTNH 2.8.4.
 
   • Your GTNH files were already up to date.
@@ -761,15 +683,10 @@ All done! Pack is now on GTNH 2.8.4.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-Press p to start the game now, or enter to go back.
 [footer]
-
 enter back    p play now    q quit
 [scroll 0]`,
-	"done create": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"done create": `[body]
 All done! My Pack is ready in Prism.
 
   • 16,234 files installed.
@@ -782,41 +699,28 @@ All done! My Pack is ready in Prism.
   Heads up: one mod looked edited by hand
   Heads up: a second, much longer warning that goes on and on so that it has
 to wrap onto another line of the terminal
-Press p to start the game now, or enter to go back.
 [footer]
-
 enter back    p play now    q quit
 [scroll 0]`,
-	"error update preparing": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error update preparing": `[body]
 Something went wrong
 
 I couldn't download the pack.
 
 Nothing in your instance was changed.
 [footer]
-
-esc go back    enter exit
+esc back    enter quit
 [scroll 0]`,
-	"error update applying rolled back": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error update applying rolled back": `[body]
 Something went wrong
 
 writing a file failed; everything was rolled back
 
 Everything was put back the way it was, so your instance is exactly as before.
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"error update applying says rolled back without ErrRolledBack": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error update applying says rolled back without ErrRolledBack": `[body]
 Something went wrong
 
 writing a file failed; everything was rolled back
@@ -824,13 +728,9 @@ writing a file failed; everything was rolled back
 Some files may have changed. The originals are in the .gtnh-updater folder
 inside the instance.
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"error update applying": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error update applying": `[body]
 Something went wrong
 
 writing a file failed and the rollback failed too
@@ -838,80 +738,55 @@ writing a file failed and the rollback failed too
 Some files may have changed. The originals are in the .gtnh-updater folder
 inside the instance.
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"error loading": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error loading": `[body]
 Something went wrong
 
 I couldn't find Prism Launcher on this computer.
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"error create preparing": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error create preparing": `[body]
 Something went wrong
 
 I couldn't download the pack.
 
 Nothing was created.
 [footer]
-
-esc go back    enter exit
+esc back    enter quit
 [scroll 0]`,
-	"error create applying": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error create applying": `[body]
 Something went wrong
 
 writing a file failed
 
 I removed the half-made instance, so there's nothing to clean up.
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"error create preparing leftover": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error create preparing leftover": `[body]
 Something went wrong
 
 disk full
 I couldn't remove the half-made instance folder. Delete it yourself before
 trying again. It's here: /x/My Pack (access denied)
 [footer]
-
-esc go back    enter exit
+esc back    enter quit
 [scroll 0]`,
-	"error create applying leftover": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"error create applying leftover": `[body]
 Something went wrong
 
 disk full
 I couldn't remove the half-made instance folder. Delete it yourself before
 trying again. It's here: /x/My Pack (access denied)
 [footer]
-
-enter exit
+enter quit
 [scroll 0]`,
-	"self updated": `[header]
-GTNH Launcher 1.2.3
-
-[body]
+	"self updated": `[body]
 gtnh-update is now version 9.9.9.
 [footer]
-
-enter restart it now    q quit
+enter restart now    q quit
 [scroll 0]`,
 }
 
@@ -1381,13 +1256,15 @@ func TestC8WarnMsgAppends(t *testing.T) {
 	}
 }
 
-func TestC8NewerMsgShrinksListForBanner(t *testing.T) {
+// chrome C6/C7: the banner sits on the line the chrome always keeps, and "v new version"
+// still fits on the key bar's one row at 82 columns: 25 - 2 - 1 - 1 = 21 before and after.
+func TestC8NewerMsgReappliesListSizeWithBanner(t *testing.T) {
 	m := routeModel(t)
 	m.showTargets()
 	before := m.list.Height()
 	press(m, newerMsg{&selfupdate.Release{Version: "9.9.9"}})
-	if m.newer == nil || m.newer.Version != "9.9.9" || before != termH-5 || m.list.Height() != termH-7 {
-		t.Errorf("newerMsg: newer %v, list height %d -> %d; want 9.9.9, %d -> %d", m.newer, before, m.list.Height(), termH-5, termH-7)
+	if m.newer == nil || m.newer.Version != "9.9.9" || before != 21 || m.list.Height() != 21 {
+		t.Errorf("newerMsg: newer %v, list height %d -> %d; want 9.9.9, 21 -> 21", m.newer, before, m.list.Height())
 	}
 }
 

@@ -433,8 +433,8 @@ func TestUndoConfirmTitleWarningAndBulletsInOrder(t *testing.T) { // C3
 func TestUndoConfirmFooter(t *testing.T) { // C3
 	m, _ := undoModel(t, termW, downgradeInfo())
 	toConfirm(t, m)
-	if f := pageFooter(m); f != "enter undo now esc go back" {
-		t.Errorf("confirm footer = %q, want %q", f, "enter undo now esc go back")
+	if f := pageFooter(m); f != "enter undo now esc back" { // chrome C9
+		t.Errorf("confirm footer = %q, want %q", f, "enter undo now esc back")
 	}
 }
 
@@ -548,10 +548,10 @@ func restoredModel(t *testing.T, r *update.RestoreResult) *model {
 func TestUndoRestoredPageSummary(t *testing.T) { // C5
 	m := restoredModel(t, &update.RestoreResult{From: "2.8.4", To: "2.8.1", MovedBack: 2})
 	body := pageBody(m)
-	if !strings.HasPrefix(body, "All done! Pack is back on GTNH 2.8.1.") || !strings.Contains(body, "• 2 files put back, 0 removed.") ||
-		!strings.HasSuffix(body, "Press p to start the game now, or enter to go back.") ||
+	if !strings.HasPrefix(body, "All done! Pack is back on GTNH 2.8.1.") || !strings.HasSuffix(body, "• 2 files put back, 0 removed.") ||
+		strings.Contains(body, "Press p") || // chrome C9: the footer says it
 		strings.Contains(body, "Renamed") || strings.Contains(body, "couldn't put these back") {
-		t.Errorf("restored body %q; want the All done title, \"2 files put back, 0 removed.\", the play line last, no rename/skipped bullets", body)
+		t.Errorf("restored body %q; want the All done title, \"2 files put back, 0 removed.\" last, no play sentence, no rename/skipped bullets", body)
 	}
 	if f := pageFooter(m); f != "enter back p play now q quit" {
 		t.Errorf("restored footer = %q, want %q", f, "enter back p play now q quit")
@@ -574,7 +574,9 @@ func TestUndoRestoredPageRenamedSkippedAndWarnings(t *testing.T) { // C5, C7
 		"• Renamed the instance in Prism to \"Pack 2.8.1\".",
 		"• I couldn't put these back myself (they live outside the instance folder): _external/a.cfg, _external/b.cfg. They're still in " + bdir + ".",
 		"Heads up: could not restore something",
-		"Press p to start the game now, or enter to go back.",
+	}
+	if strings.Contains(body, "Press p") { // chrome C9
+		t.Errorf("restored body still has the play sentence:\n%s", body)
 	}
 	at := 0
 	for _, p := range parts {
@@ -635,8 +637,8 @@ func TestUndoRestoreFailureShowsBackupPathAndCannotGoBack(t *testing.T) { // C6,
 		t.Errorf("failed restore: screen %d, errPhase %d, body %q; want scError, scRestoring (%d), the error then %q, no \"Nothing was changed.\"",
 			m.screen, m.errPhase, body, scRestoring, want)
 	}
-	if f := pageFooter(m); f != "enter exit" {
-		t.Errorf("failed restore footer = %q, want %q", f, "enter exit")
+	if f := pageFooter(m); f != "enter quit" {
+		t.Errorf("failed restore footer = %q, want %q", f, "enter quit")
 	}
 }
 
@@ -656,8 +658,8 @@ func TestUndoRestoreRefusedWhileGameRunsChangedNothing(t *testing.T) { // C6, C7
 		t.Errorf("restore refused (game running): screen %d, errPhase %d, body %q; want scError, scRestoring, \"Nothing was changed.\" and no backup path",
 			m.screen, m.errPhase, body)
 	}
-	if f := pageFooter(m); f != "esc go back enter exit" {
-		t.Errorf("game-running footer = %q, want %q", f, "esc go back enter exit")
+	if f := pageFooter(m); f != "esc back enter quit" {
+		t.Errorf("game-running footer = %q, want %q", f, "esc back enter quit")
 	}
 }
 
@@ -675,8 +677,8 @@ func TestUndoRestoreRefusedWhileGameRunsWrappedChangedNothing(t *testing.T) { //
 	if !strings.Contains(body, gameRunningText+" Nothing was changed.") || strings.Contains(body, "Some files may have changed") || strings.Contains(body, bdir) {
 		t.Errorf("restore refused (wrapped ErrGameRunning): body %q; want \"Nothing was changed.\" and no backup path", body)
 	}
-	if f := pageFooter(m); f != "esc go back enter exit" {
-		t.Errorf("wrapped game-running footer = %q, want %q", f, "esc go back enter exit")
+	if f := pageFooter(m); f != "esc back enter quit" {
+		t.Errorf("wrapped game-running footer = %q, want %q", f, "esc back enter quit")
 	}
 }
 
@@ -687,8 +689,8 @@ func TestUndoRestoreLookAlikeErrorIsNotGameRunning(t *testing.T) { // polish C2:
 	if !strings.Contains(body, want) || strings.Contains(body, "Nothing was changed.") {
 		t.Errorf("restore failed with a look-alike error: body %q; want %q and no \"Nothing was changed.\"", body, want)
 	}
-	if f := pageFooter(m); f != "enter exit" {
-		t.Errorf("look-alike error footer = %q, want %q", f, "enter exit")
+	if f := pageFooter(m); f != "enter quit" {
+		t.Errorf("look-alike error footer = %q, want %q", f, "enter quit")
 	}
 }
 

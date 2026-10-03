@@ -19,31 +19,23 @@ func (m *model) View() string {
 	if m.quitting {
 		return ""
 	}
+	body, footer, scroll := m.page()
+	return m.chrome(body, footer, scroll)
+}
+
+// page builds the current screen for chrome: body, the pinned footer and the scroll
+// offset to show.
+func (m *model) page() (body, footer string, scroll int) {
+	scroll = m.scroll
 	switch m.screen {
 	case scHome:
-		body := m.list.View()
+		body = m.list.View()
 		if m.homeCardShows(scHome) {
 			body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.cardView())
 		}
-		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + body + "\n\n" + m.homeHelp())
-	case scInstalled, scTarget, scSettings:
-		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
-	case scConflicts, scResolve:
-		return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.list.View())
-	case scBackups:
-		if len(m.backups) > 0 {
-			return lipgloss.NewStyle().Padding(1, 2, 0, 1).Render("   " + m.header() + m.banner() + m.list.View())
-		}
-	}
-	header, body, footer, scroll := m.page()
-	return frame(header, body, footer, m.width, m.height, scroll)
-}
-
-// page builds a non-list screen for frame: header, body, the pinned footer and the
-// scroll offset to show.
-func (m *model) page() (header, body, footer string, scroll int) {
-	scroll = m.scroll
-	switch m.screen {
+		footer = m.homeHelp()
+	case scInstalled, scTarget, scSettings, scConflicts, scResolve:
+		body, footer = m.list.View(), keyBar(m.width, m.listKeyPairs()...)
 	case scLoading:
 		body, scroll = m.spin.View()+" Looking for your GTNH instances…", math.MaxInt32
 	case scServerMods:
@@ -53,7 +45,11 @@ func (m *model) page() (header, body, footer string, scroll int) {
 	case scSettingEdit:
 		body, footer = m.settingEditView()
 	case scBackups:
-		body, footer = m.backupsView()
+		if len(m.backups) > 0 {
+			body, footer = m.list.View(), keyBar(m.width, m.listKeyPairs()...)
+		} else {
+			body, footer = m.backupsView()
+		}
 	case scRestoreConfirm:
 		body, footer = m.restoreConfirmView()
 	case scRestored:
@@ -81,12 +77,9 @@ func (m *model) page() (header, body, footer string, scroll int) {
 		body, footer = m.errorView()
 	case scSelfUpdated:
 		body = okSty.Bold(true).Render(wrap("gtnh-update is now version "+m.newer.Version+".", m.width-4))
-		footer = hint("enter", "restart it now", "q", "quit")
+		footer = hint("enter", "restart now", "q", "quit")
 	}
-	if footer != "" {
-		footer = "\n" + footer // a blank line between body and keys
-	}
-	return strings.TrimSuffix(m.header(), "\n"), strings.TrimRight(body, "\n"), footer, scroll
+	return strings.TrimRight(body, "\n"), footer, scroll
 }
 
 func (m *model) launchingView() (body, footer string) {
@@ -235,7 +228,7 @@ func (m *model) confirmView() (body, footer string) {
 	bullet("Everything that gets replaced is backed up first, just in case.")
 	b.WriteString(m.closeMinecraftNote())
 	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "update now", "esc", "go back")
+	return b.String(), hint("enter", "update now", "esc", "back")
 }
 
 // confirmWarnings are the red warnings above the update summary: a downgrade, or an
@@ -267,9 +260,6 @@ func (m *model) closeMinecraftNote() string {
 	}
 	return "\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n"
 }
-
-// haveFun ends the done screens.
-const haveFun = "\nPress p to start the game now, or enter to go back."
 
 func doneFooter() string { return hint("enter", "back", "p", "play now", "q", "quit") }
 
@@ -309,7 +299,6 @@ func (m *model) doneView() (body, footer string) {
 		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.width-4)) + "\n")
 	}
 	b.WriteString(m.headsUp(""))
-	b.WriteString(haveFun)
 	return b.String(), doneFooter()
 }
 
@@ -362,7 +351,7 @@ func (m *model) confirmCreateView() (body, footer string) {
 		bullet("It uses the Java 17+ version of the pack.")
 	}
 	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "create it", "esc", "go back")
+	return b.String(), hint("enter", "create it", "esc", "back")
 }
 
 func (m *model) createdView() (body, footer string) {
@@ -373,7 +362,6 @@ func (m *model) createdView() (body, footer string) {
 	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
 	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
 	b.WriteString(m.headsUp(""))
-	b.WriteString(haveFun)
 	return b.String(), doneFooter()
 }
 
@@ -399,9 +387,9 @@ func (m *model) errorView() (body, footer string) {
 		b.WriteString(m.restoreErrorNote())
 	}
 	if m.canGoBack() {
-		return b.String(), hint("esc", "go back", "enter", "exit")
+		return b.String(), hint("esc", "back", "enter", "quit")
 	}
-	return b.String(), hint("enter", "exit")
+	return b.String(), hint("enter", "quit")
 }
 
 // headsUp lists the warnings of the current run, each followed by after.

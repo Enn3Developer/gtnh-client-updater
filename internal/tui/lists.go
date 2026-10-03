@@ -24,6 +24,7 @@ var (
 	keySwitch  = key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "switch"))
 	keyAllNew  = key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "all new"))
 	keyDone    = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "done"))
+	keyKeepAll = key.NewBinding(key.WithKeys("k"), key.WithHelp("k", "keep all"))
 )
 
 type item struct{ title, desc, key string }
@@ -33,13 +34,16 @@ func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title + " " + i.desc }
 
 func (m *model) showList(sc screen, title string, items []list.Item, selected string, help ...key.Binding) (tea.Model, tea.Cmd) {
-	d := list.NewDefaultDelegate()
-	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(accent).BorderForeground(accent)
-	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("#98BB6C")).BorderForeground(accent)
+	return m.showListWith(sc, title, m.listDelegate(), items, selected, help...)
+}
+
+// showListWith shows a list drawn by d and remembers help for the key bar.
+func (m *model) showListWith(sc screen, title string, d list.ItemDelegate, items []list.Item, selected string, help ...key.Binding) (tea.Model, tea.Cmd) {
 	l := list.New(items, d, 0, 0)
-	l.SetSize(m.listWidthFor(sc), m.listHeightFor(sc)) // New doesn't size the help line, SetSize does
 	l.Title = ansi.Truncate(title, m.listWidthFor(sc)-2, "…")
-	l.Styles.Title = titleSty.Padding(0, 1)
+	l.Styles.Title = titleSty
+	l.Styles.TitleBar = l.Styles.TitleBar.PaddingLeft(0) // the frame indents the body already
+	l.SetShowHelp(false)                                 // the key bar replaces it
 	l.SetStatusBarItemName("choice", "choices")
 	l.SetShowStatusBar(len(items) > 8)
 	for i, it := range items {
@@ -47,18 +51,33 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 			l.Select(i)
 		}
 	}
-	l.AdditionalShortHelpKeys = func() []key.Binding { return m.listHelp(help) }
-	m.list, m.screen, m.hasList = l, sc, true
+	m.list, m.screen, m.hasList, m.listKeys = l, sc, true, help
+	// Sized only now: the height depends on the key bar of the list on screen.
+	m.list.SetSize(m.listWidthFor(sc), m.listHeightFor(sc))
 	return m, nil
 }
 
-// listHelp is the list's extra help: help plus the self-update key when it applies.
-func (m *model) listHelp(help []key.Binding) []key.Binding {
-	out := append([]key.Binding{}, help...)
-	if m.newer != nil && !m.choosingConfigs() {
-		out = append(out, keySelfUpd)
+// listDelegate draws the items of the usual lists.
+func (m *model) listDelegate() list.DefaultDelegate {
+	d := list.NewDefaultDelegate()
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(accent).BorderForeground(accent)
+	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(lipgloss.Color("#98BB6C")).BorderForeground(accent)
+	return d
+}
+
+// listKeyPairs are the key/label pairs of the list on screen, for keyBar.
+func (m *model) listKeyPairs() []string {
+	pairs := []string{"↑↓", "move"}
+	for _, b := range m.listKeys {
+		pairs = append(pairs, b.Help().Key, b.Help().Desc)
 	}
-	return out
+	if len(m.list.Items()) > 1 {
+		pairs = append(pairs, "/", "filter")
+	}
+	if m.newer != nil && (m.screen == scInstalled || m.screen == scTarget) {
+		pairs = append(pairs, keySelfUpd.Help().Key, keySelfUpd.Help().Desc)
+	}
+	return pairs
 }
 
 func (m *model) showConflicts() (tea.Model, tea.Cmd) {
@@ -91,8 +110,7 @@ func choiceKey(c update.Choice) string {
 
 func (m *model) showResolve() (tea.Model, tea.Cmd) {
 	title := "Which version of each file do you want? Space switches, enter when you're done."
-	// k (keep all) works but stays out of the help: with it the line passes ~100 columns.
-	md, cmd := m.showList(scResolve, title, m.resolveItems(), "", keySwitch, keyAllNew, keyDone, keyOther)
+	md, cmd := m.showList(scResolve, title, m.resolveItems(), "", keySwitch, keyAllNew, keyKeepAll, keyDone, keyOther)
 	// k means "keep all" here, so it no longer moves the cursor up.
 	m.list.KeyMap.CursorUp = key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up"))
 	return md, cmd

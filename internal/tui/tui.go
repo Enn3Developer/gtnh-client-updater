@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -90,14 +91,17 @@ type model struct {
 
 	screen  screen
 	scroll  int // body scroll of the current non-list screen; reset on screen change
+	btn     int // selected button of the current screen; reset on screen change
 	width   int
 	height  int
 	spin    spinner.Model
 	bar     progress.Model
 	list    list.Model
 	hasList bool
-	input   textinput.Model
-	inputEr string
+	// listKeys are the help bindings of the list on screen, for its key bar.
+	listKeys []key.Binding
+	input    textinput.Model
+	inputEr  string
 
 	manifest *manifest.Manifest
 	insts    []prism.Instance
@@ -231,7 +235,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	prev := m.screen
 	md, cmd := m.update(msg)
 	if m.screen != prev {
-		m.scroll = 0
+		m.scroll, m.btn = 0, 0
 	}
 	return md, cmd
 }

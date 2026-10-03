@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
@@ -231,35 +230,7 @@ func (m *model) showHome() (tea.Model, tea.Cmd) {
 		sel = m.inst.Dir
 	}
 	md, cmd := m.showList(scHome, "Which instance do you want to play?", items, sel)
-	// The help rows depend on the selected instance (its j key), known only now.
-	m.list.SetSize(m.listWidth(), m.listHeight())
-	m.list.SetShowHelp(false)
 	m.list.KeyMap.CursorDown = key.NewBinding(key.WithKeys("down"), key.WithHelp("↓", "down"))
 	m.list.KeyMap.CursorUp = key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up"))
 	return md, cmd
-}
-
-// hintRows renders key/label pairs like hint, wrapping whole pairs into rows no
-// wider than limit.
-func hintRows(limit int, pairs ...string) string {
-	if limit < 20 {
-		return hint(pairs...)
-	}
-	var rows []string
-	row := ""
-	for i := 0; i+1 < len(pairs); i += 2 {
-		pair := hint(pairs[i], pairs[i+1])
-		if row != "" && ansi.StringWidth(row+"    "+pair) <= limit {
-			row += "    " + pair
-			continue
-		}
-		if row != "" {
-			rows = append(rows, row)
-		}
-		row = pair
-	}
-	if row != "" {
-		rows = append(rows, row)
-	}
-	return strings.Join(rows, "\n")
 }
