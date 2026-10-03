@@ -569,21 +569,47 @@ func longNameModel(t *testing.T) *model {
 	return m
 }
 
-func TestTargetListTitleIsClippedToListWidth(t *testing.T) { // C7
+// longWordsName is an instance name of many short words, far wider than the list.
+var longWordsName = strings.TrimSpace(strings.Repeat("Long Name ", 15))
+
+// titleShape is the line count and widest (trailing spaces trimmed) line of title.
+func titleShape(title string) (lines, widest int) {
+	all := strings.Split(ansi.Strip(title), "\n")
+	for _, l := range all {
+		widest = max(widest, ansi.StringWidth(strings.TrimRight(l, " ")))
+	}
+	return len(all), widest
+}
+
+func TestTargetListTitleIsClippedToListWidth(t *testing.T) { // C7, screens C7: wrapped to the width, not cut
 	m := longNameModel(t)
+	m.inst.Name = longWordsName
+	m.insts = []prism.Instance{m.inst}
 	m.showTargets()
-	title := m.list.Title
-	if w := ansi.StringWidth(title); w > m.listWidth()-2 || !strings.HasSuffix(title, "…") {
-		t.Errorf("target list title %q is %d wide, want <= %d ending in …", title, w, m.listWidth()-2)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on versions = %q, want nil", got)
+	}
+	want := longWordsName + " is on GTNH 2.8.4. Which version do you want?"
+	lines, widest := titleShape(m.list.Title)
+	if got := words(m.list.Title); got != want || lines < 2 || widest > m.listWidthFor(scTarget)-2 || strings.Contains(m.list.Title, "…") {
+		t.Errorf("target title reads %q on %d lines, widest %d; want all of %q on several lines, each <= %d, nothing cut",
+			got, lines, widest, want, m.listWidthFor(scTarget)-2)
 	}
 }
 
-func TestInstalledListTitleIsClippedToListWidth(t *testing.T) { // C7
+func TestInstalledListTitleIsClippedToListWidth(t *testing.T) { // C7, screens C7: wrapped to the width, not cut
 	m := longNameModel(t)
+	m.inst.Name = longWordsName
+	m.insts = []prism.Instance{m.inst}
 	m.showInstalled()
-	title := m.list.Title
-	if w := ansi.StringWidth(title); w > m.listWidth()-2 || !strings.HasSuffix(title, "…") {
-		t.Errorf("installed list title %q is %d wide, want <= %d ending in …", title, w, m.listWidth()-2)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on installed = %q, want nil", got)
+	}
+	want := "Which GTNH version is " + longWordsName + " on right now?"
+	lines, widest := titleShape(m.list.Title)
+	if got := words(m.list.Title); got != want || lines < 2 || widest > m.listWidthFor(scInstalled)-2 || strings.Contains(m.list.Title, "…") {
+		t.Errorf("installed title reads %q on %d lines, widest %d; want all of %q on several lines, each <= %d, nothing cut",
+			got, lines, widest, want, m.listWidthFor(scInstalled)-2)
 	}
 }
 

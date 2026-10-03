@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -331,6 +333,90 @@ func TestVersionListEscWithoutInstancesStays(t *testing.T) {
 	press(m, keyEsc)
 	if m.screen != scTarget {
 		t.Errorf("esc on versions with no instances: screen %d, want scTarget (%d)", m.screen, scTarget)
+	}
+	// screens C7: on the create list too, and without a cmd (the list's own esc quit is off).
+	c := routeModel(t)
+	c.insts = nil
+	c.startCreate()
+	cmd := press(c, keyEsc)
+	if c.screen != scTarget || cmd != nil || c.quitting {
+		t.Errorf("esc on create versions with no instances: screen %d, cmd nil %v, quitting %v; want scTarget (%d), nil, false",
+			c.screen, cmd == nil, c.quitting, scTarget)
+	}
+}
+
+// ---- screens C7: the list's own quit keys are off; q goes through m.quit() ----
+
+func TestHomeEscNeitherQuitsNorLeaves(t *testing.T) { // screens C7, K2
+	m := routeModel(t)
+	m.showHome()
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on home = %q, want nil", got)
+	}
+	cmd := press(m, keyEsc)
+	if m.screen != scHome || m.quitting || isQuit(cmd) {
+		t.Errorf("esc on home: screen %d, quitting %v, quit cmd %v; want scHome (%d), false, false", m.screen, m.quitting, isQuit(cmd), scHome)
+	}
+}
+
+func TestQOnVersionAndInstalledListsQuitsThroughQuit(t *testing.T) { // screens C7
+	cases := []struct {
+		name string
+		show func(m *model)
+		want screen
+	}{
+		{"versions", func(m *model) { m.showTargets() }, scTarget},
+		{"installed", func(m *model) { m.showInstalled() }, scInstalled},
+		{"create versions", func(m *model) { m.startCreate() }, scTarget},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := routeModel(t)
+			c.show(m)
+			if got := m.buttonLabels(); m.screen != c.want || got != nil {
+				t.Fatalf("setup: screen %d, buttonLabels() %q; want %d, nil", m.screen, got, c.want)
+			}
+			cmd := press(m, runes("q"))
+			if !m.quitting || !isQuit(cmd) {
+				t.Errorf("q on %s: quitting %v, quit cmd %v; want true, true", c.name, m.quitting, isQuit(cmd))
+			}
+		})
+	}
+}
+
+func TestConflictsTitleKeepsItsQuestionAt82Columns(t *testing.T) { // screens C7: titles wrap instead of being cut
+	m := routeModel(t)
+	prepared(t, m)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on conflicts = %q, want nil", got)
+	}
+	if v := words(m.View()); !strings.Contains(v, "3 config files were changed both on your side and in the new version. What should I do?") {
+		t.Errorf("conflicts view %q lacks the whole title", v)
+	}
+}
+
+func TestResolveTitleIsJustTheQuestion(t *testing.T) { // screens C8
+	m := routeModel(t)
+	onResolve(t, m)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on file by file = %q, want nil", got)
+	}
+	if got := strings.TrimSpace(ansi.Strip(m.list.Title)); got != "Which version of each file do you want?" {
+		t.Errorf("file-by-file title = %q, want %q", got, "Which version of each file do you want?")
+	}
+}
+
+func TestPickingARunningInstanceSaysTryAgain(t *testing.T) { // screens C8
+	m := routeModel(t)
+	m.isRunning = func(prism.Instance) (bool, error) { return true, nil }
+	m.showHome()
+	press(m, msgOf[errMsg](t, press(m, runes("u"))))
+	want := "Pack is running right now. Close Minecraft, then try again."
+	if got := m.buttonLabels(); m.screen != scError || !slices.Equal(got, []string{"Back", "Quit"}) {
+		t.Fatalf("u while the game runs: screen %d, buttonLabels() %q; want scError (%d) with Back and Quit", m.screen, got, scError)
+	}
+	if body := pageBody(m); !strings.Contains(body, want) || strings.Contains(body, "start me again") {
+		t.Errorf("running-instance error body %q, want %q", body, want)
 	}
 }
 
@@ -722,6 +808,34 @@ func TestErrorEscGoesBack(t *testing.T) {
 	}
 }
 
+// screens C8: the error page's sentences are wrapped to the page, so the framed view
+// shows every line whole (frame cuts lines wider than the terminal with …).
+func TestFailedDownloadErrorViewShowsEveryLineWhole(t *testing.T) {
+	m := errorModel(t, scPreparing)
+	out := ansi.Strip(m.View())
+	if !strings.Contains(out, "Nothing was changed.") || strings.Contains(out, "…") {
+		t.Errorf("failed-download error view:\n%s\nwant \"Nothing was changed.\" and no line cut with …", out)
+	}
+}
+
+// screens C8: the self-updated sentence is wrapped to m.width-4, so no line is cut.
+func TestSelfUpdatedViewShowsTheSentenceWhole(t *testing.T) {
+	for _, width := range []int{termW, 44} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			m := routeModel(t)
+			m.Update(tea.WindowSizeMsg{Width: width, Height: termH})
+			m.newer = &selfupdate.Release{Version: "9.9.9"}
+			m.screen = scSelfUpdated
+			out := ansi.Strip(m.View())
+			body, _, _ := m.page()
+			first := strings.TrimRight(ansi.Strip(strings.Split(body, "\n")[0]), " ")
+			if strings.Contains(out, "…") || ansi.StringWidth(first) > width-4 || !strings.Contains(words(out), "The launcher is now version 9.9.9.") {
+				t.Errorf("self-updated view at %d columns:\n%s\nwant the whole sentence, first body line %q within %d columns, nothing cut with …", width, out, first, width-4)
+			}
+		})
+	}
+}
+
 // ---- views of the create flow and busy screens ----
 
 func TestCreateConfirmViewDescribesTheNewInstance(t *testing.T) { // C9
@@ -800,7 +914,7 @@ func TestBusyViewTitles(t *testing.T) {
 		creating bool
 		want     string
 	}{
-		{"self-update", scSelfUpdate, false, "Updating gtnh-update itself"},
+		{"self-update", scSelfUpdate, false, "Updating the launcher"}, // screens C8
 		{"creating", scApplying, true, "Creating My Pack"},
 		{"preparing a create", scPreparing, true, "Getting GTNH 2.8.4 ready"},
 		{"applying an update", scApplying, false, "Updating Pack to GTNH 2.8.4"},
@@ -825,8 +939,121 @@ func TestLoadingAndSelfUpdatedViews(t *testing.T) {
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
 	m.screen = scSelfUpdated
 	updated := words(m.View())
-	if !strings.Contains(loading, "Looking for your GTNH instances") || !strings.Contains(updated, "gtnh-update is now version 9.9.9.") {
+	if !strings.Contains(loading, "Looking for your GTNH instances") || !strings.Contains(updated, "The launcher is now version 9.9.9.") { // screens C8
 		t.Errorf("views: loading %q, self-updated %q; want the loading line and the new version", loading, updated)
+	}
+}
+
+// ---- screens C6: busy screens box their steps ----
+
+// busyModel is routeModel preparing 2.8.4 at width x 25 with nothing to show yet.
+func busyModel(t *testing.T, width int) *model {
+	t.Helper()
+	m := routeModel(t)
+	m.Update(tea.WindowSizeMsg{Width: width, Height: termH})
+	m.screen, m.target = scPreparing, "2.8.4"
+	return m
+}
+
+func TestBusyPanelWithNothingToShowHoldsOneEmptyRow(t *testing.T) { // C6
+	m := busyModel(t, termW)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() while preparing = %q, want nil", got)
+	}
+	body, _, _ := m.page()
+	want := "Getting GTNH 2.8.4 ready for Pack\n\n" +
+		"╭" + strings.Repeat("─", 76) + "╮\n" +
+		"│" + strings.Repeat(" ", 76) + "│\n" +
+		"╰" + strings.Repeat("─", 76) + "╯"
+	if got := cleanLines(body); got != want {
+		t.Errorf("empty busy body =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestBusyPanelIsFourColumnsNarrowerThanTheTerminal(t *testing.T) { // C6
+	m := busyModel(t, 60)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() while preparing = %q, want nil", got)
+	}
+	m.steps = []string{"Checking which version you have, a step long enough to wrap inside a narrow box"}
+	m.step, m.stepStart, m.done, m.total = "Comparing files", time.Now(), 1, 2
+	body, _, _ := m.page()
+	lines := strings.Split(ansi.Strip(body), "\n")
+	var box []string
+	for _, l := range lines[2:] {
+		if l == "" {
+			break
+		}
+		box = append(box, l)
+	}
+	for i, l := range box {
+		if w := ansi.StringWidth(l); w != 56 {
+			t.Errorf("box line %d %q is %d columns, want 56", i, l, w)
+		}
+	}
+	got := words(strings.Join(box, "\n"))
+	if len(box) < 8 || !strings.HasPrefix(box[0], "╭") || !strings.HasPrefix(box[len(box)-1], "╰") ||
+		!strings.Contains(got, "│ ⣾ Comparing files │") || !strings.Contains(got, "│ 1 of 2 files │") || len(lines) != len(box)+2 {
+		t.Errorf("busy body at 60 columns reads %q; want the title, a blank line, then one box holding the steps and the progress", words(body))
+	}
+}
+
+func TestBusyStepLinesWrapAtTenColumnsLessThanTheTerminal(t *testing.T) { // C6: indentWrap(step, m.width-10, 2)
+	m := busyModel(t, 60)
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() while preparing = %q, want nil", got)
+	}
+	// 50 columns of text: fits m.width-10 exactly, so it stays on one line.
+	fifty := strings.Repeat("abcd ", 9) + "abcde"
+	m.steps = []string{fifty}
+	m.step = fifty + " next"
+	body, _, _ := m.page()
+	lines := strings.Split(cleanLines(body), "\n")
+	want := []string{
+		"│ ✓ " + fifty + " │",
+		"│ ⣾ " + fifty + " │",
+		"│   next" + strings.Repeat(" ", 47) + "│",
+	}
+	if len(lines) < 6 || !slices.Equal(lines[3:6], want) {
+		t.Errorf("busy box lines at 60 columns = %q, want %q after the top border", lines, want)
+	}
+}
+
+func TestBusyWarningFooterHasNoIndentOfItsOwn(t *testing.T) { // C6
+	m := busyModel(t, termW)
+	m.screen = scApplying
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() while applying = %q, want nil", got)
+	}
+	_, footer, _ := m.page()
+	if got := ansi.Strip(footer); got != "Please don't close this window until I'm done." {
+		t.Errorf("applying footer = %q, want the warning without leading spaces", got)
+	}
+}
+
+func TestProgressDetailCountsBytesOnlyAboveAMegabyte(t *testing.T) { // C6
+	cases := []struct {
+		name        string
+		step        string
+		done, total int64
+		want        string
+	}{
+		{"a million is files", "Comparing files", 500_000, 1_000_000, "500,000 of 1,000,000 files"},
+		{"one more is bytes", "Comparing files", 500_000, 1_000_001, "0 MB of 1 MB"},
+		{"a download of few is files", "Downloading GTNH 2.8.4", 4_000, 16_000, "4,000 of 16,000 files"},
+		{"comparing a lot is bytes", "Comparing files", 363_500_000, 727_000_000, "363 MB of 727 MB"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := busyModel(t, termW)
+			if got := m.buttonLabels(); got != nil {
+				t.Fatalf("buttonLabels() while preparing = %q, want nil", got)
+			}
+			m.step, m.stepStart, m.done, m.total = c.step, time.Now(), c.done, c.total
+			if got := m.progressDetail(); got != c.want {
+				t.Errorf("progressDetail() for %q at %d/%d = %q, want %q", c.step, c.done, c.total, got, c.want)
+			}
+		})
 	}
 }
 

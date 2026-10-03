@@ -775,7 +775,7 @@ func TestPickInstanceWhenGameRunsShowsError(t *testing.T) { // C12, C14
 	in := prism.Instance{Dir: t.TempDir(), Name: "Other", GTNH: true}
 	_, cmd := m.pickInstance(in)
 	press(m, msgOf[errMsg](t, cmd))
-	want := "Other is running right now. Close Minecraft, then start me again."
+	want := "Other is running right now. Close Minecraft, then try again."
 	if m.screen != scError || m.err.Error() != want || len(asked) != 1 || asked[0].Dir != in.Dir {
 		t.Errorf("pickInstance while running: screen %d, err %v, asked %+v; want scError, %q, one call for Other", m.screen, m.err, asked, want)
 	}

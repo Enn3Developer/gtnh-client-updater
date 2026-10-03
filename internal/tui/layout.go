@@ -40,11 +40,12 @@ func (m *model) listWidthFor(sc screen) int {
 // listHeightFor is the list height on sc: the body rows left by the chrome and the
 // footer of the list on screen.
 func (m *model) listHeightFor(sc screen) int {
-	footer := m.homeHelp()
-	if sc != scHome {
-		footer = keyBar(m.width, m.listKeyPairs()...)
+	if sc == scHome {
+		return max(fitRows(m.height, m.homeHelp()), 5)
 	}
-	return max(fitRows(m.height, footer), 5)
+	// The title page() draws; the blank line under it is the list's own empty title bar.
+	titleRows := strings.Count(m.list.Title, "\n") + 1
+	return max(fitRows(m.height, keyBar(m.width, m.listKeyPairs()...))-titleRows, 5)
 }
 
 // fitRows is how many body lines fit under the title bar and banner line and above

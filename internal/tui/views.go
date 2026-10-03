@@ -35,7 +35,7 @@ func (m *model) page() (body, footer string, scroll int) {
 		}
 		footer = m.homeHelp()
 	case scInstalled, scTarget, scSettings, scConflicts, scResolve:
-		body, footer = m.list.View(), keyBar(m.width, m.listKeyPairs()...)
+		body, footer = m.titledList(), keyBar(m.width, m.listKeyPairs()...)
 	case scLoading:
 		body, scroll = m.spin.View()+" Looking for your GTNH instances…", math.MaxInt32
 	case scServerMods:
@@ -46,7 +46,7 @@ func (m *model) page() (body, footer string, scroll int) {
 		body, footer = m.settingEditView()
 	case scBackups:
 		if len(m.backups) > 0 {
-			body, footer = m.list.View(), keyBar(m.width, m.listKeyPairs()...)
+			body, footer = m.titledList(), keyBar(m.width, m.listKeyPairs()...)
 		} else {
 			body, footer = m.backupsView()
 		}
@@ -76,10 +76,16 @@ func (m *model) page() (body, footer string, scroll int) {
 	case scError:
 		body, footer = m.errorView()
 	case scSelfUpdated:
-		body = okSty.Bold(true).Render(wrap("gtnh-update is now version "+m.newer.Version+".", m.width-4))
-		footer = hint("enter", "restart now", "q", "quit")
+		body = okSty.Bold(true).Render(wrap("The launcher is now version "+m.newer.Version+".", m.width-4))
+		footer = m.buttonFooter("enter", "restart now", "q", "quit")
 	}
 	return strings.TrimRight(body, "\n"), footer, scroll
+}
+
+// titledList is a non-home list under its wrapped title. The list's own title bar,
+// empty but for the filter prompt, is the blank line between them.
+func (m *model) titledList() string {
+	return titleSty.Render(m.list.Title) + "\n" + m.list.View()
 }
 
 func (m *model) launchingView() (body, footer string) {
@@ -101,7 +107,7 @@ func (m *model) playingView() (body, footer string) {
 	case "unknown":
 		state = dimSty.Render(wrap("The game should be starting from Prism now. I can't tell on this computer whether it's running.", m.width-4))
 	}
-	return titleSty.Render(m.inst.Name) + "\n\n" + state, hint("enter", "back", "q", "quit")
+	return titleSty.Render(wrap(m.inst.Name, m.width-4)) + "\n\n" + state, m.buttonFooter("enter", "back", "q", "quit")
 }
 
 // serverModsIntro explains the server extra mods link wherever the player is asked for it.
@@ -137,47 +143,47 @@ func (m *model) inputView(title, intro string, input textinput.Model, errText, f
 }
 
 func (m *model) busyView() (body, footer string) {
-	var b strings.Builder
-	title := func(s string) { b.WriteString(titleSty.Render(wrap(s, m.width-4)) + "\n\n") }
+	var title string
 	switch {
 	case m.screen == scSelfUpdate:
-		title("Updating gtnh-update itself")
+		title = "Updating the launcher"
 	case m.screen == scRestoring:
-		title(fmt.Sprintf("Putting %s back on GTNH %s", m.inst.Name, m.backup.Info.From))
+		title = fmt.Sprintf("Putting %s back on GTNH %s", m.inst.Name, m.backup.Info.From)
 	case m.creating && m.screen == scApplying:
-		title("Creating " + m.newName)
+		title = "Creating " + m.newName
 	case m.creating:
-		title("Getting GTNH " + m.target + " ready")
+		title = "Getting GTNH " + m.target + " ready"
 	case m.screen == scApplying:
-		title(fmt.Sprintf("Updating %s to GTNH %s", m.inst.Name, m.target))
+		title = fmt.Sprintf("Updating %s to GTNH %s", m.inst.Name, m.target)
 	default:
-		title(fmt.Sprintf("Getting GTNH %s ready for %s", m.target, m.inst.Name))
+		title = fmt.Sprintf("Getting GTNH %s ready for %s", m.target, m.inst.Name)
 	}
+	var steps []string
 	for _, s := range m.steps {
-		b.WriteString(okSty.Render("  ✓ ") + dimSty.Render(indentWrap(s, m.width-8, 4)) + "\n")
+		steps = append(steps, okSty.Render("✓ ")+dimSty.Render(indentWrap(s, m.width-10, 2)))
 	}
 	if m.step != "" {
-		b.WriteString("  " + m.spin.View() + indentWrap(m.step, m.width-8, 4) + "\n")
+		steps = append(steps, m.spin.View()+indentWrap(m.step, m.width-10, 2))
 	}
 	if m.total > 0 {
 		pct := float64(m.done) / float64(m.total)
-		b.WriteString("\n    " + m.bar.ViewAs(pct) + "\n    " + dimSty.Render(m.progressDetail()) + "\n")
+		steps = append(steps, "", m.bar.ViewAs(pct), dimSty.Render(m.progressDetail()))
 	}
-	b.WriteString(m.headsUp(""))
+	body = titleSty.Render(wrap(title, m.width-4)) + "\n\n" + panel("", strings.Join(steps, "\n"), m.width-4) + "\n" + m.headsUp()
 	switch {
 	case m.screen != scPreparing:
-		footer = warnSty.Render(wrap("  Please don't close this window until I'm done.", m.width-4))
+		footer = warnSty.Render(indentWrap("Please don't close this window until I'm done.", m.width-4, 0))
 	case m.quitAfterCancel:
 		footer = dimSty.Render(wrap("Stopping and cleaning up…", m.width-4))
 	default:
 		footer = hint("ctrl+c", "cancel")
 	}
-	return b.String(), footer
+	return body, footer
 }
 
 func (m *model) progressDetail() string {
 	var s string
-	if strings.HasPrefix(m.step, "Downloading") {
+	if m.total > 1_000_000 {
 		s = fmt.Sprintf("%s of %s", mb(m.done), mb(m.total))
 	} else {
 		s = fmt.Sprintf("%s of %s files", num(m.done), num(m.total))
@@ -227,8 +233,8 @@ func (m *model) confirmView() (body, footer string) {
 	}
 	bullet("Everything that gets replaced is backed up first, just in case.")
 	b.WriteString(m.closeMinecraftNote())
-	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "update now", "esc", "back")
+	b.WriteString(m.headsUp())
+	return b.String(), m.buttonFooter("enter", "update now", "esc", "back")
 }
 
 // confirmWarnings are the red warnings above the update summary: a downgrade, or an
@@ -261,7 +267,10 @@ func (m *model) closeMinecraftNote() string {
 	return "\n" + warnSty.Render("  Make sure Minecraft is closed before you continue.") + "\n"
 }
 
-func doneFooter() string { return hint("enter", "back", "p", "play now", "q", "quit") }
+// doneFooter is the footer of the screens after a finished update, creation or restore.
+func (m *model) doneFooter() string {
+	return m.buttonFooter("enter", "back", "p", "play now", "q", "quit")
+}
 
 func (m *model) doneView() (body, footer string) {
 	r, pl := m.result, m.session.Plan
@@ -298,8 +307,8 @@ func (m *model) doneView() (body, footer string) {
 	if r.BackupDir != "" {
 		b.WriteString("\n" + dimSty.Render(wrap("If something's wrong, the old files are in "+r.BackupDir, m.width-4)) + "\n")
 	}
-	b.WriteString(m.headsUp(""))
-	return b.String(), doneFooter()
+	b.WriteString(m.headsUp())
+	return b.String(), m.doneFooter()
 }
 
 // customModsSummary describes what the server-mods sync did (cm nil = it didn't run).
@@ -350,8 +359,8 @@ func (m *model) confirmCreateView() (body, footer string) {
 	} else {
 		bullet("It uses the Java 17+ version of the pack.")
 	}
-	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "create it", "esc", "back")
+	b.WriteString(m.headsUp())
+	return b.String(), m.buttonFooter("enter", "create it", "esc", "back")
 }
 
 func (m *model) createdView() (body, footer string) {
@@ -361,13 +370,13 @@ func (m *model) createdView() (body, footer string) {
 	b.WriteString(m.bullet(num(int64(r.Files)) + " files installed."))
 	b.WriteString(m.customModsSummary(r.CustomMods, r.CustomErr))
 	b.WriteString(m.bullet("If Prism is already open and doesn't show it, restart Prism."))
-	b.WriteString(m.headsUp(""))
-	return b.String(), doneFooter()
+	b.WriteString(m.headsUp())
+	return b.String(), m.doneFooter()
 }
 
 func (m *model) errorView() (body, footer string) {
 	var b strings.Builder
-	b.WriteString(badSty.Render("Something went wrong") + "\n\n")
+	b.WriteString(badSty.Render(wrap("Something went wrong", m.width-4)) + "\n\n")
 	b.WriteString(wrap(m.err.Error(), m.width-4) + "\n\n")
 	var leftover *update.LeftoverError
 	switch {
@@ -378,7 +387,7 @@ func (m *model) errorView() (body, footer string) {
 	case m.creating && m.errPhase == scApplying:
 		b.WriteString(okSty.Render(wrap("I removed the half-made instance, so there's nothing to clean up.", m.width-4)) + "\n\n")
 	case m.errPhase == scPreparing:
-		b.WriteString(okSty.Render(wrap("Nothing in your instance was changed.", m.width-4)) + "\n\n")
+		b.WriteString(okSty.Render(wrap("Nothing was changed.", m.width-4)) + "\n\n")
 	case m.errPhase == scApplying && errors.Is(m.err, update.ErrRolledBack):
 		b.WriteString(okSty.Render(wrap("Everything was put back the way it was, so your instance is exactly as before.", m.width-4)) + "\n\n")
 	case m.errPhase == scApplying:
@@ -387,16 +396,19 @@ func (m *model) errorView() (body, footer string) {
 		b.WriteString(m.restoreErrorNote())
 	}
 	if m.canGoBack() {
-		return b.String(), hint("esc", "back", "enter", "quit")
+		return b.String(), m.buttonFooter("enter", "back", "q", "quit")
 	}
-	return b.String(), hint("enter", "quit")
+	return b.String(), m.buttonFooter("enter", "quit")
 }
 
-// headsUp lists the warnings of the current run, each followed by after.
-func (m *model) headsUp(after string) string {
-	var b strings.Builder
-	for _, w := range m.warns {
-		b.WriteString("\n" + warnSty.Render(wrap("  Heads up: "+w, m.width-4)) + after)
+// headsUp lists the warnings of the current run, set off by blank lines; "" without any.
+func (m *model) headsUp() string {
+	if len(m.warns) == 0 {
+		return ""
 	}
-	return b.String()
+	blocks := make([]string, len(m.warns))
+	for i, w := range m.warns {
+		blocks[i] = warnSty.Render(indentWrap("Heads up: "+w, m.width-4, 10))
+	}
+	return "\n" + strings.Join(blocks, "\n") + "\n"
 }

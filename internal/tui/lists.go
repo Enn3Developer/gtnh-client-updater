@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
@@ -40,7 +39,12 @@ func (m *model) showList(sc screen, title string, items []list.Item, selected st
 // showListWith shows a list drawn by d and remembers help for the key bar.
 func (m *model) showListWith(sc screen, title string, d list.ItemDelegate, items []list.Item, selected string, help ...key.Binding) (tea.Model, tea.Cmd) {
 	l := list.New(items, d, 0, 0)
-	l.Title = ansi.Truncate(title, m.listWidthFor(sc)-2, "…")
+	l.DisableQuitKeybindings() // q and esc go through m.quit and the screen's own back
+	l.Title = indentWrap(title, m.listWidthFor(sc)-2, 0)
+	if sc != scHome {
+		l.SetShowTitle(false) // the list cuts its title to one line, so page() draws it
+	}
+	m.listTitle = title
 	l.Styles.Title = titleSty
 	l.Styles.TitleBar = l.Styles.TitleBar.PaddingLeft(0) // the frame indents the body already
 	l.SetShowHelp(false)                                 // the key bar replaces it
@@ -55,6 +59,18 @@ func (m *model) showListWith(sc screen, title string, d list.ItemDelegate, items
 	// Sized only now: the height depends on the key bar of the list on screen.
 	m.list.SetSize(m.listWidthFor(sc), m.listHeightFor(sc))
 	return m, nil
+}
+
+// resizeList fits the list on screen (if any) to the current terminal size, re-wrapping
+// the title page() draws above it.
+func (m *model) resizeList() {
+	if !m.hasList {
+		return
+	}
+	if m.screen != scHome {
+		m.list.Title = indentWrap(m.listTitle, m.listWidth()-2, 0)
+	}
+	m.list.SetSize(m.listWidth(), m.listHeight())
 }
 
 // listDelegate draws the items of the usual lists.
@@ -109,7 +125,7 @@ func choiceKey(c update.Choice) string {
 }
 
 func (m *model) showResolve() (tea.Model, tea.Cmd) {
-	title := "Which version of each file do you want? Space switches, enter when you're done."
+	title := "Which version of each file do you want?"
 	md, cmd := m.showList(scResolve, title, m.resolveItems(), "", keySwitch, keyAllNew, keyKeepAll, keyDone, keyOther)
 	// k means "keep all" here, so it no longer moves the cursor up.
 	m.list.KeyMap.CursorUp = key.NewBinding(key.WithKeys("up"), key.WithHelp("↑", "up"))
@@ -165,7 +181,7 @@ func (m *model) releaseItems(mark func(manifest.Release) []string) []list.Item {
 func (m *model) showInstalled() (tea.Model, tea.Cmd) {
 	items := m.releaseItems(func(manifest.Release) []string { return nil })
 	title := "Which GTNH version is " + m.inst.Name + " on right now?"
-	return m.showList(scInstalled, title, items, m.detect.Version, keyOther)
+	return m.showList(scInstalled, title, items, m.detect.Version, keyOther, keyQuit)
 }
 
 func (m *model) showTargets() (tea.Model, tea.Cmd) {
@@ -225,6 +241,7 @@ func (m *model) showTargetList(title string, items []list.Item, rec string, help
 	if len(m.insts) > 0 {
 		help = append(help, keyOther)
 	}
+	help = append(help, keyQuit)
 	return m.showList(scTarget, title, items, sel, help...)
 }
 

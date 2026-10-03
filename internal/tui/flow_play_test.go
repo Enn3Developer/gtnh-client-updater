@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -144,14 +145,28 @@ func TestLaunchFailureBecomesErrorScreen(t *testing.T) { // C6, C14
 	}
 }
 
-func TestLaunchErrorScreenEnterQuits(t *testing.T) { // C6
-	h := newHome(t, termW, update.State{})
-	h.prism.launchErr = errors.New("nope")
-	h.m.showHome()
-	press(h.m, msgOf[errMsg](t, press(h.m, keyEnter)))
-	cmd := press(h.m, keyEnter)
-	if h.m.screen != scError || !h.m.quitting || !isQuit(cmd) {
-		t.Errorf("enter on the launch error: screen %d, quitting %v, quit cmd %v; want scError, true, true", h.m.screen, h.m.quitting, isQuit(cmd))
+// screens C3: a launch error can go back, so enter activates the default Back button;
+// q still quits.
+func TestLaunchErrorScreenEnterGoesHomeAndQQuits(t *testing.T) { // C6
+	launchError := func(t *testing.T) *model {
+		h := newHome(t, termW, update.State{})
+		h.prism.launchErr = errors.New("nope")
+		h.m.showHome()
+		press(h.m, msgOf[errMsg](t, press(h.m, keyEnter)))
+		return h.m
+	}
+	m := launchError(t)
+	if got := m.buttonLabels(); m.screen != scError || !slices.Equal(got, []string{"Back", "Quit"}) {
+		t.Fatalf("launch error: screen %d, buttonLabels() %q; want scError, [Back Quit]", m.screen, got)
+	}
+	cmd := press(m, keyEnter)
+	if m.screen != scHome || m.quitting || isQuit(cmd) {
+		t.Errorf("enter on the launch error: screen %d, quitting %v, quit cmd %v; want scHome, false, false", m.screen, m.quitting, isQuit(cmd))
+	}
+	q := launchError(t)
+	cmd = press(q, runes("q"))
+	if !q.quitting || !isQuit(cmd) {
+		t.Errorf("q on the launch error: quitting %v, quit cmd %v; want true, true", q.quitting, isQuit(cmd))
 	}
 }
 
@@ -218,8 +233,22 @@ func TestLaunchedWithExplicitStaySettingStaysOpen(t *testing.T) { // C7
 
 func TestPlayingPageWhileStarting(t *testing.T) { // C9
 	h := playing(t)
-	if body, footer := pageBody(h.m), pageFooter(h.m); !strings.HasPrefix(body, "Older ") || !strings.Contains(body, startingText) || footer != "enter back q quit" {
-		t.Errorf("playing page: body %q, footer %q; want the name, %q and \"enter back q quit\"", body, footer, startingText)
+	const wantFooter = "[ Back ] [ Quit ] ←→ choose enter back q quit" // screens C4
+	if body, footer := pageBody(h.m), pageFooter(h.m); !strings.HasPrefix(body, "Older ") || !strings.Contains(body, startingText) || footer != wantFooter {
+		t.Errorf("playing page: body %q, footer %q; want the name, %q and %q", body, footer, startingText, wantFooter)
+	}
+}
+
+func TestPlayingTitleWrapsALongInstanceName(t *testing.T) { // screens C8
+	h := playing(t)
+	long := strings.TrimSpace(strings.Repeat("Long Name ", 12))
+	h.m.inst.Name = long
+	if got := h.m.buttonLabels(); !slices.Equal(got, []string{"Back", "Quit"}) {
+		t.Fatalf("buttonLabels() on playing = %q, want [Back Quit]", got)
+	}
+	out := h.m.View()
+	if _, widest := fit(out); widest > termW || !strings.Contains(words(out), long) || !strings.Contains(words(out), startingText) {
+		t.Errorf("playing view with a %d-column name (widest line %d) = %q; want the whole name then %q", len(long), widest, words(out), startingText)
 	}
 }
 

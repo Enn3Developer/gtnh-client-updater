@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -218,8 +219,8 @@ func TestUndoWithoutBackupCardSaysNothingAndBExplains(t *testing.T) { // C1, C2,
 		t.Errorf("no backup: card %q, then b: screen %d, list screen %v, body %q; want \"Undo nothing to undo\", scBackups page starting %q",
 			v, m.screen, m.isListScreen(), pageBody(m), want)
 	}
-	if f := pageFooter(m); f != "esc back" {
-		t.Errorf("nothing-to-undo footer = %q, want %q", f, "esc back")
+	if f := pageFooter(m); f != "[ Back ] ←→ choose esc back" { // screens C4
+		t.Errorf("nothing-to-undo footer = %q, want %q", f, "[ Back ] ←→ choose esc back")
 	}
 	if v := view(m); !strings.Contains(v, "Nothing to undo for Pack") || !strings.Contains(v, "esc back") {
 		t.Errorf("nothing-to-undo view %q: want the page with its title and footer", v)
@@ -400,15 +401,15 @@ func TestUndoWhenGameIsNotRunningHasNoCloseLine(t *testing.T) { // C3
 // ---- C3 confirm page ----
 
 func TestUndoConfirmTitleWarningAndBulletsInOrder(t *testing.T) { // C3
-	info := downgradeInfo()
-	info.PrevName = "Pack old"
-	m, _ := undoModel(t, termW, info)
+	m, _ := undoModel(t, termW, downgradeInfo())
+	m.insts[0].Name = "Pack 2.8.4"
+	m.showHome()
 	m.isRunning = func(prism.Instance) (bool, error) { return false, errors.New("can't tell") }
 	toConfirm(t, m)
 	m.warns = []string{"one mod looked edited by hand"}
 	body := pageBody(m)
 	parts := []string{
-		"Ready to put Pack back on GTNH 2.8.1",
+		"Ready to put Pack 2.8.4 back on GTNH 2.8.1",
 		"! This goes BACK to an older version. Worlds you played on 2.8.4 may lose blocks and items or not load at all. Copy your saves folder somewhere safe first.",
 		"• Files that update added are removed and the files it replaced are put back exactly as they were.",
 		"• Your worlds, screenshots, maps and game settings stay exactly as they are.",
@@ -433,8 +434,9 @@ func TestUndoConfirmTitleWarningAndBulletsInOrder(t *testing.T) { // C3
 func TestUndoConfirmFooter(t *testing.T) { // C3
 	m, _ := undoModel(t, termW, downgradeInfo())
 	toConfirm(t, m)
-	if f := pageFooter(m); f != "enter undo now esc back" { // chrome C9
-		t.Errorf("confirm footer = %q, want %q", f, "enter undo now esc back")
+	const want = "[ Undo now ] [ Back ] ←→ choose enter undo now esc back" // chrome C9, screens C4
+	if f := pageFooter(m); f != want {
+		t.Errorf("confirm footer = %q, want %q", f, want)
 	}
 }
 
@@ -461,6 +463,38 @@ func TestUndoConfirmNameBulletWhenNameHasTheVersion(t *testing.T) { // C3
 	toConfirm(t, m)
 	if body := pageBody(m); !strings.Contains(body, "• The instance name in Prism goes back too.") {
 		t.Errorf("confirm for \"Pack 2.8.4\" undoing 2.8.4: body %q lacks the name bullet", body)
+	}
+}
+
+// screens C8: the name goes back only if the undone update renamed it, i.e. the name
+// has the version the update went to, and that version differs from the one restored.
+func TestRestoreConfirmNameBulletOnlyWhenTheNameHasTheUndoneVersion(t *testing.T) {
+	cases := []struct {
+		name     string
+		instName string
+		info     update.BackupInfo
+		shown    bool
+	}{
+		{"name has the version", "Pack 2.8.4", update.BackupInfo{From: "2.8.1", To: "2.8.4"}, true},
+		{"name without the version", "Pack", update.BackupInfo{From: "2.8.1", To: "2.8.4"}, false},
+		{"only a previous name", "Pack", update.BackupInfo{From: "2.8.1", To: "2.8.4", PrevName: "Pack old"}, false},
+		{"same version both ways", "Pack 2.8.4", update.BackupInfo{From: "2.8.4", To: "2.8.4"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := routeModel(t)
+			m.inst.Name = c.instName
+			m.backup = update.Backup{Dir: "backup-20260101-000000", Info: c.info}
+			m.screen = scRestoreConfirm
+			if got := m.buttonLabels(); !slices.Equal(got, []string{"Undo now", "Back"}) {
+				t.Fatalf("buttonLabels() on restore confirm = %q, want [Undo now Back]", got)
+			}
+			body := pageBody(m)
+			if got := strings.Contains(body, "• The instance name in Prism goes back too."); got != c.shown || !strings.Contains(body, "• Your worlds, screenshots") {
+				t.Errorf("restore confirm for %q undoing %s -> %s (prev name %q): name bullet %v, want %v; body %q",
+					c.instName, c.info.From, c.info.To, c.info.PrevName, got, c.shown, body)
+			}
+		})
 	}
 }
 
@@ -553,8 +587,9 @@ func TestUndoRestoredPageSummary(t *testing.T) { // C5
 		strings.Contains(body, "Renamed") || strings.Contains(body, "couldn't put these back") {
 		t.Errorf("restored body %q; want the All done title, \"2 files put back, 0 removed.\" last, no play sentence, no rename/skipped bullets", body)
 	}
-	if f := pageFooter(m); f != "enter back p play now q quit" {
-		t.Errorf("restored footer = %q, want %q", f, "enter back p play now q quit")
+	const want = "[ Back ] [ Play now ] [ Quit ] ←→ choose enter back p play now q quit" // screens C4
+	if f := pageFooter(m); f != want {
+		t.Errorf("restored footer = %q, want %q", f, want)
 	}
 }
 
@@ -637,8 +672,8 @@ func TestUndoRestoreFailureShowsBackupPathAndCannotGoBack(t *testing.T) { // C6,
 		t.Errorf("failed restore: screen %d, errPhase %d, body %q; want scError, scRestoring (%d), the error then %q, no \"Nothing was changed.\"",
 			m.screen, m.errPhase, body, scRestoring, want)
 	}
-	if f := pageFooter(m); f != "enter quit" {
-		t.Errorf("failed restore footer = %q, want %q", f, "enter quit")
+	if f := pageFooter(m); f != "[ Quit ] ←→ choose enter quit" { // screens C4
+		t.Errorf("failed restore footer = %q, want %q", f, "[ Quit ] ←→ choose enter quit")
 	}
 }
 
@@ -658,8 +693,8 @@ func TestUndoRestoreRefusedWhileGameRunsChangedNothing(t *testing.T) { // C6, C7
 		t.Errorf("restore refused (game running): screen %d, errPhase %d, body %q; want scError, scRestoring, \"Nothing was changed.\" and no backup path",
 			m.screen, m.errPhase, body)
 	}
-	if f := pageFooter(m); f != "esc back enter quit" {
-		t.Errorf("game-running footer = %q, want %q", f, "esc back enter quit")
+	if f := pageFooter(m); f != "[ Back ] [ Quit ] ←→ choose enter back q quit" { // screens C4
+		t.Errorf("game-running footer = %q, want %q", f, "[ Back ] [ Quit ] ←→ choose enter back q quit")
 	}
 }
 
@@ -677,8 +712,8 @@ func TestUndoRestoreRefusedWhileGameRunsWrappedChangedNothing(t *testing.T) { //
 	if !strings.Contains(body, gameRunningText+" Nothing was changed.") || strings.Contains(body, "Some files may have changed") || strings.Contains(body, bdir) {
 		t.Errorf("restore refused (wrapped ErrGameRunning): body %q; want \"Nothing was changed.\" and no backup path", body)
 	}
-	if f := pageFooter(m); f != "esc back enter quit" {
-		t.Errorf("wrapped game-running footer = %q, want %q", f, "esc back enter quit")
+	if f := pageFooter(m); f != "[ Back ] [ Quit ] ←→ choose enter back q quit" { // screens C4
+		t.Errorf("wrapped game-running footer = %q, want %q", f, "[ Back ] [ Quit ] ←→ choose enter back q quit")
 	}
 }
 
@@ -689,8 +724,8 @@ func TestUndoRestoreLookAlikeErrorIsNotGameRunning(t *testing.T) { // polish C2:
 	if !strings.Contains(body, want) || strings.Contains(body, "Nothing was changed.") {
 		t.Errorf("restore failed with a look-alike error: body %q; want %q and no \"Nothing was changed.\"", body, want)
 	}
-	if f := pageFooter(m); f != "enter quit" {
-		t.Errorf("look-alike error footer = %q, want %q", f, "enter quit")
+	if f := pageFooter(m); f != "[ Quit ] ←→ choose enter quit" { // screens C4
+		t.Errorf("look-alike error footer = %q, want %q", f, "[ Quit ] ←→ choose enter quit")
 	}
 }
 

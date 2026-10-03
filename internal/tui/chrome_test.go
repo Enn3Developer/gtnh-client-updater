@@ -408,12 +408,52 @@ func TestListTitleStartsAtColumnTwoWithoutPadding(t *testing.T) { // C5
 	}
 }
 
+// screens C7: the page draws the title of a non-home list, then a blank line, then
+// the list (whose own title is hidden).
+func TestVersionListBodyIsTitleBlankLineThenItems(t *testing.T) {
+	m := routeModel(t)
+	m.showTargets()
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on versions = %q, want nil", got)
+	}
+	lines := strip(strings.Split(m.View(), "\n"))
+	title := "Pack is on GTNH 2.8.4. Which version do you want?"
+	if len(lines) < 5 || strings.TrimRight(lines[2], " ") != "  "+title || strings.TrimSpace(lines[3]) != "" ||
+		strings.TrimSpace(lines[4]) == "" || strings.Count(strings.Join(lines, "\n"), title) != 1 {
+		t.Errorf("version list view lines %q; want the title alone on line 3, a blank line 4, items from line 5, the title once", lines)
+	}
+}
+
+// screens C7: a long title wraps onto several body lines, all shown, none cut.
+func TestLongListTitleWrapsWholeIntoTheViewAt40Columns(t *testing.T) {
+	m := routeModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: termH})
+	m.inst.Name = "My Very Long Instance Name With Many Words"
+	m.insts = []prism.Instance{m.inst}
+	m.showTargets()
+	if got := m.buttonLabels(); got != nil {
+		t.Fatalf("buttonLabels() on versions = %q, want nil", got)
+	}
+	out := m.View()
+	want := "My Very Long Instance Name With Many Words is on GTNH 2.8.4. Which version do you want?"
+	n, widest := fit(out)
+	if !strings.Contains(words(out), want) || n > termH || widest > 40 {
+		t.Errorf("version list at 40x25: %d lines, widest %d, view %q; want the whole title %q within 40x25", n, widest, words(out), want)
+	}
+	for i, l := range strip(strings.Split(out, "\n"))[2:5] {
+		if strings.Contains(l, "…") {
+			t.Errorf("title line %d %q is cut, want it whole", i, l)
+		}
+	}
+}
+
 func TestTargetListFooterIsTheKeyBar(t *testing.T) { // C5, C8
 	m := routeModel(t)
 	m.showTargets()
 	_, footer, _ := m.page()
-	if got := words(footer); got != "↑↓ move i not this one m mods esc back / filter" {
-		t.Errorf("target footer reads %q, want %q", got, "↑↓ move i not this one m mods esc back / filter")
+	const want = "↑↓ move i not this one m mods esc back q quit / filter" // screens C7
+	if got := words(footer); got != want {
+		t.Errorf("target footer reads %q, want %q", got, want)
 	}
 }
 
@@ -431,29 +471,36 @@ func TestHomeFooterIsTheHomeHelp(t *testing.T) { // C5, D3
 func TestTargetListSizeAt82x25(t *testing.T) { // C6: 25 - 2 - 1 - 1
 	m := routeModel(t)
 	m.showTargets()
-	if m.list.Width() != 78 || m.list.Height() != 21 {
-		t.Errorf("target list at 82x25 = %dx%d, want 78x21", m.list.Width(), m.list.Height())
+	// screens C7: minus the page's one-line title (the list's empty title bar is the blank line).
+	if m.list.Width() != 78 || m.list.Height() != 20 {
+		t.Errorf("target list at 82x25 = %dx%d, want 78x20", m.list.Width(), m.list.Height())
+	}
+	if n := strings.Count(m.View(), "\n") + 1; n != m.height {
+		t.Errorf("version list view at 82x25 has %d lines, want %d (footer on the last row)", n, m.height)
 	}
 }
 
 // At 40 columns the target key bar wraps into two rows (limit 36):
-// "↑↓ move    i not this one    m mods" and "esc back    / filter".
+// "↑↓ move    i not this one    m mods" and "esc back    q quit    / filter". screens C7:
+// the title wraps at 34 into "Pack is on GTNH 2.8.4. Which" / "version do you want?",
+// which takes 2 rows: 25 - 2 - 2 - 1 - 2 = 18.
 func TestTargetListGivesARowToAWrappedKeyBar(t *testing.T) { // C6
 	m := routeModel(t)
 	m.Update(tea.WindowSizeMsg{Width: 40, Height: termH})
 	m.showTargets()
 	_, footer, _ := m.page()
-	if strings.Count(footer, "\n") != 1 || m.list.Width() != 36 || m.list.Height() != 20 {
-		t.Errorf("target list at 40x25: footer rows %d, list %dx%d; want 2 rows, 36x20", strings.Count(footer, "\n")+1, m.list.Width(), m.list.Height())
+	if strings.Count(footer, "\n") != 1 || m.list.Width() != 36 || m.list.Height() != 18 {
+		t.Errorf("target list at 40x25: footer rows %d, list %dx%d; want 2 rows, 36x18", strings.Count(footer, "\n")+1, m.list.Width(), m.list.Height())
 	}
 }
 
-func TestListHeightAboveTheFloor(t *testing.T) { // C6: 10 - 2 - 1 - 1 = 6
+// screens C7: 12 - 2 - 1 - 1 - 1 title row = 7.
+func TestListHeightAboveTheFloor(t *testing.T) { // C6
 	m := routeModel(t)
-	m.Update(tea.WindowSizeMsg{Width: termW, Height: 10})
+	m.Update(tea.WindowSizeMsg{Width: termW, Height: 12})
 	m.showTargets()
-	if m.list.Height() != 6 {
-		t.Errorf("target list height at 82x10 = %d, want 6", m.list.Height())
+	if m.list.Height() != 7 {
+		t.Errorf("target list height at 82x12 = %d, want 7", m.list.Height())
 	}
 }
 
@@ -470,8 +517,9 @@ func TestResizeReappliesTheListSize(t *testing.T) { // C6
 	m := routeModel(t)
 	m.showTargets()
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	if m.list.Width() != 96 || m.list.Height() != 36 {
-		t.Errorf("target list after resizing to 100x40 = %dx%d, want 96x36", m.list.Width(), m.list.Height())
+	// screens C7: 40 - 2 - 1 - 1 - 1 (one-line title).
+	if m.list.Width() != 96 || m.list.Height() != 35 {
+		t.Errorf("target list after resizing to 100x40 = %dx%d, want 96x35", m.list.Width(), m.list.Height())
 	}
 }
 
@@ -487,18 +535,18 @@ func TestHomeListLeavesRoomForTheCard(t *testing.T) { // C6
 func TestSettingsListHeightAt82x25(t *testing.T) { // C6: one-row key bar
 	f := settingsFixture(t, plainCfg, true)
 	f.open("")
-	if f.m.list.Height() != 21 {
-		t.Errorf("settings list height at 82x25 = %d, want 21", f.m.list.Height())
+	if f.m.list.Height() != 20 { // screens C7: 21 minus the one-line title
+		t.Errorf("settings list height at 82x25 = %d, want 20", f.m.list.Height())
 	}
 }
 
 func TestBodyRowsLeaveRoomForChromeAndFooter(t *testing.T) { // C4, C6
-	m := confirmModel(t)      // 82x25, one-row footer: 25 - 2 - 1 - 1
+	m := confirmModel(t)      // 82x25, buttons over a one-row key bar (screens C5): 25 - 2 - 2 - 1
 	h := fullHome(t, 100)     // 100x30, two-row help: 30 - 2 - 2 - 1
 	loading := goldenModel(t) // 82x25, no footer: 25 - 2
 	loading.screen = scLoading
-	if m.bodyRows() != 21 || h.m.bodyRows() != 25 || loading.bodyRows() != 23 {
-		t.Errorf("bodyRows: confirm %d, home %d, loading %d; want 21, 25, 23", m.bodyRows(), h.m.bodyRows(), loading.bodyRows())
+	if m.bodyRows() != 20 || h.m.bodyRows() != 25 || loading.bodyRows() != 23 {
+		t.Errorf("bodyRows: confirm %d, home %d, loading %d; want 20, 25, 23", m.bodyRows(), h.m.bodyRows(), loading.bodyRows())
 	}
 }
 
@@ -739,7 +787,7 @@ func TestViewLineTwoIsTheBannerOrBlank(t *testing.T) { // C7
 func TestListKeyPairsOnTheVersionList(t *testing.T) { // C8
 	m := routeModel(t)
 	m.showTargets()
-	want := []string{"↑↓", "move", "i", "not this one", "m", "mods", "esc", "back", "/", "filter"}
+	want := []string{"↑↓", "move", "i", "not this one", "m", "mods", "esc", "back", "q", "quit", "/", "filter"}
 	if got := m.listKeyPairs(); !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on versions = %q, want %q", got, want)
 	}
@@ -749,7 +797,7 @@ func TestListKeyPairsOfferNewVersionOnTheVersionList(t *testing.T) { // C8, D2
 	m := routeModel(t)
 	m.showTargets()
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
-	want := []string{"↑↓", "move", "i", "not this one", "m", "mods", "esc", "back", "/", "filter", "v", "new version"}
+	want := []string{"↑↓", "move", "i", "not this one", "m", "mods", "esc", "back", "q", "quit", "/", "filter", "v", "new version"}
 	if got := m.listKeyPairs(); !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on versions with a newer launcher = %q, want %q", got, want)
 	}
@@ -758,7 +806,7 @@ func TestListKeyPairsOfferNewVersionOnTheVersionList(t *testing.T) { // C8, D2
 func TestListKeyPairsOnTheCreateVersionList(t *testing.T) { // C8
 	m := routeModel(t)
 	m.startCreate()
-	want := []string{"↑↓", "move", "m", "mods", "esc", "back", "/", "filter"}
+	want := []string{"↑↓", "move", "m", "mods", "esc", "back", "q", "quit", "/", "filter"}
 	if got := m.listKeyPairs(); m.screen != scTarget || !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on create versions (screen %d) = %q, want %q", m.screen, got, want)
 	}
@@ -768,7 +816,7 @@ func TestListKeyPairsOnTheCreateVersionListWithoutInstances(t *testing.T) { // C
 	m := routeModel(t)
 	m.insts = nil
 	m.startCreate()
-	want := []string{"↑↓", "move", "m", "mods", "/", "filter"}
+	want := []string{"↑↓", "move", "m", "mods", "q", "quit", "/", "filter"}
 	if got := m.listKeyPairs(); m.screen != scTarget || !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on create versions without instances (screen %d) = %q, want %q", m.screen, got, want)
 	}
@@ -778,7 +826,7 @@ func TestListKeyPairsOnTheInstalledListWithNewVersion(t *testing.T) { // C8
 	m := routeModel(t)
 	m.showInstalled()
 	m.newer = &selfupdate.Release{Version: "9.9.9"}
-	want := []string{"↑↓", "move", "esc", "back", "/", "filter", "v", "new version"}
+	want := []string{"↑↓", "move", "esc", "back", "q", "quit", "/", "filter", "v", "new version"}
 	if got := m.listKeyPairs(); !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on installed with a newer launcher = %q, want %q", got, want)
 	}
@@ -788,7 +836,7 @@ func TestListKeyPairsWithOneItemHaveNoFilter(t *testing.T) { // C8: filter only 
 	m := routeModel(t)
 	m.manifest = manyReleasesManifest(t, 1)
 	m.showInstalled()
-	want := []string{"↑↓", "move", "esc", "back"}
+	want := []string{"↑↓", "move", "esc", "back", "q", "quit"}
 	if got := m.listKeyPairs(); len(m.list.Items()) != 1 || !slices.Equal(got, want) {
 		t.Errorf("listKeyPairs() on a %d-item installed list = %q, want %q", len(m.list.Items()), got, want)
 	}

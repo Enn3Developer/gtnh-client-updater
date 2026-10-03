@@ -99,9 +99,10 @@ type model struct {
 	list    list.Model
 	hasList bool
 	// listKeys are the help bindings of the list on screen, for its key bar.
-	listKeys []key.Binding
-	input    textinput.Model
-	inputEr  string
+	listKeys  []key.Binding
+	listTitle string // unwrapped title of the list on screen; re-wrapped on resize
+	input     textinput.Model
+	inputEr   string
 
 	manifest *manifest.Manifest
 	insts    []prism.Instance
@@ -303,17 +304,13 @@ func (m *model) onResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.input.Width = m.inputWidth()
 	m.nameIn.Width = m.inputWidth()
 	m.setIn.Width = m.inputWidth()
-	if m.hasList {
-		m.list.SetSize(m.listWidth(), m.listHeight())
-	}
+	m.resizeList()
 	return m, nil
 }
 
 func (m *model) onNewer(msg newerMsg) (tea.Model, tea.Cmd) {
 	m.newer = msg.r
-	if m.hasList {
-		m.list.SetSize(m.listWidth(), m.listHeight()) // make room for the banner
-	}
+	m.resizeList() // make room for the banner
 	return m, nil
 }
 

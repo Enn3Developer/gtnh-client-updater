@@ -112,7 +112,7 @@ func (m *model) pickInstance(in prism.Instance) (tea.Model, tea.Cmd) {
 	running, err := m.isRunning(in)
 	m.runUnknown = err != nil
 	if running {
-		return m, errCmd(fmt.Errorf("%s is running right now. Close Minecraft, then start me again.", in.Name))
+		return m, errCmd(fmt.Errorf("%s is running right now. Close Minecraft, then try again.", in.Name))
 	}
 	st, err := update.LoadState(in.Dir)
 	if err != nil {

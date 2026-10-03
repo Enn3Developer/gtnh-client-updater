@@ -116,7 +116,7 @@ func (m *model) onReloaded(msg reloadedMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) keyPlaying(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "esc":
+	case "esc":
 		return m.reloadHome()
 	case "q":
 		return m.quit()

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -314,7 +315,35 @@ func goldenCases() []goldenCase {
 			m.screen = scSelfUpdated
 			return m
 		}},
+		{"restore confirm", func(t *testing.T) *model { // screens C9: no rename bullet for "Pack"
+			m := goldenModel(t)
+			m.backup = update.Backup{Dir: "backup-20260101-000000", Info: downgradeInfo()}
+			m.screen = scRestoreConfirm
+			return m
+		}},
+		{"restored", func(t *testing.T) *model {
+			m := goldenModel(t)
+			m.backup = update.Backup{Dir: "backup-20260101-000000", Info: downgradeInfo()}
+			m.restored = &update.RestoreResult{From: "2.8.4", To: "2.8.1", MovedBack: 3, Removed: 1, Renamed: "Pack 2.8.1"}
+			m.screen = scRestored
+			return m
+		}},
+		{"playing starting", func(t *testing.T) *model { return goldenPlayingModel(t, "starting") }},
+		{"playing slow", func(t *testing.T) *model { return goldenPlayingModel(t, "slow") }},
+		{"playing running", func(t *testing.T) *model { return goldenPlayingModel(t, "running") }},
+		{"playing closed", func(t *testing.T) *model { return goldenPlayingModel(t, "closed") }},
+		{"playing unknown", func(t *testing.T) *model { return goldenPlayingModel(t, "unknown") }},
 	}
+}
+
+// goldenPlayingModel is goldenModel watching the game in state; the golden warnings
+// are there but the playing page shows no heads-up.
+func goldenPlayingModel(t *testing.T, state string) *model {
+	t.Helper()
+	m := goldenModel(t)
+	m.screen, m.playState = scPlaying, state
+	m.runningSince = time.Date(2026, 10, 3, 7, 5, 0, 0, time.UTC)
+	return m
 }
 
 // cleanLines strips ANSI escapes and trailing spaces from every line, keeping newlines.
@@ -379,6 +408,11 @@ func TestC1PageGoldens(t *testing.T) {
 // Intended behaviour (spec): the counts sentence uses plural() for the install count
 // ("1 file will be updated", "1 file updated"), and the bullet after the "couldn't be
 // synced" warning starts at the normal bullet indentation.
+//
+// Re-recorded by hand for the screens spec: busy steps boxed in a 78-column panel
+// (C6), button rows above the key bars (C4), heads-ups at body column 0 after one
+// blank line with continuation lines under the text (C8), "Nothing was changed." and
+// the launcher wording (C8).
 var pageGoldens = map[string]string{
 	"loading": `[body]
 ⣾  Looking for your GTNH instances…
@@ -452,84 +486,96 @@ enter continue    esc back
 	"preparing update": `[body]
 Getting GTNH 2.9.0-RC-1 ready for Pack
 
-  ✓ Checking which version you have
-  ✓ Reading what came with 2.8.4, which is a pretty long step description that
-    wraps
-  ⣾ Comparing files
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ✓ Checking which version you have                                          │
+│ ✓ Reading what came with 2.8.4, which is a pretty long step description    │
+│   that wraps                                                               │
+│ ⣾ Comparing files                                                          │
+│                                                                            │
+│ ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25%           │
+│ 4,000 of 16,000 files                                                      │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-    ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25%
-    4,000 of 16,000 files
-
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
 ctrl+c cancel
 [scroll 2147483647]`,
 	"preparing create": `[body]
 Getting GTNH 2.8.4 ready
 
-  ⣾ Downloading GTNH 2.8.4
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ⣾ Downloading GTNH 2.8.4                                                   │
+│                                                                            │
+│ ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  50%           │
+│ 363 MB of 727 MB                                                           │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-    ██████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  50%
-    363 MB of 727 MB
-
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
 ctrl+c cancel
 [scroll 2147483647]`,
 	"preparing create cancelling": `[body]
 Getting GTNH 2.8.4 ready
 
-  ⣾ Downloading GTNH 2.8.4
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ⣾ Downloading GTNH 2.8.4                                                   │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
 Stopping and cleaning up…
 [scroll 2147483647]`,
 	"applying update": `[body]
 Updating Pack to GTNH 2.9.0-RC-1
 
-  ✓ Backing up
-  ⣾ Writing files
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ✓ Backing up                                                               │
+│ ⣾ Writing files                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-  Please don't close this window until I'm done.
+Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"applying create": `[body]
 Creating My Pack
 
-  ⣾ Writing files
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ⣾ Writing files                                                            │
+│                                                                            │
+│ ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   9%           │
+│ 1,500 of 16,000 files                                                      │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-    ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   9%
-    1,500 of 16,000 files
-
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-  Please don't close this window until I'm done.
+Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"self update": `[body]
-Updating gtnh-update itself
+Updating the launcher
 
-  ⣾ Downloading gtnh-update 9.9.9
+╭────────────────────────────────────────────────────────────────────────────╮
+│ ⣾ Downloading gtnh-update 9.9.9                                            │
+│                                                                            │
+│ ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25%           │
+│ 2 MB of 8 MB                                                               │
+╰────────────────────────────────────────────────────────────────────────────╯
 
-    ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25%
-    2 MB of 8 MB
-
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-  Please don't close this window until I'm done.
+Please don't close this window until I'm done.
 [scroll 2147483647]`,
 	"confirm update": `[body]
 Ready to update Pack from 2.8.4 to 2.9.0-RC-1
@@ -552,12 +598,12 @@ otherwise old mods could be left behind.
     get.
   • Everything that gets replaced is backed up first, just in case.
 
-  Heads up: one mod looked edited by hand
-
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter update now    esc back
+[ Update now ]  [ Back ]
+←→ choose    enter update now    esc back
 [scroll 0]`,
 	"confirm downgrade nothing to do": `[body]
 Ready to update Pack from 2.8.4 to 2.8.1
@@ -570,12 +616,12 @@ first.
   • Your worlds, screenshots, maps and game settings stay exactly as they are.
   • Everything that gets replaced is backed up first, just in case.
 
-  Heads up: one mod looked edited by hand
-
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter update now    esc back
+[ Update now ]  [ Back ]
+←→ choose    enter update now    esc back
 [scroll 0]`,
 	"confirm refresh singular": `[body]
 Ready to refresh Pack on GTNH 2.8.4
@@ -589,12 +635,12 @@ Ready to refresh Pack on GTNH 2.8.4
     to it with .mcnew at the end.
   • Everything that gets replaced is backed up first, just in case.
 
-  Heads up: one mod looked edited by hand
-
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter update now    esc back
+[ Update now ]  [ Back ]
+←→ choose    enter update now    esc back
 [scroll 0]`,
 	"confirm create": `[body]
 Ready to create My Pack with GTNH 2.8.4
@@ -605,12 +651,12 @@ Ready to create My Pack with GTNH 2.8.4
   • Your server's extra mods will be installed from mods.example.com.
   • It uses the Java 17+ version of the pack.
 
-  Heads up: one mod looked edited by hand
-
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter create it    esc back
+[ Create it ]  [ Back ]
+←→ choose    enter create it    esc back
 [scroll 0]`,
 	"confirm create java 8": `[body]
 Ready to create My Pack with GTNH 2.8.4
@@ -620,12 +666,12 @@ Ready to create My Pack with GTNH 2.8.4
   • Your other instances aren't touched.
   • This version only comes as a Java 8 pack, so that's what you'll get.
 
-  Heads up: one mod looked edited by hand
-
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter create it    esc back
+[ Create it ]  [ Back ]
+←→ choose    enter create it    esc back
 [scroll 0]`,
 	"done update": `[body]
 All done! Pack is now on GTNH 2.9.0-RC-1.
@@ -649,11 +695,12 @@ this — many mods rewrite their own config when the game starts.
 If something's wrong, the old files are in /home/player/instances/Pack/.gtnh-
 updater/backup-20260101-120000
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter back    p play now    q quit
+[ Back ]  [ Play now ]  [ Quit ]
+←→ choose    enter back    p play now    q quit
 [scroll 0]`,
 	"done update singular removed old server mods": `[body]
 All done! Pack is now on GTNH 2.8.4.
@@ -668,11 +715,12 @@ and saved the new one next to it as .mcnew. It's usually fine to ignore this —
 many mods rewrite their own config when the game starts.
     config/m.cfg
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter back    p play now    q quit
+[ Back ]  [ Play now ]  [ Quit ]
+←→ choose    enter back    p play now    q quit
 [scroll 0]`,
 	"done update nothing changed": `[body]
 All done! Pack is now on GTNH 2.8.4.
@@ -680,11 +728,12 @@ All done! Pack is now on GTNH 2.8.4.
   • Your GTNH files were already up to date.
   • 1 extra mod from your server installed.
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter back    p play now    q quit
+[ Back ]  [ Play now ]  [ Quit ]
+←→ choose    enter back    p play now    q quit
 [scroll 0]`,
 	"done create": `[body]
 All done! My Pack is ready in Prism.
@@ -696,20 +745,22 @@ All done! My Pack is ready in Prism.
     again later to retry.
   • If Prism is already open and doesn't show it, restart Prism.
 
-  Heads up: one mod looked edited by hand
-  Heads up: a second, much longer warning that goes on and on so that it has
-to wrap onto another line of the terminal
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
 [footer]
-enter back    p play now    q quit
+[ Back ]  [ Play now ]  [ Quit ]
+←→ choose    enter back    p play now    q quit
 [scroll 0]`,
 	"error update preparing": `[body]
 Something went wrong
 
 I couldn't download the pack.
 
-Nothing in your instance was changed.
+Nothing was changed.
 [footer]
-esc back    enter quit
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
 [scroll 0]`,
 	"error update applying rolled back": `[body]
 Something went wrong
@@ -718,7 +769,8 @@ writing a file failed; everything was rolled back
 
 Everything was put back the way it was, so your instance is exactly as before.
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"error update applying says rolled back without ErrRolledBack": `[body]
 Something went wrong
@@ -728,7 +780,8 @@ writing a file failed; everything was rolled back
 Some files may have changed. The originals are in the .gtnh-updater folder
 inside the instance.
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"error update applying": `[body]
 Something went wrong
@@ -738,14 +791,16 @@ writing a file failed and the rollback failed too
 Some files may have changed. The originals are in the .gtnh-updater folder
 inside the instance.
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"error loading": `[body]
 Something went wrong
 
 I couldn't find Prism Launcher on this computer.
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"error create preparing": `[body]
 Something went wrong
@@ -754,7 +809,8 @@ I couldn't download the pack.
 
 Nothing was created.
 [footer]
-esc back    enter quit
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
 [scroll 0]`,
 	"error create applying": `[body]
 Something went wrong
@@ -763,7 +819,8 @@ writing a file failed
 
 I removed the half-made instance, so there's nothing to clean up.
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"error create preparing leftover": `[body]
 Something went wrong
@@ -772,7 +829,8 @@ disk full
 I couldn't remove the half-made instance folder. Delete it yourself before
 trying again. It's here: /x/My Pack (access denied)
 [footer]
-esc back    enter quit
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
 [scroll 0]`,
 	"error create applying leftover": `[body]
 Something went wrong
@@ -781,12 +839,90 @@ disk full
 I couldn't remove the half-made instance folder. Delete it yourself before
 trying again. It's here: /x/My Pack (access denied)
 [footer]
-enter quit
+[ Quit ]
+←→ choose    enter quit
 [scroll 0]`,
 	"self updated": `[body]
-gtnh-update is now version 9.9.9.
+The launcher is now version 9.9.9.
 [footer]
-enter restart now    q quit
+[ Restart now ]  [ Quit ]
+←→ choose    enter restart now    q quit
+[scroll 0]`,
+	"restore confirm": `[body]
+Ready to put Pack back on GTNH 2.8.1
+
+! This goes BACK to an older version. Worlds you played on 2.8.4 may lose
+blocks and items or not load at all. Copy your saves folder somewhere safe
+first.
+
+  • Files that update added are removed and the files it replaced are put back
+    exactly as they were.
+  • Your worlds, screenshots, maps and game settings stay exactly as they are.
+  • If you changed settings since, they're kept (server address, server mods
+    link, Java and memory).
+
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
+[footer]
+[ Undo now ]  [ Back ]
+←→ choose    enter undo now    esc back
+[scroll 0]`,
+	"restored": `[body]
+All done! Pack is back on GTNH 2.8.1.
+
+  • 3 files put back, 1 removed.
+  • Renamed the instance in Prism to "Pack 2.8.1".
+
+Heads up: one mod looked edited by hand
+Heads up: a second, much longer warning that goes on and on so that it has to
+          wrap onto another line of the terminal
+[footer]
+[ Back ]  [ Play now ]  [ Quit ]
+←→ choose    enter back    p play now    q quit
+[scroll 0]`,
+	"playing starting": `[body]
+Pack
+
+⣾  Prism Launcher is starting the game…
+[footer]
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
+[scroll 0]`,
+	"playing slow": `[body]
+Pack
+
+I haven't seen the game start yet. Maybe Prism is asking you something — have
+a look at its window.
+[footer]
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
+[scroll 0]`,
+	"playing running": `[body]
+Pack
+
+The game is running (since 07:05).
+Leave me open or press q — the game keeps running either way.
+[footer]
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
+[scroll 0]`,
+	"playing closed": `[body]
+Pack
+
+The game closed. Have fun next time!
+[footer]
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
+[scroll 0]`,
+	"playing unknown": `[body]
+Pack
+
+The game should be starting from Prism now. I can't tell on this computer
+whether it's running.
+[footer]
+[ Back ]  [ Quit ]
+←→ choose    enter back    q quit
 [scroll 0]`,
 }
 
@@ -992,13 +1128,32 @@ func TestC4ErrorEscGoesBackOrQuits(t *testing.T) {
 	}
 }
 
-func TestC4ErrorQAndEnterQuitEvenWhenGoingBackIsPossible(t *testing.T) {
-	for _, k := range []tea.KeyMsg{runes("q"), keyEnter} {
-		t.Run(k.String(), func(t *testing.T) {
-			m := errorModel(t, scPreparing)
-			cmd := press(m, k)
-			if !m.quitting || !isQuit(cmd) {
-				t.Errorf("%s on error: quitting %v, quit cmd %v; want true, true", k, m.quitting, isQuit(cmd))
+// screens C3: enter activates the selected button, which is Back when going back is
+// possible; q always quits.
+func TestC4ErrorQQuitsAndEnterGoesBackWhenBackIsPossible(t *testing.T) {
+	cases := []struct {
+		name       string
+		phase      screen
+		key        tea.KeyMsg
+		wantLabels []string
+		wantScreen screen
+		wantQuit   bool
+	}{
+		{"q with back possible quits", scPreparing, runes("q"), []string{"Back", "Quit"}, scError, true},
+		{"enter with back possible goes back", scPreparing, keyEnter, []string{"Back", "Quit"}, scTarget, false},
+		{"enter without back quits", scApplying, keyEnter, []string{"Quit"}, scError, true},
+		{"q without back quits", scApplying, runes("q"), []string{"Quit"}, scError, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := errorModel(t, c.phase)
+			if got := m.buttonLabels(); !slices.Equal(got, c.wantLabels) {
+				t.Fatalf("buttonLabels() on the error = %q, want %q", got, c.wantLabels)
+			}
+			cmd := press(m, c.key)
+			if m.screen != c.wantScreen || m.quitting != c.wantQuit || isQuit(cmd) != c.wantQuit {
+				t.Errorf("%s on error: screen %d, quitting %v, quit cmd %v; want %d, %v, %v",
+					c.key, m.screen, m.quitting, isQuit(cmd), c.wantScreen, c.wantQuit, c.wantQuit)
 			}
 		})
 	}
@@ -1256,15 +1411,17 @@ func TestC8WarnMsgAppends(t *testing.T) {
 	}
 }
 
-// chrome C6/C7: the banner sits on the line the chrome always keeps, and "v new version"
-// still fits on the key bar's one row at 82 columns: 25 - 2 - 1 - 1 = 21 before and after.
+// chrome C6/C7: the banner sits on the line the chrome always keeps. screens C7: with
+// "q quit" on the version list's key bar (69 columns), "v new version" no longer fits
+// the 78-column row and wraps; the page's one-line title takes 1 more:
+// 25 - 2 - 1 - 1 - 1 = 20 before, 25 - 2 - 2 - 1 - 1 = 19 after.
 func TestC8NewerMsgReappliesListSizeWithBanner(t *testing.T) {
 	m := routeModel(t)
 	m.showTargets()
 	before := m.list.Height()
 	press(m, newerMsg{&selfupdate.Release{Version: "9.9.9"}})
-	if m.newer == nil || m.newer.Version != "9.9.9" || before != 21 || m.list.Height() != 21 {
-		t.Errorf("newerMsg: newer %v, list height %d -> %d; want 9.9.9, 21 -> 21", m.newer, before, m.list.Height())
+	if m.newer == nil || m.newer.Version != "9.9.9" || before != 20 || m.list.Height() != 19 {
+		t.Errorf("newerMsg: newer %v, list height %d -> %d; want 9.9.9, 20 -> 19", m.newer, before, m.list.Height())
 	}
 }
 

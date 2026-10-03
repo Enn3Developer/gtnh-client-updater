@@ -13,6 +13,11 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		return m.quit()
 	}
+	if m.buttonLabels() != nil {
+		if handled, md, cmd := m.keyButtons(k); handled {
+			return md, cmd
+		}
+	}
 	if m.scrollable() && m.scrollKey(k.String()) {
 		return m, nil
 	}
@@ -85,6 +90,8 @@ func (m *model) keyList(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.list.FilterState() == list.Unfiltered && len(m.insts) > 0 {
 			return m.showHome()
 		}
+	case "q":
+		return m.quit()
 	case "i":
 		if m.screen == scTarget && !m.creating {
 			return m.showInstalled()
@@ -142,7 +149,7 @@ func (m *model) keyName(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) keyConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "y":
+	case "y":
 		return m.apply()
 	case "esc", "n", "q":
 		return m.dropSession()
@@ -157,7 +164,7 @@ func (m *model) keyError(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.goBackFromError()
 		}
 		return m.quit()
-	case "q", "enter":
+	case "q":
 		return m.quit()
 	}
 	return m, nil
@@ -165,7 +172,7 @@ func (m *model) keyError(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) keyFinished(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "esc":
+	case "esc":
 		m.selectCreated()
 		return m.reloadHome()
 	case "p":
@@ -186,9 +193,6 @@ func (m *model) selectCreated() {
 
 func (m *model) keySelfUpdated(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter":
-		m.restart = true
-		return m.quit()
 	case "q", "esc":
 		return m.quit()
 	}
@@ -197,7 +201,7 @@ func (m *model) keySelfUpdated(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *model) keyConfirmCreate(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "y":
+	case "y":
 		return m.applyCreate()
 	case "esc", "n", "q":
 		if err := m.closeCreation(); err != nil {

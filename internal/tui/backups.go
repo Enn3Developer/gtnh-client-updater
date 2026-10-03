@@ -76,7 +76,7 @@ func (m *model) keyBackups(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // keyRestoreConfirm handles keys on the screen that asks before restoring m.backup.
 func (m *model) keyRestoreConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "y":
+	case "y":
 		return m.startRestore()
 	case "esc", "n", "q":
 		return m.showBackups()
@@ -87,7 +87,7 @@ func (m *model) keyRestoreConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // keyRestored handles keys on the screen after a finished restore.
 func (m *model) keyRestored(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
-	case "enter", "esc":
+	case "esc":
 		return m.reloadHome()
 	case "p":
 		return m.play(false)
@@ -112,7 +112,7 @@ func (m *model) startRestore() (tea.Model, tea.Cmd) {
 func (m *model) backupsView() (body, footer string) {
 	body = titleSty.Render(wrap("Nothing to undo for "+m.inst.Name, m.width-4)) + "\n\n" +
 		wrap("I only keep the files from the last update I did here, and there isn't one.", m.width-4)
-	return body, hint("esc", "back")
+	return body, m.buttonFooter("esc", "back")
 }
 
 // restoreConfirmView tells the player what restoring m.backup will do and asks first.
@@ -128,12 +128,12 @@ func (m *model) restoreConfirmView() (body, footer string) {
 	bullet("Files that update added are removed and the files it replaced are put back exactly as they were.")
 	bullet("Your worlds, screenshots, maps and game settings stay exactly as they are.")
 	bullet("If you changed settings since, they're kept (server address, server mods link, Java and memory).")
-	if info.PrevName != "" || strings.Contains(m.inst.Name, info.To) {
+	if info.To != info.From && strings.Contains(m.inst.Name, info.To) {
 		bullet("The instance name in Prism goes back too.")
 	}
 	b.WriteString(m.closeMinecraftNote())
-	b.WriteString(m.headsUp("\n"))
-	return b.String(), hint("enter", "undo now", "esc", "back")
+	b.WriteString(m.headsUp())
+	return b.String(), m.buttonFooter("enter", "undo now", "esc", "back")
 }
 
 // restoredView tells the player what the restore did.
@@ -154,8 +154,8 @@ func (m *model) restoredView() (body, footer string) {
 		}
 		b.WriteString(strings.Join(lines, "\n") + "\n")
 	}
-	b.WriteString(m.headsUp(""))
-	return b.String(), doneFooter()
+	b.WriteString(m.headsUp())
+	return b.String(), m.doneFooter()
 }
 
 // restoreErrorNote is what the error screen adds after a failed restore: what state the
