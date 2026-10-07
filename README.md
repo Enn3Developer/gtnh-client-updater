@@ -40,7 +40,8 @@ It's a small program that runs in a terminal window, with arrow keys and Enter �
    |---|---|
    | **Enter** or **p** | Play — starts the instance in Prism |
    | **j** | Play & join — starts it and joins your server (set the server in Settings first) |
-   | **u** | Update — pick a version (the recommended one is already selected) and press **Enter**. It shows you exactly what will happen before it changes anything. Close Minecraft first |
+   | **u** | Update to the recommended version. It shows you exactly what will happen before it changes anything. Close Minecraft first |
+   | **o** | Choose another version |
    | **s** | Settings |
    | **b** | Undo the last update |
    | **n** | Make a new GTNH instance |
@@ -98,14 +99,22 @@ game starts.
 
 ## Server extra mods
 
-Some servers add a few mods on top of GTNH. The first time you update an instance, you're
-asked for your server's extra-mods link (a `.zip` of jars). Paste it, or leave it empty if
-you don't have one. It's remembered for that instance, and every update after that installs
-new server mods and removes ones the server dropped. Only mods that came from that link are
-ever removed. Press **m** on the version list, or use Settings, to change or remove the link.
+Some servers add a few mods on top of GTNH: a `.zip` of jars behind a link the server owner
+gives you. gtnh-update asks for it the first time you press **j** (Play & join) or save a
+server in Settings; change or remove it later in Settings. From then on the server's mods
+are synced every time you press Play, right after you change the link, and with every
+update.
 
-Server owners: the link should serve a flat `.zip` of `.jar` files over HTTPS. A `404`
-means "no extra mods right now".
+- Only mods that came from the link are ever removed, and not if you changed them.
+- If one of your own jars is in the way of a server mod (same file or same mod), it's moved
+  to `.gtnh-updater/replaced-mods` inside the instance, never deleted.
+- GTNH's own mods win: a server jar the pack already has is left out.
+- If the server is down, you keep the mods you have and the game still starts.
+- Undo doesn't touch server mods: they follow the server, not the GTNH version.
+
+Server owners: serve a `.zip` of `.jar` files over HTTPS, at the top of the zip or inside
+one folder. To take all the mods out, publish an empty zip: a `404` counts as a broken link,
+and players keep the mods they have.
 
 ## For power users
 
