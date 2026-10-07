@@ -9,7 +9,9 @@ Instances        │ Older
                  │ Update
                  │   Updated to GTNH 2.8.4 just now · 1,204 files updated, 18 removed · 1 new config
                  │   version saved as .mcnew
-                 │   2 extra mods from your server installed
+                 │   I moved your own optifine.jar to .gtnh-updater/replaced-mods inside the
+                 │   instance to make way for the server's
+                 │   Server mods: 2 new, 1 updated
                  │   You have the newest stable version.
                  │   Choose another version…                  o
                  │   Last update 2.8.1 → 2.8.4, today · undo  b
@@ -20,11 +22,9 @@ Instances        │ Older
                  │   Java           Prism's default
                  │   Window         Prism's default
                  │   Server         play.example.org
-                 │   Server mods    mods.example.org
+                 │   Server mods    mods.example.org · not synced yet
                  │
                  │ Launcher
                  │   After I start the game  stay open
                  │   Prism Launcher          found automatically
-                 │
-                 │
  ↑↓ move   enter run   tab instances   n new instance   a show all   q quit

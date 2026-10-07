@@ -73,9 +73,12 @@ func wrappedRow(w int, sel bool, text string) []string {
 	return lines
 }
 
-// wrapLines word-wraps s to width columns (hard-breaking words longer than that).
+// wrapLines word-wraps s to width columns (hard-breaking words longer than that). A
+// hyphen doesn't end a line, so paths and versions like 2.9.0-beta-3 stay whole.
 func wrapLines(s string, width int) []string {
-	return strings.Split(ansi.Wrap(s, max(width, 1), ""), "\n")
+	const keep = "\u2011" // a non-breaking hyphen while wrapping
+	s = ansi.Wrap(strings.ReplaceAll(s, "-", keep), max(width, 1), "")
+	return strings.Split(strings.ReplaceAll(s, keep, "-"), "\n")
 }
 
 // wrapAtMost is wrapLines cut to n lines, the last ending in "…" when text was dropped.

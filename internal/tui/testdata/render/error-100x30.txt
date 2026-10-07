@@ -17,7 +17,7 @@ Instances        │ Older
                  │  │                                                          │
                  │  │                                                   [ OK ] │
                  │  ╰──────────────────────────────────────────────────────────╯
-                 │   Server mods    mods.example.org
+                 │   Server mods    mods.example.org · not synced yet
                  │
                  │ Launcher
                  │   After I start the game  stay open

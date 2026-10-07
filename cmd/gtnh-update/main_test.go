@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
+	"github.com/Enn3Developer/gtnh-client-updater/internal/pack"
+	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 	"github.com/Enn3Developer/gtnh-client-updater/internal/update"
 )
 
@@ -232,25 +234,98 @@ func captureStdout(t *testing.T, f func()) string {
 	return string(out)
 }
 
-func TestPrintCustomModsNilPrintsNothing(t *testing.T) {
-	if out := captureStdout(t, func() { printCustomMods(nil) }); out != "" {
-		t.Errorf("printCustomMods(nil) printed %q, want nothing", out)
+func TestPrintModsWithoutASyncPrintsNothing(t *testing.T) {
+	if out := captureStdout(t, func() { printMods("https://mods.example/m.zip", nil, nil) }); out != "" {
+		t.Errorf("printMods(nil) printed %q, want nothing", out)
 	}
 }
 
-func TestPrintCustomModsWithoutSkippedHasNoSkippedLine(t *testing.T) {
-	cm := &update.CustomModsResult{Installed: []string{"a.jar", "b.jar"}, Added: []string{"a.jar"}}
-	out := captureStdout(t, func() { printCustomMods(cm) })
-	if !strings.Contains(out, "2 installed") || strings.Contains(out, "skipped") {
-		t.Errorf("printCustomMods = %q, want the 2 installed mods counted and no skipped line", out)
+func TestPrintModsListsWhatChanged(t *testing.T) {
+	p := &update.ModsPlan{
+		Changes: []update.ModChange{
+			{Kind: update.ModAdd, Name: "a.jar", Disk: "a.jar"},
+			{Kind: update.ModReplace, Name: "b.jar", Disk: "b.jar", Preserve: true},
+			{Kind: update.ModRemove, Name: "c.jar", Disk: "c.jar.disabled"},
+			{Kind: update.ModSkip, Name: "core.jar", With: "core.jar"},
+			{Kind: update.ModKeep, Name: "d.jar", Disk: "d.jar"},
+		},
+		Managed: map[string]pack.Fingerprint{"a.jar": {}, "b.jar": {}},
+		Ignored: []string{"sub/x.jar"},
+	}
+	out := captureStdout(t, func() { printMods("https://mods.example/m.zip", p, nil) })
+	want := `  server mods from https://mods.example/m.zip: 2
+  server mods added: a.jar
+  server mods updated: b.jar
+  server mods removed: c.jar.disabled
+  your own jars moved to .gtnh-updater/replaced-mods to make way for the server's: b.jar
+  server mods left out, the instance has them already: core.jar
+  dropped by the server but kept, you changed them: d.jar
+  left out of the server's zip (in a folder, or a name Windows doesn't allow): sub/x.jar
+`
+	if out != want {
+		t.Errorf("printMods =\n%s\nwant\n%s", out, want)
 	}
 }
 
-func TestPrintCustomModsListsSkippedJars(t *testing.T) {
-	cm := &update.CustomModsResult{Skipped: []string{"x.jar"}}
-	out := captureStdout(t, func() { printCustomMods(cm) })
-	if !strings.Contains(out, "skipped") || !strings.Contains(out, "x.jar") {
-		t.Errorf("printCustomMods = %q, want a skipped line naming x.jar", out)
+func TestPrintModsSaysWhyTheSyncFailed(t *testing.T) {
+	out := captureStdout(t, func() { printMods("", nil, errors.New("disk full")) })
+	if out != "  heads up: your server's mods couldn't be synced: disk full\n" {
+		t.Errorf("printMods = %q", out)
+	}
+}
+
+// modsTransport answers every request with zipData and an ETag.
+type modsTransport struct{ zipData []byte }
+
+func (f modsTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", ContentLength: int64(len(f.zipData)),
+		Header: http.Header{"Etag": {`"1"`}}, Body: io.NopCloser(bytes.NewReader(f.zipData)), Request: r}, nil
+}
+
+// -play syncs the server's mods before the game starts, from the -server-mods link.
+func TestSyncModsHeadlessInstallsTheServersMods(t *testing.T) {
+	data := t.TempDir()
+	var err error
+	captureStdout(t, func() {
+		err = createHeadless(&http.Client{Transport: packTransport{t, tinyPack(t)}}, []string{data}, "Mine", "2.8.1", "none")
+	})
+	if err != nil {
+		t.Fatalf("setup createHeadless = %v", err)
+	}
+	inst, err := prism.LoadInstance(filepath.Join(data, "instances", "Mine"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("extra.jar")
+	w.Write([]byte("extra"))
+	zw.Close()
+	client := &http.Client{Transport: modsTransport{buf.Bytes()}}
+
+	out := captureStdout(t, func() { syncModsHeadless(client, inst, "https://mods.example.org/m.zip") })
+
+	if got, err := os.ReadFile(filepath.Join(inst.GameDir, "mods", "extra.jar")); err != nil || string(got) != "extra" {
+		t.Errorf("extra.jar = %q, %v; want the server's jar", got, err)
+	}
+	if !strings.Contains(out, "server mods added: extra.jar") {
+		t.Errorf("output = %q, want the added jar", out)
+	}
+	if st, _ := update.LoadState(inst.Dir); st == nil || st.CustomModsURL != "https://mods.example.org/m.zip" || !st.CustomModsAsked {
+		t.Errorf("state = %+v, want the link saved", st)
+	}
+}
+
+// A server that can't be reached is only a heads up: the game starts anyway.
+func TestSyncModsHeadlessFailureIsAHeadsUp(t *testing.T) {
+	inst := prism.Instance{Dir: t.TempDir(), Name: "Mine", GTNH: true}
+	inst.GameDir = filepath.Join(inst.Dir, ".minecraft")
+	client := &http.Client{Transport: packTransport{t, nil}}
+
+	out := captureStdout(t, func() { syncModsHeadless(client, inst, brokenModsURL) })
+
+	if !strings.Contains(out, "heads up: I couldn't check your server's mods: the server behind the link answered with error 500.") {
+		t.Errorf("output = %q, want the heads up", out)
 	}
 }
 
@@ -390,8 +465,8 @@ func TestCreateHeadlessReportsServerModsFailure(t *testing.T) { // C1
 	if err != nil {
 		t.Fatalf("createHeadless = %v, want nil (server mods failing isn't fatal)", err)
 	}
-	if !strings.Contains(out, "heads up: your server's extra mods couldn't be installed:") {
-		t.Errorf("output = %q, want the server-mods install warning", out)
+	if !strings.Contains(out, "heads up: I couldn't get your server's mods: the server behind the link answered with error 500.") {
+		t.Errorf("output = %q, want the server-mods warning", out)
 	}
 }
 
@@ -418,8 +493,11 @@ func TestHeadlessReportsServerModsSyncFailure(t *testing.T) { // C1
 	if err != nil {
 		t.Fatalf("headless = %v, want nil (server mods failing isn't fatal)", err)
 	}
-	if !strings.Contains(out, "heads up: your server's extra mods couldn't be synced:") {
-		t.Errorf("output = %q, want the server-mods sync warning", out)
+	if !strings.Contains(out, "heads up: I couldn't check your server's mods: the server behind the link answered with error 500.") {
+		t.Errorf("output = %q, want the server-mods warning", out)
+	}
+	if strings.Count(out, "heads up") != 1 {
+		t.Errorf("output = %q, want the warning once", out)
 	}
 }
 

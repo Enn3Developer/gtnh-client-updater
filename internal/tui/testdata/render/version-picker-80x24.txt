@@ -17,7 +17,7 @@ Instances        │ Older
    │   2.7.2         stable release · 2 years ago · not available for your  │
    │                 Java                                                   │
    ╰────────────────────────────────────────────────────────────────────────╯
-                 │   Server mods    mods.example.org
+                 │   Server mods    mods.example.org · not synced yet
                  │
                  │ Launcher
                  │ ↓ 1 more

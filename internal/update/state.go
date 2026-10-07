@@ -17,6 +17,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/pack"
 )
@@ -26,13 +27,20 @@ const StateDir = ".gtnh-updater"
 
 // State is what the updater remembers about an instance between runs.
 type State struct {
-	Version    string                      `json:"version"`
-	Baseline   map[string]pack.Fingerprint `json:"baseline"`
-	CustomMods []string                    `json:"customMods,omitempty"`
+	Version  string                      `json:"version"`
+	Baseline map[string]pack.Fingerprint `json:"baseline"`
+	// CustomMods are the jars in mods/ the server-mods sync manages (and so may update
+	// or remove). CustomModsFP is what each looked like when the sync wrote or adopted
+	// it; a managed jar missing from it (state from an older launcher) counts as the
+	// sync's own.
+	CustomMods   []string                    `json:"customMods,omitempty"`
+	CustomModsFP map[string]pack.Fingerprint `json:"customModsFP,omitempty"`
 	// CustomModsURL is the server extra-mods archive the player chose for this
 	// instance ("" = none). CustomModsAsked tells "chose none" from "never asked".
 	CustomModsURL   string `json:"customModsURL,omitempty"`
 	CustomModsAsked bool   `json:"customModsAsked,omitempty"`
+	// CustomModsSynced is when the server's mods were last synced; zero = never.
+	CustomModsSynced time.Time `json:"customModsSynced,omitzero"`
 	// ServerAddress is the host[:port] the player joins with "Play & join"; "" = none.
 	ServerAddress string `json:"serverAddress,omitempty"`
 }

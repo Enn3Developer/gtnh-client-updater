@@ -91,7 +91,7 @@ func findAll(files []srcFile, re *regexp.Regexp) []match {
 var (
 	dialogAssign   = regexp.MustCompile(`\bm\.dialog\s*=[^=]`)
 	colourLiteral  = regexp.MustCompile(`"#[0-9A-Fa-f]{3,8}"`)
-	realBoundaries = regexp.MustCompile(`\b(prism\.IsRunning|prism\.FindLauncher|prism\.Launch|appcfg\.Save|update\.Restore)\b`)
+	realBoundaries = regexp.MustCompile(`\b(prism\.IsRunning|prism\.FindLauncher|prism\.Launch|appcfg\.Save|update\.Restore|update\.PrepareModsSync)\b`)
 	bannedWords    = []string{"instance.cfg", "flatpak", "host:port", "baseline", "reconcile", "gtnh-update"}
 )
 

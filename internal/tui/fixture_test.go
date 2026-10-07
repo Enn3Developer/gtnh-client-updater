@@ -45,6 +45,7 @@ type instSpec struct {
 	version    string // state.json version; "" = unknown
 	server     string
 	mods       string
+	modsAsked  bool // answered the server-mods question (implied by mods)
 	backup     *update.BackupInfo
 	java17     bool
 	noCfg      bool   // no instance.cfg: settings unreadable
@@ -75,8 +76,13 @@ func makeInst(t *testing.T, dataDir string, s instSpec) prism.Instance {
 		writeFile(t, filepath.Join(dir, "mmc-pack.json"),
 			`{"components":[{"uid":"net.minecraft","version":"1.7.10"},{"uid":"me.eigenraven.lwjgl3ify.forgepatches"}]}`)
 	}
-	if s.version != "" || s.server != "" || s.mods != "" {
+	if s.version != "" || s.server != "" || s.mods != "" || s.modsAsked {
 		saveState(t, dir, s.version, s.server, s.mods)
+		if s.modsAsked {
+			if err := update.UpdateState(dir, func(st *update.State) { st.CustomModsAsked = true }); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	if s.backup != nil {
 		data, err := json.Marshal(s.backup)
@@ -129,6 +135,12 @@ type fakes struct {
 	runErr    error
 	runChecks []prism.Instance
 	saved     []appcfg.Config
+	// the server-mods sync: what it was asked, what preparing gives, what applying does
+	modsSyncs    []update.ModsSyncOptions
+	modsPrepErr  error
+	modsSync     *update.ModsSync // nil = one with an empty plan
+	modsApplied  int
+	modsApplyErr error
 }
 
 var fakeLauncher = prism.Launcher{Exe: "prism-fake", Kind: "custom"}
@@ -157,6 +169,23 @@ func newTestModel(cfg Config, width, height int) (*model, *fakes) {
 	m.saveApp = func(c appcfg.Config) error {
 		f.saved = append(f.saved, c)
 		return nil
+	}
+	m.prepareMods = func(o update.ModsSyncOptions, _ update.Reporter) (*update.ModsSync, error) {
+		f.modsSyncs = append(f.modsSyncs, o)
+		if f.modsPrepErr != nil {
+			return nil, f.modsPrepErr
+		}
+		if f.modsSync == nil {
+			return &update.ModsSync{Plan: &update.ModsPlan{}}, nil
+		}
+		return f.modsSync, nil
+	}
+	m.applyMods = func(s *update.ModsSync, _ update.Reporter) (*update.ModsPlan, error) {
+		f.modsApplied++
+		if f.modsApplyErr != nil {
+			return nil, f.modsApplyErr
+		}
+		return s.Plan, nil
 	}
 	m.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return m, f

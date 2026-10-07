@@ -51,7 +51,8 @@ func (m *model) newInstance() tea.Cmd {
 			m.notify("No such version", fmt.Sprintf("GTNH has no version called %q.", m.cfg.Target))
 			return nil
 		}
-		return m.askCreateServerMods(v)
+		m.askCreateName(v)
+		return nil
 	}
 	m.pickCreateVersion()
 	return nil
@@ -74,14 +75,7 @@ func (m *model) pickCreateVersion() {
 	}
 	m.openList("Which GTNH version do you want to install?", "", items, rec, func(m *model, v string) tea.Cmd {
 		m.closeDialog()
-		return m.askCreateServerMods(v)
-	})
-}
-
-// askCreateServerMods settles the new instance's server mods (C6), then asks its name.
-func (m *model) askCreateServerMods(target string) tea.Cmd {
-	return m.askServerModsThen(nil, func(m *model) tea.Cmd {
-		m.askCreateName(target)
+		m.askCreateName(v)
 		return nil
 	})
 }
@@ -109,10 +103,11 @@ func (m *model) askCreateName(target string) {
 		})
 }
 
-// beginCreate starts the job that downloads the new instance name on target (C8) and
-// selects its pending row.
+// beginCreate starts the job that downloads the new instance name on target (C8), with
+// the server mods of the command line, and selects its pending row.
 func (m *model) beginCreate(target, name string) tea.Cmd {
 	m.target, m.newName = target, name
+	m.serverMods, m.serverModsGiven = serverModsLink(m.cfg.ServerMods, nil)
 	m.job = &job{kind: jobCreate, dir: filepath.Join(m.instancesDir(), name), title: "Getting GTNH " + target + " ready", phase: "prepare"}
 	if m.home == nil {
 		m.home = map[string]homeInfo{}
@@ -135,16 +130,20 @@ func (m *model) onCreateReady(c *update.Creation) tea.Cmd {
 	}
 	m.creation = c
 	lines := []string{num(int64(c.Files)) + " files will be installed", "In " + c.Dir}
-	if m.serverMods != "" {
-		lines = append(lines, "Server mods installed from "+hostOf(m.serverMods))
-	}
+	modsLines, modsWarn := modsPreview(c.ModsPlan, m.serverMods)
+	lines = append(lines, modsLines...)
 	if c.Flavor == manifest.Java8 {
 		lines = append(lines, "This version only comes as a Java 8 pack")
 	} else {
 		lines = append(lines, "Java 17+ pack")
 	}
 	lines = append(lines, "Your other instances aren't touched")
-	m.confirmDialog("Create "+m.newName+" with GTNH "+m.target+"?", lines, nil, nil, "Create", func(m *model) tea.Cmd {
+	var warn []string
+	for _, w := range m.warns {
+		warn = append(warn, "Heads up: "+w)
+	}
+	warn = append(warn, modsWarn...)
+	m.confirmDialog("Create "+m.newName+" with GTNH "+m.target+"?", lines, warn, nil, "Create", func(m *model) tea.Cmd {
 		m.job.phase, m.job.title = "apply", "Creating "+m.newName
 		m.closeDialog()
 		return m.applyCreate()
@@ -165,7 +164,7 @@ func (m *model) onCreateReady(c *update.Creation) tea.Cmd {
 func (m *model) onCreated(r *update.CreateResult) tea.Cmd {
 	m.job = nil
 	n := notice{text: "Created just now with GTNH " + m.target + " · " + num(int64(r.Files)) + " files installed"}
-	n.warn, n.info = serverModsNotice(r.CustomErr, r.CustomMods)
+	n.addMods(r.Mods, r.ModsErr, false)
 	m.notices[r.Instance.Dir] = n
 	m.insts = append(m.insts, r.Instance) // keeps the selection until the reload lists it
 	m.selectDir(r.Instance.Dir)
@@ -182,7 +181,7 @@ func (m *model) prepareCreate() tea.Cmd {
 	m.cancelCreate, m.quitAfterCancel = cancel, false
 	opts := update.CreateOptions{
 		Context: ctx, Client: m.cfg.Client, Manifest: m.manifest, InstancesDir: m.instancesDir(), Name: m.newName,
-		Target: m.target, CustomModsURL: m.serverMods, CustomModsAsked: true,
+		Target: m.target, CustomModsURL: m.serverMods, CustomModsAsked: m.serverModsGiven,
 	}
 	rep := m.reporter()
 	return func() tea.Msg {

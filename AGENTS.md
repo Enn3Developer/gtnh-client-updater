@@ -33,7 +33,8 @@ internal/appcfg/             launcher-wide settings: config.json under
 internal/manifest/           fetch/parse versions.json, version ordering, URL pinning,
                              manifest.Resolve (latest / latest-stable / exact key)
 internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download,
-                             DownloadContext (cancellable)
+                             DownloadContext (cancellable), FetchContext (conditional
+                             requests, size cap, HTTPError; DownloadContext wraps it)
 internal/prism/              find Prism data dirs, list/load instances, instance.cfg edits
                              (prism.RenameVersion, prism.SetName for a new instance),
                              prism.DataDirOf (Prism data dir holding an instance)
@@ -51,14 +52,22 @@ internal/update/             the engine: state, version detection, plan, apply, 
                              ErrGameRunning (refuses to update/restore while the game runs)
 internal/update/create.go    new instance: download into the new folder, extract, server
                              mods, state; instance.cfg written last
+internal/update/servermods*  the server's extra mods (see "Server mods"): servermods.go
+                             ModsSync (PrepareModsSync -> Apply), the plan's input;
+                             servermods_fetch.go the cached, conditional, https-only download
+                             and the archive's usable jars; servermods_plan.go the pure
+                             planner (ModsPlan, ModKind); servermods_apply.go the journaled
+                             sync and replaced-mods; servermods_ids.go mod ids (mcmod.info)
+                             and version-stripped name keys
 internal/update/restore.go   undo: BackupInfo manifest (gtnh-backup.json in each backup
                              dir), ListBackups, Restore
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
                              (signature.go, embedded signing_key.pub), restart
 internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <checksums.txt>`
 internal/tui/                bubbletea UI, one persistent workspace (see "TUI workspace"):
-                             tui.go Config/Run/Outcome, model, messages, Init/Update/View,
-                             workspace layout, key routing (`key`), visible/current/refresh;
+                             tui.go Config/Run/Outcome, model, Init/Update/View,
+                             workspace layout, visible/current/refresh; messages.go the
+                             background messages; keys.go key routing (`key`);
                              layout.go styles + named colours, titleBar, bodyWindow, overlay,
                              wrap; sidebar.go sidebarShows/sidebarWidth/sidebarView, glyph;
                              page.go row/entry, entries/rows, render, pageView + scrollTo,
@@ -74,15 +83,18 @@ internal/tui/                bubbletea UI, one persistent workspace (see "TUI wo
                              dialog.go dialog/dlist, openList/openInput/confirmDialog/
                              errorDialog/notify, dialogView, keyDialog/keyInput, dialogPairs;
                              status.go statusBar, statusPairs; flow_load.go load, afterLoad,
-                             cfgInstance, reload; flow_update.go startUpdate -> askServerMods
-                             -> prepare -> conflicts/resolve/confirm -> apply -> notice;
+                             cfgInstance, reload; flow_update.go startUpdate -> prepare ->
+                             conflicts/resolve/confirm -> apply -> notice; flow_mods.go the
+                             server-mods sync job (`syncMods`), the mods question
+                             (`askServerMods`), mods notices and confirmation lines;
                              flow_create.go new instance; flow_restore.go undo; flow_self.go
                              launcher self-update (incl. progressDialog); flow_play.go
                              playCmd and the game monitor; reporter.go engine progress ->
                              messages; format.go number/time formatting. Tests:
                              fixture_test.go shared fixtures (testManifest, instSpec/
                              makeInst, newTestModel, press), workspace_test.go a rapid
-                             property over terminal sizes, and per-file *_test.go
+                             property over terminal sizes, render_test.go golden screens
+                             (testdata/render), arch_test.go ratchets, per-file *_test.go
 build.sh                     cross-compile 6 targets into dist/ + dist/checksums.txt
 .github/workflows/ci.yml     gofmt, vet, test on ubuntu/windows/macos; -race on linux; build
 .github/workflows/release.yml  on tag v*.*.*: test x3 OS, build.sh, sign, gh release create,
@@ -124,18 +136,26 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
      `-yes` uses `-configs new|mine` (default new).
    - `instance.cfg` is never reconciled (player's Java/memory/JVM args). Only its
      `name=` line gets the version string swapped (`prism.RenameVersion`).
+   - Prepare also fetches the server's mods archive when the instance has a link and plans
+     their sync on mods/ as the pack plan leaves it (`Session.ModsPlan`, shown in the
+     confirmation). A fetch failure is only a warning (`Session.ModsErr`): the sync then
+     works from the copy of the last archive, or changes nothing.
 5. **Apply** (`update.Apply`): journaled. Every replaced/removed file is *moved* into
    `.gtnh-updater/backup-<ts>/` (mirrored paths); new content is written to
    `<file>.gtnh-tmp` then renamed. Any error → full rollback in reverse order, backup dir
    deleted.
    `Session.Apply` first refuses with `update.ErrGameRunning` while `prism.Running`.
-6. Server extra mods sync, save state (N becomes the new baseline; `ServerAddress` is
-   carried over), then — only if this run made a backup — write the backup's
-   `gtnh-backup.json` (see "Undo") and prune older backups.
+6. Server mods sync from the archive Prepare fetched (no network; planned again on the
+   real mods/, with the same-mod checks; not part of the backup, see "Server mods"; a
+   failure is `Result.ModsErr`, never undoes the update), save state (N becomes the new
+   baseline; `ServerAddress` and the link are carried over), then — only if this run
+   made a backup — write the backup's `gtnh-backup.json` (see "Undo") and prune older
+   backups.
 
 **Creating an instance** follows the same download/verify path but has no B or C:
 `PrepareCreate` creates `<InstancesDir>/<name>/` (and `<InstancesDir>` itself if missing,
-one level only) and downloads + verifies into its `.gtnh-updater/`; `Creation.Apply`
+one level only) and downloads + verifies into its `.gtnh-updater/`, then fetches the
+server's mods archive (cancellable too; a failure is only a warning); `Creation.Apply`
 writes pack files → server mods → `state.json` → `instance.cfg` last. Any failure, or
 ctrl+c during the download, removes the folder; a folder with `instance.cfg` is never
 deleted.
@@ -156,14 +176,16 @@ without a finished Apply, the folder is removed. Headless is
 
 TUI (flow_create.go): `n` (or `-create`, or the "Press n to make one." page when Prism has
 no instances) → version picker list dialog "Which GTNH version do you want to install?"
-(recommended / Java 8 only marked; `-version` is used once instead) → the server-mods
-input dialog unless `-server-mods` settles it → name input dialog "What should the new
+(recommended / Java 8 only marked; `-version` is used once instead) → name input
+dialog (server mods come only from `-server-mods`; the question waits for a server
+address, see "Server mods") "What should the new
 instance be called?" (default `update.DefaultInstanceName`, `-name` once;
 `CheckInstanceName` errors shown in the dialog) → the pending instance appears in the
 sidebar and is selected while the job "Getting GTNH X ready" downloads (with a
 cancellable `CreateOptions.Context`) → confirm dialog "Create NAME with GTNH X?"
-(`[ Create ]  [ Cancel ]`; Cancel removes the folder) → job "Creating NAME" → notice
-"Created just now with GTNH X · N files installed" on the new instance, which is
+(`[ Create ]  [ Cancel ]`; Cancel removes the folder; with server mods "Server mods from
+<host>: N new" and their warnings) → job "Creating NAME" → notice "Created just now with
+GTNH X · N files installed" (+ the sync's lines) on the new instance, which is
 selected. ctrl+c/q during the download cancel it and quit once the cleanup is done.
 
 ## How Play works
@@ -171,8 +193,14 @@ selected. ctrl+c/q during the download cancel it and quit once the cleanup is do
 `p`, `enter` in the sidebar or on the "▶ Play" row = Play; `j` or the "Play and join
 <server>" row = Play and join (that row exists only for a GTNH instance with a
 `State.ServerAddress`). `playCmd` does nothing while the instance's game is starting or
-running.
+running, and says "One thing at a time" while a job runs on the instance.
 
+0. Server mods first (flow_mods.go): Play and join on a GTNH instance never asked about
+   its server's mods (`!CustomModsAsked`, no link) asks "Does your server have extra
+   mods?" and saves the answer (esc starts nothing). Then a GTNH instance with a link,
+   or with jars an old link installed, is synced as a `jobMods` before the launch
+   (`syncMods` → `afterMods` = `launchCmd`). A sync that fails still starts the game,
+   with a warning notice; while another job runs the sync is skipped with a notice.
 1. Data dir = the Prism dir whose instances folder holds the instance, else `PrismDirs[0]`
    (`prism.DataDirOf`).
 2. `prism.FindLauncher(dataDir, appcfg PrismExe)`, first hit wins:
@@ -190,8 +218,9 @@ running.
 4. `prism.Launch` starts it detached (unix `Setsid`; Windows
    `CREATE_NEW_PROCESS_GROUP|DETACHED_PROCESS`), releases the handle and returns without
    waiting. Closing the TUI never stops the game.
-5. `AfterPlay`: `"quit"` → the TUI quits right after the launch; anything else (`"stay"`,
-   empty, unknown) → the Play row of that instance shows the monitor (`playMonitor`).
+5. `AfterPlay`: `"quit"` → the TUI quits right after the launch, unless the launch came
+   with a warning (`holdOpen`) or a job still runs; anything else (`"stay"`, empty,
+   unknown) → the Play row of that instance shows the monitor (`playMonitor`).
 6. Monitor: `prism.IsRunning` every 2 s (`pollLater`), `playMonitor.state`:
    `starting` "◐ Prism Launcher is starting the game…" → `running` "● The game is running
    since HH:MM" plus the dim line "Leave me open or quit — the game keeps running either
@@ -206,9 +235,11 @@ A launcher that can't be found → dialog "I couldn't start the game" telling th
 start the game from Prism or set Prism's location in the settings.
 
 Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
-(same as `-yes` update), then finds and launches Prism and exits; it never joins a server
-and never monitors. `-play` without `-yes` opens the TUI and plays `-instance` right after
-load (with `-version` it starts the update instead). `-play` with `-create` is refused;
+(same as `-yes` update), else syncs the server's mods (`syncModsHeadless`; `-server-mods`
+overrides the link and is saved; a failure is only a heads up), then finds and launches
+Prism and exits; it never joins a server and never monitors. `-play` without `-yes` opens
+the TUI and plays `-instance` right after load, its first sync from `-server-mods` when
+given (`modsOverride`; with `-version` it starts the update instead). `-play` with `-create` is refused;
 `-play -yes` needs `-instance`.
 
 ## Undo
@@ -217,19 +248,22 @@ Every update that made a backup writes `backup-<ts>/gtnh-backup.json`
 (`update.BackupManifest`, type `BackupInfo`): `from`, `to`, `when`, `prevName` (instance
 name before the rename, only if renamed), `prevState` (state.json before the update, nil
 if none), `added` (backup-mirror paths, slashed, of files the update created from
-nothing), `addedMods` (server extra-mod jars the sync created). Only the newest backup is
-kept (`pruneBackups` after a run that made one). Backup dirs without a readable manifest
-(older builds, partial) are skipped by `ListBackups` and never restorable.
+nothing), `addedMods` (legacy: server jars older launchers synced; ignored now). Only the
+newest backup is kept (`pruneBackups` after a run that made one). Backup dirs without a
+readable manifest (older builds, partial) are skipped by `ListBackups` and never
+restorable.
 
 `update.Restore(inst, b, rep)`, in order:
 
 1. Refuse with `ErrGameRunning` while `prism.Running`.
-2. Remove `Added` (relative to the instance) and `AddedMods` (in `<GameDir>/mods`), then
-   prune emptied dirs. `_external/` paths are not touched and are reported in `Skipped`.
-3. Move every file in the backup dir back (`custom-mods/` → `<GameDir>/mods`, `_external/`
-   stays and is reported, the rest → the same path under the instance), overwriting.
-4. Write `PrevState` back as state.json, keeping the current `CustomModsURL`,
-   `CustomModsAsked` and `ServerAddress`.
+2. Remove `Added` (relative to the instance), then prune emptied dirs. `_external/` paths
+   are not touched and are reported in `Skipped`. Server mods are never touched: they
+   follow the server, not the GTNH version.
+3. Move every file in the backup dir back (`custom-mods/`, an older launcher's stash of
+   server jars → `.gtnh-updater/replaced-mods/` via `keepFile`; `_external/` stays and is
+   reported; the rest → the same path under the instance), overwriting.
+4. Put `PrevState`'s `Version` and `Baseline` back into state.json; everything else stays
+   as it is now (link, asked, server address and the sync's notes).
 5. `prism.RenameVersion(To → From)`; a failure is only a warning.
 6. Delete the backup dir, only if nothing was skipped.
 
@@ -238,11 +272,68 @@ A failed restore is never rolled back: the backup dir stays so the player can re
 TUI (flow_restore.go): the Update section shows "Last update A → B, <ago> · undo" when a
 restorable backup exists; `b` or `enter` on that row → refused while a job runs ("One thing
 at a time") or the game runs ("The game is running") → confirm dialog "Go back to GTNH
-<from>?" (what it does; red downgrade warning when it's a downgrade; `[ Undo ]  [ Cancel ]`)
+<from>?" (what it does, "Your server's mods stay as they are…" when it has some; red
+downgrade warning when it's a downgrade; `[ Undo ]  [ Cancel ]`)
 → inline restore job "Going back to GTNH <from>" → notice "Back on GTNH X just now · N files
 put back, M removed [· renamed to "…"]", with a warning listing skipped `_external/` files.
 A failure ends in an error dialog: "Nothing was changed." for the game-running refusal,
 else that some files may have changed and the backup folder is still there.
+
+## Server mods
+
+A server can add jars on top of GTNH: a zip behind a link the server owner hands out
+(`State.CustomModsURL`). They follow the server, not the GTNH version: they're synced
+before every Play, right after the link is saved, and with every update and creation,
+and never go into an update's backup or undo.
+
+- **Fetch** (servermods_fetch.go `fetchMods`): https only, redirects too (`httpsOnly`);
+  ≤ 1 GiB download (`maxModsDownload`), ≤ 2 GiB of jars (`maxModsUnpacked`). The archive
+  is kept as `.gtnh-updater/server-mods.zip` with `server-mods.json` (url, ETag,
+  Last-Modified), so the next fetch is conditional (304 = the copy) and a server that
+  can't be reached falls back to it (`cachedMods`). A download replaces the copy only when
+  it opens as a mods archive. Reasons end the sentence "I couldn't check your server's
+  mods: …" (`ErrModsNotFound` for 404/410, `ErrModsWebPage`, `ErrModsNotZip`,
+  `ErrModsInFolders`, `ErrModsInsecure`, `ErrModsTooBig`, `ErrModsUnpacked`, stalls,
+  certificates, no connection).
+- **Archive shape**: jars at the top, or all inside one folder (a zipped folder). macOS
+  and Windows junk is skipped; jars deeper down, names Windows or a hidden file can't
+  have, and case-doubles are left out and listed (`ModsPlan.Ignored`); jars only in
+  folders → `ErrModsInFolders`.
+- **Plan** (servermods_plan.go `planMods`, pure): GTNH's own jars win (a server jar GTNH
+  ships by name or mod id is `ModSkip`, a copy the sync installed earlier goes); the
+  server's jars win over the player's (same name → `ModReplace`, same mod under another
+  name → `ModSetAside`; their files are moved to `.gtnh-updater/replaced-mods/`, never
+  deleted, "name (2).jar" on a clash); only jars the sync installed and the player didn't
+  change are replaced or removed (`State.CustomMods` + `CustomModsFP`), a changed one the
+  server dropped stays (`ModKeep`); an exact copy already there is adopted (`ModAdopt`);
+  `foo.jar.disabled` is updated in its disabled name. Mod ids come from `mcmod.info`,
+  else a version-stripped name key (servermods_ids.go). Without a known pack (no saved
+  baseline, or under 80% of its jars in mods/: `packJars`) every unmanaged jar might be
+  GTNH's, so nothing of the player's is touched. A preview (update/create confirmation)
+  skips the mod-id reads; the sync itself plans again with them.
+- **Apply** (servermods_apply.go `applyModsPlan`): journaled into `.gtnh-updater/mods-sync/`;
+  a failure moves everything back (`ErrModsRolledBack`); after a success the player's
+  files go to replaced-mods and the sync's own old copies are deleted. A killed sync is
+  cleaned up by the next one (staged files → replaced-mods, `.gtnh-tmp` deleted).
+- **On its own** (servermods.go): `PrepareModsSync` (fetch + plan, `ModsSyncOptions.URL`
+  overrides the link and is saved, "none" = no link) → `ModsSync.Apply` (refuses while
+  the game runs, saves `CustomMods`/`CustomModsFP`, `CustomModsSynced` when the server
+  answered; without a link drops the copy).
+- **TUI**: the sync is `jobMods` (title "Syncing your server's mods"; prepare = the fetch,
+  apply follows at once, no confirmation). It never ends in an error dialog: the notice
+  says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed N mods of
+  your old server just now") or why not (`modsNotice`, `addMods`); nothing changed and
+  the server answered → no notice. The question "Does your server have extra mods?"
+  (`askServerMods`) comes on Play and join, or after saving a server address, on an
+  instance never asked; updates and creations never ask. Saving the Server mods row
+  syncs at once (clearing it takes the jars out). The row shows "<host> · N mods ·
+  synced <ago>" or "<host> · not synced yet" (`modsValue`). Update and create
+  confirmations list "Server mods from <host>: …" with the warnings and dim lines of
+  `modsPreview`/`modsLines`.
+- **CLI**: `-yes` updates and `-create` print the sync (`printMods`); `-play -yes` syncs
+  before the launch (`syncModsHeadless`).
+- **mcconsole** (the server side) publishes an empty zip when the last jar goes, never no
+  file: a 404 keeps the installed mods (a broken link isn't "no mods").
 
 ## Invariants (do not break)
 
@@ -261,13 +352,25 @@ else that some files may have changed and the backup folder is still there.
   `RELEASE_SIGNING_KEY` repo secret and the maintainer's offline backup — never in the
   repo, logs or agent output. Asset names come from `selfupdate.AssetName` and must
   stay in sync with `build.sh` naming (`gtnh-update-<os>-<arch>[.exe]`).
-- **Server-mods sync only removes jars it installed itself** (`State.CustomMods`). Archive
-  entries must be flat `*.jar` names (no `/`, `:`). A 404 means "no mods right now".
-  There is **no default server-mods URL** in the public build; it's asked once per
-  instance and stored as `State.CustomModsURL` / `CustomModsAsked`.
+- **A server-mods sync never deletes the player's files**: it only replaces or removes
+  jars it installed itself and the player didn't change (`State.CustomMods` +
+  `CustomModsFP`); the player's jars that make way for the server's go to
+  `.gtnh-updater/replaced-mods/`, which nothing empties. GTNH's jars win over the
+  server's; without a known pack nothing unmanaged is touched. It is journaled and rolls
+  back. Archive jars are flat names (top level or one folder; odd names left out).
+- **A 404 is not "no mods"**: it keeps what's installed (with a warning); only an empty
+  archive or no link takes the server's mods out.
+- **Server-mods downloads are https only, redirects included**, capped at 1 GiB (2 GiB of
+  jars), and never on the network during an Apply (Prepare fetched them).
+- **The server's mods are never part of an update's backup or undo**; Restore never
+  removes or adds server mods (`AddedMods` is legacy and ignored).
+- There is **no default server-mods URL** in the public build; it's asked once per
+  instance (Play and join, or after saving a server address) and stored as
+  `State.CustomModsURL` / `CustomModsAsked`.
 - **Prepare never writes to the instance** except `.gtnh-updater/` (download, state dir).
 - **Never quit mid-apply**: the TUI refuses q/ctrl+c while a job is in its apply phase
-  (`busyApplying`: update, create, restore, self-update); during a create download they
+  (`busyApplying`: update, create, restore, self-update, server-mods sync), and an
+  `AfterPlay` quit waits for no job; during a create download they
   cancel it and wait for cleanup before quitting.
   If killed anyway, an update self-heals on rerun: already-updated files match N, the rest
   still match B. ctrl+c during a creation cancels and removes the folder; a *killed*
@@ -279,7 +382,8 @@ else that some files may have changed and the backup folder is still there.
 - **A run that changed nothing must not prune the previous backup.**
 - **Never preselect a downgrade** (`tui.defaultTarget`); downgrades get a red warning.
 - `state.json` is persisted on players' machines: **add fields backward-compatibly**
-  (omitempty, zero value = old behavior). Don't rename JSON keys.
+  (omitempty/omitzero, zero value = old behavior: `customModsFP` missing = contents not
+  recorded, `customModsSynced` zero = never synced). Don't rename JSON keys.
 - **`instance.cfg` of an existing instance is never reconciled** by updates or restores.
   Its only writers are `prism.RenameVersion` (the `name=` line; update and restore) and
   `prism.WriteSettings` (from settings_edit.go `saveSetting` only, i.e. the in-place
@@ -295,9 +399,9 @@ else that some files may have changed and the backup folder is still there.
   it)); Java path and Prism location must be existing regular files; window `WxH` (x or
   ×), each 320–16384. An empty value means Prism's default / none. Server and mods link go
   to state.json via `update.UpdateState`, the Prism location to appcfg.
-- **Restore only removes paths recorded in `Added`/`AddedMods`** and only moves back
-  files the backup holds; nothing outside those lists is deleted. Never "guess" added
-  files from a manifest-less backup.
+- **Restore only removes paths recorded in `Added`** and only moves back files the backup
+  holds; nothing outside that list is deleted. Never "guess" added files from a
+  manifest-less backup.
 - **Play never implements auth, Java or the game launch itself** — it always starts Prism
   (`prism.Launch`) and lets Prism do the rest. Don't pass anything but `-d`/`-l`/`-s`.
 - **Never update or restore while the game runs** (`update.ErrGameRunning`; headless
@@ -381,15 +485,17 @@ reads what the page shows about each instance into `m.home`.
     …"), then the Play rows: "▶ Play" (hint `enter`) and, with a `State.ServerAddress`,
     "Play and join <server>" (hint `j`).
   - Update section (GTNH only, rows_update.go): bold "Update" heading, the last job's
-    notice lines (ok/warn/info), then the update row: "GTNH <rec> is out · <kind> · <ago>"
+    notice lines (`notice`: the ok line, then warn lines, then dim info lines), then the
+    update row: "GTNH <rec> is out · <kind> · <ago>"
     (hint `u`), "Which version is this? Tell me and I'll check for updates"
     for an unknown version, or the dim info line "You have the newest stable version.";
     "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
     exists, "Last update A → B, <ago> · undo" (hint `b`).
   - "Settings" heading (rows_settings.go): Memory, Java arguments, Java, Window and, for
     GTNH instances, Server and Server mods; the label padded to 15 (`labelled`), values
-    like "6144 MB (at least 1024 MB)", "1920×1080", "Prism's default", "none", or the host
-    of the mods link (`settingValue`). When instance.cfg can't be read the rows give way
+    like "6144 MB (at least 1024 MB)", "1920×1080", "Prism's default", "none", or for
+    Server mods "<host> · N mods · synced <ago>" (`settingValue`, `modsValue`). When
+    instance.cfg can't be read the rows give way
     to the line "I couldn't read this instance's settings".
   - "Launcher" heading: "After I start the game" (quit | stay open and show whether it's
     running) and "Prism Launcher" (the path | found automatically).
@@ -433,7 +539,8 @@ reads what the page shows about each instance into `m.home`.
   A dialog takes every key (`keyDialog`): esc = cancel/close, `←→`/tab/shift+tab move
   between buttons, enter activates; in a list `↑↓` move and enter picks; in an input
   dialog (`keyInput`) every key but enter/esc/tab/shift+tab goes to the field.
-- **Jobs** (jobs.go): kinds update, create, restore, self (`jobKind`); phase "prepare" |
+- **Jobs** (jobs.go): kinds update, create, restore, self, mods (`jobKind`; mods is the
+  server-mods sync, see "Server mods", which never ends in an error dialog); phase "prepare" |
   "apply"; one at a time — starting another shows "One thing at a time" (`notifyBusy`).
   The job block (`jobBlock`) replaces the Play rows of its instance: "◐ <title>" (hint
   "please wait" while applying), a progress bar with percentage and "N of M files" / MB
@@ -459,9 +566,10 @@ reads what the page shows about each instance into `m.home`.
   error the message stays in the row and editing continues; else `saveSetting`,
   `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab/`←→` are
   swallowed, other keys type. An empty value means Prism's default / none. The "After I
-  start the game" row toggles stay/quit on enter and saves at once. Editing is refused
-  while a dialog is open or a job runs on the instance; a save failure shows the dialog
-  "I couldn't save that setting".
+  start the game" row toggles stay/quit on enter and saves at once. Saving the Server mods
+  row starts the sync; saving a server on an instance never asked about its mods opens
+  the mods question. Editing is refused while a dialog is open or a job runs on the
+  instance; a save failure shows the dialog "I couldn't save that setting".
 
 ## UI voice
 
@@ -497,16 +605,19 @@ gofmt -l .                        # CI fails on unformatted files
   Prism dir (`prismlauncher.cfg` with `InstanceDir=<abs path>`), `-prism-dir <fake>`,
   drive it with `tmux send-keys`, read with `tmux capture-pane -p`. Never test against a
   real player instance.
-- TUI tests build a model with `newTestModel` (fake launcher boundaries) over fake
-  instances on disk from `fixture_test.go` (`instSpec`/`makeInst`, `testManifest`,
-  `press` to send keys).
+- TUI tests build a model with `newTestModel` (fake launcher and server-mods boundaries:
+  `prepareMods`/`applyMods` stand for `update.PrepareModsSync`/`(*ModsSync).Apply`,
+  driven by `fakes.modsSync`…; `settle` runs a sync through) over fake instances on disk
+  from `fixture_test.go` (`instSpec`/`makeInst`, `testManifest`, `press` to send keys).
 - `workspace_test.go` holds a rapid property over 40–160 × 10–50 terminals: the view is
   exactly `height` lines, none wider than `width`, with title bar, workspace and status
   bar (also with a pending instance or the progress dialog open).
 - Each source file's `_test.go` (plus dialog_list_test.go, page_scroll_test.go and
   rows_update_flow_test.go) pins its rows, dialogs and status pairs as ANSI-stripped
-  strings. There are no golden files or update flags: when the layout changes on purpose,
-  fix the expected strings by hand.
+  strings; when the layout changes on purpose, fix the expected strings by hand.
+  render_test.go also pins whole screens as golden files (testdata/render/*.txt):
+  re-record them with `go test ./internal/tui -run TestRenderGoldens -update` and read
+  the diff before keeping it.
 - Version string: `main.version`, injected by `build.sh` (`-X main.version=…`, leading
   `v` stripped). `dev` builds never offer self-updates.
 - Distro packages build with `-X main.packaged=<manager>` (the AUR package uses `AUR`).

@@ -42,6 +42,9 @@ func (m *model) confirmUndo(inst prism.Instance, b update.Backup) {
 		"Worlds, maps and settings aren't touched",
 		"Settings you changed since then are kept (server, mods link, memory, Java)",
 	}
+	if info := m.home[inst.Dir]; info.modsURL != "" || info.mods > 0 {
+		lines = append(lines, "Your server's mods stay as they are: they follow the server, not the GTNH version")
+	}
 	// mirrors the engine's rename condition (prism.RenameVersion)
 	if to != from && strings.Contains(inst.Name, to) {
 		lines = append(lines, "The instance name in Prism goes back too")
@@ -82,8 +85,8 @@ func (m *model) onRestored(r *update.RestoreResult) tea.Cmd {
 		n.text += ` · renamed to "` + r.Renamed + `"`
 	}
 	if len(r.Skipped) > 0 {
-		n.warn = "I couldn't put these back myself — they live outside the instance folder: " +
-			strings.Join(r.Skipped, ", ") + ". They're still in " + backup + "."
+		n.warn = []string{"I couldn't put these back myself — they live outside the instance folder: " +
+			strings.Join(r.Skipped, ", ") + ". They're still in " + backup + "."}
 	}
 	m.notices[dir] = n
 	return m.reload()

@@ -544,11 +544,11 @@ func TestApplyInstallsServerModsPackModWins(t *testing.T) {
 	env.opts.CustomModsAsked = true
 	rep := &recReporter{}
 	c, res := createInstance(t, env, rep)
-	if res.CustomErr != nil {
-		t.Fatalf("CustomErr = %v", res.CustomErr)
+	if res.ModsErr != nil {
+		t.Fatalf("ModsErr = %v", res.ModsErr)
 	}
-	if res.CustomMods == nil {
-		t.Fatal("CustomMods = nil")
+	if res.Mods == nil {
+		t.Fatal("Mods = nil")
 	}
 	if got := mustRead(t, filepath.Join(c.Dir, ".minecraft", "mods", "extra-1.jar")); got != "e1" {
 		t.Errorf("extra-1.jar = %q, want %q", got, "e1")
@@ -556,11 +556,11 @@ func TestApplyInstallsServerModsPackModWins(t *testing.T) {
 	if got := mustRead(t, filepath.Join(c.Dir, ".minecraft", "mods", "pack-mod.jar")); got != "pm" {
 		t.Errorf("pack-mod.jar = %q, want pack's %q", got, "pm")
 	}
-	if !reflect.DeepEqual(res.CustomMods.Installed, []string{"extra-1.jar"}) {
-		t.Errorf("Installed = %v, want [extra-1.jar]", res.CustomMods.Installed)
+	if !reflect.DeepEqual(res.Mods.Installed(), []string{"extra-1.jar"}) {
+		t.Errorf("Installed = %v, want [extra-1.jar]", res.Mods.Installed())
 	}
-	if !reflect.DeepEqual(res.CustomMods.Skipped, []string{"pack-mod.jar"}) {
-		t.Errorf("Skipped = %v, want [pack-mod.jar]", res.CustomMods.Skipped)
+	if !reflect.DeepEqual(res.Mods.Names(ModSkip), []string{"pack-mod.jar"}) {
+		t.Errorf("Skipped = %v, want [pack-mod.jar]", res.Mods.Names(ModSkip))
 	}
 	st, err := LoadState(c.Dir)
 	if err != nil || st == nil {
@@ -586,9 +586,9 @@ func TestApplyServerModsStepFollowsInstall(t *testing.T) {
 		}
 		return -1
 	}
-	files, mods := idx("Installing files"), idx("Installing your server's extra mods")
+	files, mods := idx("Installing files"), idx("Installing your server's mods")
 	if files < 0 || mods < 0 || mods < files {
-		t.Errorf("steps = %q, want \"Installing files\" before \"Installing your server's extra mods\"", rep.steps)
+		t.Errorf("steps = %q, want \"Installing files\" before \"Installing your server's mods\"", rep.steps)
 	}
 }
 
@@ -604,8 +604,8 @@ func TestApplyServerModsFailureIsNotFatal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply = %v, want success when only the server mods fail", err)
 	}
-	if res.CustomErr == nil {
-		t.Errorf("CustomErr = nil, want the fetch error")
+	if res.ModsErr == nil {
+		t.Errorf("ModsErr = nil, want the fetch error")
 	}
 	if !exists(filepath.Join(c.Dir, "instance.cfg")) {
 		t.Errorf("instance missing after a server-mods failure")

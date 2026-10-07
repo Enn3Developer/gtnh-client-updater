@@ -140,6 +140,7 @@ var renderStates = []struct {
 		pl.Choose(betaCfg, update.TakeNew)
 		pl.Choose(zetaCfg, update.KeepMine)
 		m.session = sessionOf(pl)
+		m.session.ModsPlan = modsPlanOf(update.ModAdd, "extra-new.jar", update.ModUpdate, "extra.jar")
 		m.confirmUpdate()
 	}},
 	{"job-applying", func(t *testing.T, m *model) {
@@ -177,7 +178,8 @@ var renderStates = []struct {
 		m.home[renderOlder.Dir] = info
 		m.notices["/x/Older"] = notice{
 			text: "Updated to GTNH 2.8.4 just now · 1,204 files updated, 18 removed · 1 new config version saved as .mcnew",
-			info: "2 extra mods from your server installed"}
+			warn: []string{"I moved your own optifine.jar to .gtnh-updater/replaced-mods inside the instance to make way for the server's"},
+			info: []string{"Server mods: 2 new, 1 updated"}}
 	}},
 	{"pending-create", func(t *testing.T, m *model) {
 		m.target = "2.8.4"

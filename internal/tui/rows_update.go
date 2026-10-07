@@ -113,9 +113,9 @@ func defaultTarget(man *manifest.Manifest, installed string) string {
 
 // notice is the outcome of the last job, shown in the Update section.
 type notice struct {
-	text string // the ok line
-	warn string // the server-mods warning; "" = none
-	info string // the dim extra-mods line; "" = none
+	text string   // the ok line; "" = none
+	warn []string // what went wrong or needs the player's eye
+	info []string // dim extra lines
 }
 
 // chooseVersion lets the player pick the version to install for the current instance
@@ -173,19 +173,23 @@ func releaseDesc(r manifest.Release, now time.Time, tags ...string) string {
 }
 
 // noticeLines are the rendered lines of n in the Update section (C8): the ok line, the
-// warning and the dim info, each wrapped to width.
+// warnings and the dim info, each wrapped to width.
 func (m *model) noticeLines(width int, n notice) []string {
 	var out []string
-	for _, part := range []struct {
-		text string
-		sty  lipgloss.Style
-	}{{n.text, okSty}, {n.warn, warnSty}, {n.info, dimSty}} {
-		if part.text == "" {
-			continue
+	add := func(text string, sty lipgloss.Style) {
+		if text == "" {
+			return
 		}
-		for _, l := range wrapLines(part.text, width-2) {
-			out = append(out, "  "+part.sty.Render(l))
+		for _, l := range wrapLines(text, width-2) {
+			out = append(out, "  "+sty.Render(l))
 		}
+	}
+	add(n.text, okSty)
+	for _, w := range n.warn {
+		add(w, warnSty)
+	}
+	for _, i := range n.info {
+		add(i, dimSty)
 	}
 	return out
 }

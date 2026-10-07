@@ -133,8 +133,8 @@ func TestApplyServerModsFailureStillWritesCfgAndEmptyCustomMods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply = %v, want nil", err)
 	}
-	if res.CustomMods != nil {
-		t.Errorf("CustomMods = %+v, want nil after a failed sync", res.CustomMods)
+	if res.Mods != nil {
+		t.Errorf("Mods = %+v, want nil after a failed sync", res.Mods)
 	}
 	want := "[General]\r\nInstanceType=OneSix\r\nname=" + newName + "\r\nJavaPath=java\r\n"
 	if got := mustRead(t, filepath.Join(c.Dir, "instance.cfg")); got != want {

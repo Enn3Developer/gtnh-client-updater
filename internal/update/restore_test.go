@@ -155,8 +155,8 @@ func TestUpdateThenRestoreRoundTrip(t *testing.T) {
 	if got := fmt.Sprint(b.Info.Added); got != wantAdded {
 		t.Errorf("Added = %s, want %s", got, wantAdded)
 	}
-	if got := fmt.Sprint(b.Info.AddedMods); got != "[extra-1.jar]" {
-		t.Errorf("AddedMods = %s, want [extra-1.jar]", got)
+	if len(b.Info.AddedMods) != 0 {
+		t.Errorf("AddedMods = %v, want none: the server's mods aren't part of the backup", b.Info.AddedMods)
 	}
 
 	updState, err := LoadState(inst.Dir)
@@ -172,8 +172,8 @@ func TestUpdateThenRestoreRoundTrip(t *testing.T) {
 	if rres.From != "2.8.4" || rres.To != "2.8.1" {
 		t.Errorf("restore From/To = %q/%q, want 2.8.4/2.8.1", rres.From, rres.To)
 	}
-	if rres.Removed != 4 {
-		t.Errorf("Removed = %d, want 4", rres.Removed)
+	if rres.Removed != 3 {
+		t.Errorf("Removed = %d, want 3", rres.Removed)
 	}
 	if rres.MovedBack != 2 {
 		t.Errorf("MovedBack = %d, want 2 (take.cfg and x-1.jar)", rres.MovedBack)
@@ -188,13 +188,14 @@ func TestUpdateThenRestoreRoundTrip(t *testing.T) {
 	want := map[string]string{
 		takeCfg: "mine-take", keepCfg: "mine-keep", modX: "x1", sameCfg: "s",
 		mineJar: "player", world: "world",
+		".minecraft/mods/extra-1.jar": "e1", // the server's mods follow the server, not the undo
 	}
 	for p, w := range want {
 		if got, ok := read(t, inst, p); !ok || got != w {
 			t.Errorf("after restore %s = %q (exists %v), want %q", p, got, ok, w)
 		}
 	}
-	for _, p := range []string{newMod, delCfg, keepCfg + ".mcnew", ".minecraft/mods/extra-1.jar"} {
+	for _, p := range []string{newMod, delCfg, keepCfg + ".mcnew"} {
 		if _, ok := read(t, inst, p); ok {
 			t.Errorf("after restore %s still exists", p)
 		}
@@ -207,8 +208,8 @@ func TestUpdateThenRestoreRoundTrip(t *testing.T) {
 	if err != nil || st == nil {
 		t.Fatalf("state after restore = %v, %v", st, err)
 	}
-	if st.Version != "" || len(st.Baseline) != 0 || st.CustomMods != nil {
-		t.Errorf("state after restore = %+v, want empty version/baseline and nil CustomMods", st)
+	if st.Version != "" || len(st.Baseline) != 0 || fmt.Sprint(st.CustomMods) != "[extra-1.jar]" {
+		t.Errorf("state after restore = %+v, want empty version/baseline and the server mods kept", st)
 	}
 	if st.CustomModsURL != customURL || st.CustomModsAsked != updState.CustomModsAsked {
 		t.Errorf("custom-mods settings = %q/%v, want %q/%v", st.CustomModsURL, st.CustomModsAsked, customURL, updState.CustomModsAsked)
@@ -397,7 +398,8 @@ func TestRestoreSkipsExternalPathsAndKeepsBackupDir(t *testing.T) {
 	}
 }
 
-// C6: added files and server jars are removed, emptied parents pruned below inst.Dir.
+// C6: added files are removed, emptied parents pruned below inst.Dir; the server jars an
+// older launcher listed as added are left alone (they follow the server).
 func TestRestoreRemovesAddedFilesAndPrunesEmptyParents(t *testing.T) {
 	inst := newInstance(t, "i", map[string]string{
 		".minecraft/newdir/sub/f.txt": "f",
@@ -413,8 +415,8 @@ func TestRestoreRemovesAddedFilesAndPrunesEmptyParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Removed != 2 {
-		t.Errorf("Removed = %d, want 2", res.Removed)
+	if res.Removed != 1 {
+		t.Errorf("Removed = %d, want 1", res.Removed)
 	}
 	if exists(filepath.Join(inst.GameDir, "newdir")) {
 		t.Error("empty parent dirs of a removed file were not pruned")
@@ -422,15 +424,16 @@ func TestRestoreRemovesAddedFilesAndPrunesEmptyParents(t *testing.T) {
 	if !exists(inst.GameDir) {
 		t.Error(".minecraft was pruned")
 	}
-	if exists(filepath.Join(inst.GameDir, "mods", "srv-1.jar")) {
-		t.Error("server jar not removed")
+	if got, _ := read(t, inst, ".minecraft/mods/srv-1.jar"); got != "s" {
+		t.Errorf("srv-1.jar = %q, want the server jar left alone", got)
 	}
 	if got, _ := read(t, inst, ".minecraft/mods/keep.jar"); got != "k" {
 		t.Errorf("keep.jar = %q, want k", got)
 	}
 }
 
-// C7, C10, C9: custom-mods stash goes to mods/, a stashed config overwrites the current
+// C7, C10, C9: a server-mods stash an older launcher made (custom-mods/) goes to the
+// replaced-mods folder, not back into mods/; a stashed config overwrites the current
 // one, the backup dir is removed, steps and progress are reported.
 func TestRestoreMovesCustomModsAndOverwritesExistingFiles(t *testing.T) {
 	inst := newInstance(t, "GT_New_Horizons_2.8.4_Java_17-25", map[string]string{cfgA: "new"})
@@ -444,14 +447,17 @@ func TestRestoreMovesCustomModsAndOverwritesExistingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.MovedBack != 2 || res.Removed != 0 || len(res.Skipped) != 0 {
-		t.Errorf("MovedBack/Removed/Skipped = %d/%d/%v, want 2/0/[]", res.MovedBack, res.Removed, res.Skipped)
+	if res.MovedBack != 1 || res.Removed != 0 || len(res.Skipped) != 0 {
+		t.Errorf("MovedBack/Removed/Skipped = %d/%d/%v, want 1/0/[]", res.MovedBack, res.Removed, res.Skipped)
 	}
 	if res.From != "2.8.4" || res.To != "2.8.1" || res.Renamed != name281 {
 		t.Errorf("From/To/Renamed = %q/%q/%q, want 2.8.4/2.8.1/%s", res.From, res.To, res.Renamed, name281)
 	}
-	if got, err := os.ReadFile(filepath.Join(inst.GameDir, "mods", "old-1.jar")); err != nil || string(got) != "old jar" {
-		t.Errorf("mods/old-1.jar = %q, %v; want the stashed jar", got, err)
+	if exists(filepath.Join(inst.GameDir, "mods", "old-1.jar")) {
+		t.Error("an old server jar was put back into mods/")
+	}
+	if got, err := os.ReadFile(filepath.Join(inst.Dir, StateDir, ReplacedMods, "old-1.jar")); err != nil || string(got) != "old jar" {
+		t.Errorf("replaced-mods/old-1.jar = %q, %v; want the stashed jar", got, err)
 	}
 	if got, _ := read(t, inst, cfgA); got != "old cfg" {
 		t.Errorf("a.cfg = %q, want old cfg", got)
@@ -471,8 +477,8 @@ func TestRestoreMovesCustomModsAndOverwritesExistingFiles(t *testing.T) {
 	}
 }
 
-// C8: without a current state.json the saved settings are zero; PrevState supplies the
-// rest including CustomMods.
+// C8: without a current state.json the saved settings and server-mods notes are zero;
+// PrevState supplies only the version and the baseline.
 func TestRestoreWithoutCurrentStateUsesZeroSettings(t *testing.T) {
 	inst := newInstance(t, "i", nil)
 	dir := writeManifest(t, inst, "backup-x", `{"from":"2.8.1","to":"2.8.4","when":"2026-01-01T00:00:00Z"}`)
@@ -489,8 +495,8 @@ func TestRestoreWithoutCurrentStateUsesZeroSettings(t *testing.T) {
 		t.Fatalf("state after restore = %v, %v", st, err)
 	}
 	if st.Version != "2.8.1" || fmt.Sprint(st.Baseline) != fmt.Sprint(fps(map[string]string{cfgA: "v1"})) ||
-		fmt.Sprint(st.CustomMods) != "[old-1.jar]" {
-		t.Errorf("state = %+v, want version, baseline and CustomMods from PrevState", st)
+		len(st.CustomMods) != 0 {
+		t.Errorf("state = %+v, want version and baseline from PrevState, no server mods", st)
 	}
 	if st.CustomModsURL != "" || st.CustomModsAsked || st.ServerAddress != "" {
 		t.Errorf("settings = %q/%v/%q, want zero values (no current state)", st.CustomModsURL, st.CustomModsAsked, st.ServerAddress)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -62,7 +63,7 @@ func (m *model) settingsRows() []row {
 	}
 	var out []row
 	for _, k := range keys {
-		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info), labelWidth(k.id)))
+		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info, m.now()), labelWidth(k.id)))
 	}
 	return out
 }
@@ -110,7 +111,7 @@ func (m *model) launcherSection(width int) []string {
 }
 
 // settingValue is what the row of setting key shows for an instance (C4).
-func settingValue(key string, info homeInfo) string {
+func settingValue(key string, info homeInfo, now time.Time) string {
 	s := info.settings
 	switch key {
 	case "memory":
@@ -132,9 +133,21 @@ func settingValue(key string, info homeInfo) string {
 	case "server":
 		return orNone(info.server)
 	case "mods":
-		return orNone(hostOf(info.modsURL))
+		return modsValue(info, now)
 	}
 	return prismDefault
+}
+
+// modsValue is what the Server mods row shows: the link's host and, once synced, how
+// many mods it has and when they were last synced.
+func modsValue(info homeInfo, now time.Time) string {
+	switch {
+	case info.modsURL == "":
+		return "none"
+	case info.synced.IsZero():
+		return hostOf(info.modsURL) + " · not synced yet"
+	}
+	return fmt.Sprintf("%s · %d %s · synced %s", hostOf(info.modsURL), info.mods, plural(info.mods, "mod", "mods"), ago(info.synced, now))
 }
 
 func orNone(s string) string {

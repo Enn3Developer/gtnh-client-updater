@@ -14,7 +14,7 @@ Instances        │ Older
    │                         .mcnew at the end.                             │
    │   Decide file by file                                                  │
    ╰────────────────────────────────────────────────────────────────────────╯
-                 │   Server mods    mods.example.org
+                 │   Server mods    mods.example.org · not synced yet
                  │
                  │ Launcher
                  │   After I start the game  stay open

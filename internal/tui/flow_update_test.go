@@ -23,7 +23,7 @@ const modsURL = "https://mods.example.org/pack/extra.zip"
 
 const (
 	alwaysLast    = "Worlds, maps and settings aren't touched. Everything replaced is backed up first."
-	syncedFromEx  = "Server mods synced from mods.example.org"
+	syncedFromEx  = "Server mods from mods.example.org: 1 new, 1 removed"
 	checking284   = "Checking what GTNH 2.8.4 changes"
 	confirmTitle  = "Update Home to GTNH 2.8.4?"
 	conflictZeta  = ".minecraft/config/zeta.cfg"
@@ -85,6 +85,12 @@ func planOf(install, remove int, conflicts ...string) *update.Plan {
 
 func sessionOf(pl *update.Plan) *update.Session {
 	return &update.Session{Plan: pl, Flavor: manifest.Java17}
+}
+
+// withMods gives s a server-mods sync that adds a.jar and removes old.jar (syncedFromEx).
+func withMods(s *update.Session) *update.Session {
+	s.ModsPlan = modsPlanOf(update.ModAdd, "a.jar", update.ModRemove, "old.jar")
+	return s
 }
 
 // withColors renders styles with colours for the rest of the test, so styles can be
@@ -267,126 +273,35 @@ func TestC3PickingTheInstalledVersionContinuesWithTheSameTarget(t *testing.T) {
 	}
 }
 
-// C3c/d: after the version, the never-asked server-mods question comes.
-func TestC3PickedVersionThenAsksAboutServerMods(t *testing.T) {
+// C3c/d: an instance never asked about server mods isn't asked by an update either:
+// the version picked, the update starts.
+func TestC3PickedVersionStartsTheUpdateWithoutAskingAboutServerMods(t *testing.T) {
 	m, in := unknownHome(t, false)
 	m.startUpdate("2.8.4")
 
-	press(m, "enter")
+	cmd := press(m, "enter")
 
-	if dialogTitle(m) != "Does your server have extra mods?" || m.detect.Version != "2.8.4" {
-		t.Errorf("dialog %q detect %+v, want the server-mods question after 2.8.4", dialogTitle(m), m.detect)
-	}
-	if m.jobShown(in.Dir) {
-		t.Errorf("job started before the server-mods answer")
+	if cmd == nil || m.dialog != nil || !m.jobShown(in.Dir) || m.detect.Version != "2.8.4" {
+		t.Errorf("cmd %v dialog %q job %+v detect %+v, want the update of 2.8.4 started", cmd != nil, dialogTitle(m), m.job, m.detect)
 	}
 }
 
-// notAskedHome is a loaded model with a 2.8.1 instance never asked about server mods.
-func notAskedHome(t *testing.T) (*model, prism.Instance) {
-	t.Helper()
-	root := t.TempDir()
-	in := makeInst(t, root, instSpec{name: "Home", gtnh: true, version: "2.8.1", java17: true})
-	m, _ := loadedModel(root, 80, 24, in)
-	m.focus = focusPage
-	return m, in
-}
-
-// C3d, kills K2: never asked → the question, and nothing starts yet.
-func TestC3ServerModsAreAskedWhenNeverAsked(t *testing.T) {
-	m, in := notAskedHome(t)
-
-	cmd := m.startUpdate("2.8.4")
-
-	if cmd != nil || m.jobShown(in.Dir) {
-		t.Errorf("cmd %v job %+v, want nothing started while asking", cmd != nil, m.job)
-	}
-	if dialogTitle(m) != "Does your server have extra mods?" || m.dialog.input == nil {
-		t.Fatalf("dialog %q, want the server-mods input", dialogTitle(m))
-	}
-	d := m.dialog
-	if d.input.Value() != "" || d.input.Placeholder != "https://…/custom_mods.zip" {
-		t.Errorf("value %q placeholder %q", d.input.Value(), d.input.Placeholder)
-	}
-	if d.note != "Leave it empty if there's none. You can change it later in Settings." || !eq(d.buttons, []string{"Continue"}) {
-		t.Errorf("note %q buttons %q", d.note, d.buttons)
-	}
-	if !containsLine(screen(m), "Some servers add a few mods") {
-		t.Errorf("intro missing:\n%s", strings.Join(screen(m), "\n"))
-	}
-}
-
-// C3d
-func TestC3EscOnTheServerModsQuestionCancelsTheUpdate(t *testing.T) {
-	m, in := notAskedHome(t)
-	m.startUpdate("2.8.4")
-
-	cmd := press(m, "esc")
-
-	if cmd != nil || m.dialog != nil || m.job != nil || m.jobShown(in.Dir) {
-		t.Errorf("cmd %v dialog %q job %+v, want everything cancelled", cmd != nil, dialogTitle(m), m.job)
-	}
-}
-
-// C3d
-func TestC3AnInvalidServerModsLinkKeepsTheQuestionOpen(t *testing.T) {
-	m, in := notAskedHome(t)
-	m.startUpdate("2.8.4")
-
-	cmd := press(m, "http://x", "enter")
-
-	if dialogTitle(m) != "Does your server have extra mods?" || m.dialog.inputErr != msgBadModsLink {
-		t.Fatalf("dialog %q inputErr %q, want the question with msgBadModsLink", dialogTitle(m), m.dialog.inputErr)
-	}
-	if cmd != nil || m.jobShown(in.Dir) {
-		t.Errorf("cmd %v job %+v, want nothing started", cmd != nil, m.job)
-	}
-}
-
-// C3d
-func TestC3AnswersToTheServerModsQuestionStartTheUpdate(t *testing.T) {
-	cases := []struct {
-		name  string
-		typed []string
-		want  string
-	}{
-		{"a link", []string{"https://mods.example.org/m.zip"}, "https://mods.example.org/m.zip"},
-		{"a link with spaces around", []string{"  https://mods.example.org/m.zip  "}, "https://mods.example.org/m.zip"},
-		{"nothing", nil, ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			m, in := notAskedHome(t)
-			m.startUpdate("2.8.4")
-
-			cmd := press(m, append(c.typed, "enter")...)
-
-			if cmd == nil || m.dialog != nil {
-				t.Errorf("cmd %v dialog %q, want the prepare command and no dialog", cmd != nil, dialogTitle(m))
-			}
-			if m.serverMods != c.want || !m.serverModsAsked {
-				t.Errorf("serverMods %q asked %v, want %q true", m.serverMods, m.serverModsAsked, c.want)
-			}
-			if !m.jobShown(in.Dir) || m.job.title != checking284 {
-				t.Errorf("job %+v, want %q", m.job, checking284)
-			}
-		})
-	}
-}
-
-// C3d, kills K2: a settled answer (state or command line) skips the question.
-func TestC3SettledServerModsSkipTheQuestion(t *testing.T) {
+// C3d, kills K2: the update syncs the link of the command line, else the one the
+// instance remembers, and never asks.
+func TestC3UpdateTakesTheServerModsLinkWithoutAsking(t *testing.T) {
 	cases := []struct {
 		name     string
 		cfgMods  string
 		asked    bool
 		stateURL string
 		want     string
+		given    bool
 	}{
-		{"asked with a link", "", true, modsURL, modsURL},
-		{"asked, none", "", true, "", ""},
-		{"command line none", "none", false, "", ""},
-		{"command line link", "https://cfg.example.org/x.zip", false, "", "https://cfg.example.org/x.zip"},
+		{"never asked", "", false, "", "", false},
+		{"asked with a link", "", true, modsURL, modsURL, false},
+		{"asked, none", "", true, "", "", false},
+		{"command line none", "none", true, modsURL, "", true},
+		{"command line link", "https://cfg.example.org/x.zip", false, "", "https://cfg.example.org/x.zip", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -403,8 +318,8 @@ func TestC3SettledServerModsSkipTheQuestion(t *testing.T) {
 			if cmd == nil || m.dialog != nil || !m.jobShown(in.Dir) {
 				t.Errorf("cmd %v dialog %q job %+v, want the update started without asking", cmd != nil, dialogTitle(m), m.job)
 			}
-			if m.serverMods != c.want || !m.serverModsAsked {
-				t.Errorf("serverMods %q asked %v, want %q true", m.serverMods, m.serverModsAsked, c.want)
+			if m.serverMods != c.want || m.serverModsGiven != c.given {
+				t.Errorf("serverMods %q given %v, want %q %v", m.serverMods, m.serverModsGiven, c.want, c.given)
 			}
 		})
 	}
@@ -431,8 +346,8 @@ func TestC3StartUpdateStartsPreparingAndClearsTheNotice(t *testing.T) {
 	if m.notices["elsewhere"].text != "kept" {
 		t.Errorf("another instance's notice was cleared")
 	}
-	if m.serverMods != modsURL || !m.serverModsAsked {
-		t.Errorf("serverMods %q asked %v, want the saved link", m.serverMods, m.serverModsAsked)
+	if m.serverMods != modsURL || m.serverModsGiven {
+		t.Errorf("serverMods %q given %v, want the saved link", m.serverMods, m.serverModsGiven)
 	}
 }
 
@@ -497,7 +412,7 @@ func TestC4AppliedEndsTheJobStoresTheNoticeAndReloads(t *testing.T) {
 		t.Errorf("job %+v session %v, want both gone", m.job, m.session != nil)
 	}
 	want := notice{text: "Updated to GTNH 2.8.4 just now · 2 files updated, 1 removed"}
-	if got := m.notices[in.Dir]; got != want {
+	if got := m.notices[in.Dir]; !reflect.DeepEqual(got, want) {
 		t.Errorf("notice %+v, want %+v", got, want)
 	}
 	msgs := runCmd(cmd)
@@ -738,7 +653,7 @@ func TestC7ConfirmationListsWhatTheUpdateDoes(t *testing.T) {
 	pl := planOf(2, 1, ".minecraft/config/c1.cfg", ".minecraft/config/c2.cfg")
 	pl.Kept = []string{".minecraft/config/kept.cfg"}
 	pl.ExtraMods = []string{"extra-a.jar", "extra-b.jar"}
-	m.Update(preparedMsg{sessionOf(pl)})
+	m.Update(preparedMsg{withMods(sessionOf(pl))})
 	pl.Choose(".minecraft/config/c1.cfg", update.TakeNew)
 	pl.Choose(".minecraft/config/c2.cfg", update.KeepMine)
 
@@ -925,12 +840,36 @@ func TestC7UnknownRunStateAndHeadsUpsAreWarnings(t *testing.T) {
 	m.startUpdate("2.8.4")
 	m.Update(warnMsg("The server mods link is down"))
 
-	m.Update(preparedMsg{sessionOf(planOf(1, 0))})
+	m.Update(preparedMsg{withMods(sessionOf(planOf(1, 0)))})
 
 	want := []string{
 		"1 file updated, 0 removed", syncedFromEx, alwaysLast, "",
 		"Make sure Minecraft is closed before you continue.",
 		"Heads up: The server mods link is down",
+	}
+	if got := bodyLines(t, m); !eq(got, want) {
+		t.Errorf("body\n%q\nwant\n%q", got, want)
+	}
+}
+
+// C7: what the server-mods sync does to the player's own jars is a warning; jars it
+// leaves out are dim lines after the counts.
+func TestC7ConfirmationSaysWhatTheServerModsDo(t *testing.T) {
+	m, _, _ := startedHome(t, Config{}, "2.8.4")
+	s := sessionOf(planOf(1, 0))
+	s.ModsPlan = modsPlanOf(update.ModSkip, "core.jar")
+	s.ModsPlan.Changes = append(s.ModsPlan.Changes, update.ModChange{Kind: update.ModReplace, Name: "mine.jar", Disk: "mine.jar", Preserve: true})
+	s.ModsPlan.Ignored = []string{"extras/x.jar"}
+
+	m.Update(preparedMsg{s})
+
+	want := []string{
+		"1 file updated, 0 removed",
+		"Server mods from mods.example.org: 1 updated",
+		"Left out, this instance has it already: core.jar",
+		alwaysLast, "",
+		"I'll move your own mine.jar to .gtnh-updater/replaced-mods inside the instance to make way for the server's",
+		"Left out of the server's zip (inside a folder, or a name Windows doesn't allow): extras/x.jar",
 	}
 	if got := bodyLines(t, m); !eq(got, want) {
 		t.Errorf("body\n%q\nwant\n%q", got, want)

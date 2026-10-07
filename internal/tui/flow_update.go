@@ -25,7 +25,7 @@ func (m *model) prepare(inst prism.Instance) tea.Cmd {
 	m.startBusy()
 	opts := update.Options{
 		Client: m.cfg.Client, Manifest: m.manifest, Instance: inst,
-		Installed: m.detect.Version, Target: m.target, CustomModsURL: m.serverMods,
+		Installed: m.detect.Version, Target: m.target, CustomModsURL: m.serverMods, CustomModsAsked: m.serverModsGiven,
 	}
 	rep := m.reporter()
 	return func() tea.Msg {
@@ -44,28 +44,9 @@ func (m *model) apply() tea.Cmd {
 	}
 }
 
-// serverModsSetting is the server-mods URL to use and whether it's settled: the command
-// line ("none" = off) wins over what the instance remembers (st may be nil).
-func serverModsSetting(cfg string, st *update.State) (url string, asked bool) {
-	switch {
-	case cfg == "none":
-		return "", true
-	case cfg != "":
-		return cfg, true
-	case st != nil && st.CustomModsAsked:
-		return st.CustomModsURL, true
-	default:
-		return "", false
-	}
-}
-
-const serverModsIntro = "Some servers add a few mods on top of GTNH. If the server owner gave you a link for them, paste it here — I'll install them now and keep them in sync every time you update."
-
-const msgBadModsLink = "That doesn't look like a download link — it should start with https://"
-
 // startUpdate updates the current instance to target (C3): refuses while another job or
-// the game runs, asks for the installed version and the server mods when they aren't
-// known, then starts preparing.
+// the game runs, asks for the installed version when it isn't known, then starts
+// preparing.
 func (m *model) startUpdate(target string) tea.Cmd {
 	if m.job != nil {
 		m.notifyBusy()
@@ -88,7 +69,7 @@ func (m *model) startUpdate(target string) tea.Cmd {
 		m.detect = update.DetectVersion(inst, st, m.manifest)
 	}
 	if m.detect.Version != "" {
-		return m.askServerMods(inst, st, target)
+		return m.beginPrepare(inst, st, target)
 	}
 	now := m.now()
 	items := make([]ditem, len(m.manifest.Releases))
@@ -99,46 +80,16 @@ func (m *model) startUpdate(target string) tea.Cmd {
 		func(m *model, v string) tea.Cmd {
 			m.detect = update.Detection{Version: v, Source: "you told me"}
 			m.closeDialog()
-			return m.askServerMods(inst, st, target)
+			return m.beginPrepare(inst, st, target)
 		})
 	return nil
 }
 
-// askServerMods settles the server-mods link (C3d), asking when it never was, then
-// starts preparing.
-func (m *model) askServerMods(inst prism.Instance, st *update.State, target string) tea.Cmd {
-	return m.askServerModsThen(st, func(m *model) tea.Cmd { return m.beginPrepare(inst, target) })
-}
-
-// askServerModsThen settles the server-mods link, asking when it never was (esc stops
-// there), then runs then.
-func (m *model) askServerModsThen(st *update.State, then func(m *model) tea.Cmd) tea.Cmd {
-	url, asked := serverModsSetting(m.cfg.ServerMods, st)
-	if asked {
-		m.serverMods, m.serverModsAsked = url, true
-		return then(m)
-	}
-	m.openInput("Does your server have extra mods?", serverModsIntro, url, "https://…/custom_mods.zip",
-		"Leave it empty if there's none. You can change it later in Settings.", []string{"Continue"},
-		func(m *model, label, value string) tea.Cmd {
-			if label == "" {
-				m.closeDialog()
-				return nil
-			}
-			if value != "" && update.CheckCustomModsURL(value) != nil {
-				m.dialog.inputErr = msgBadModsLink
-				return nil
-			}
-			m.serverMods, m.serverModsAsked = value, true
-			m.closeDialog()
-			return then(m)
-		})
-	return nil
-}
-
-// beginPrepare starts the job that prepares the update of inst to target (C3e).
-func (m *model) beginPrepare(inst prism.Instance, target string) tea.Cmd {
+// beginPrepare starts the job that prepares the update of inst to target (C3e), with
+// the server-mods link of the command line or the one inst remembers (st may be nil).
+func (m *model) beginPrepare(inst prism.Instance, st *update.State, target string) tea.Cmd {
 	m.target = target
+	m.serverMods, m.serverModsGiven = serverModsLink(m.cfg.ServerMods, st)
 	m.job = &job{kind: jobUpdate, dir: inst.Dir, title: "Checking what GTNH " + target + " changes", phase: "prepare"}
 	delete(m.notices, inst.Dir)
 	return m.prepare(inst)
@@ -174,6 +125,9 @@ func (m *model) onApplied(r *update.Result) tea.Cmd {
 // cancelled download the player is waiting on quits instead (C10).
 func (m *model) onJobErr(err error) tea.Cmd {
 	j := m.job
+	if j.kind == jobMods {
+		return m.onModsErr(err)
+	}
 	outcome := m.jobOutcome(err)
 	if j.kind == jobCreate && m.createDone() {
 		m.job = nil
@@ -259,9 +213,8 @@ func (m *model) confirmUpdate() tea.Cmd {
 	if len(pl.ExtraMods) > 0 {
 		lines = append(lines, "Mods you added yourself stay: "+ansi.Truncate(strings.Join(pl.ExtraMods, ", "), 100, "…"))
 	}
-	if m.serverMods != "" {
-		lines = append(lines, "Server mods synced from "+hostOf(m.serverMods))
-	}
+	modsLines, modsWarn := modsPreview(m.session.ModsPlan, m.serverMods)
+	lines = append(lines, modsLines...)
 	if m.session.Flavor == manifest.Java8 {
 		lines = append(lines, "This instance uses the Java 8 pack")
 	}
@@ -272,6 +225,7 @@ func (m *model) confirmUpdate() tea.Cmd {
 	for _, w := range m.warns {
 		warn = append(warn, "Heads up: "+w)
 	}
+	warn = append(warn, modsWarn...)
 	if down {
 		bad = append(bad, downgradeWarning(installed))
 	}
@@ -386,23 +340,6 @@ func noticeOf(r *update.Result, pl *update.Plan) notice {
 	if k := len(pl.Chosen(update.KeepMine)); k > 0 {
 		n.text += fmt.Sprintf(" · %d new config %s saved as .mcnew", k, plural(k, "version", "versions"))
 	}
-	n.warn, n.info = serverModsNotice(r.CustomErr, r.CustomMods)
+	n.addMods(r.Mods, r.ModsErr, false)
 	return n
-}
-
-// serverModsNotice is a notice's warning and info about the server's extra mods after a
-// job synced them (customErr: the sync failed; cm: what it did, nil = nothing).
-func serverModsNotice(customErr error, cm *update.CustomModsResult) (warn, info string) {
-	if customErr != nil {
-		warn = "Your server's extra mods couldn't be synced (" + customErr.Error() + "). I'll try again next time."
-	}
-	if cm != nil {
-		switch {
-		case len(cm.Installed) > 0:
-			info = fmt.Sprintf("%d extra %s from your server installed", len(cm.Installed), plural(len(cm.Installed), "mod", "mods"))
-		case len(cm.Removed) > 0:
-			info = fmt.Sprintf("Removed %d extra %s from your old server", len(cm.Removed), plural(len(cm.Removed), "mod", "mods"))
-		}
-	}
-	return warn, info
 }

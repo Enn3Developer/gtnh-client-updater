@@ -17,9 +17,9 @@ const slowStart = 90 * time.Second
 const launchFailedTitle = "I couldn't start the game"
 
 // playCmd starts the current instance through Prism Launcher, joining its saved server
-// when join is set. A launcher that can't be found or started is told in a dialog
-// titled "I couldn't start the game", and nil is returned. While the current
-// instance's game is starting or running it does nothing.
+// when join is set: first it asks about the server's extra mods when joining a server
+// it never asked about, then syncs them, then launches. While the current instance's
+// game is starting or running it does nothing; while a job runs on it, it says so.
 func (m *model) playCmd(join bool) tea.Cmd {
 	inst, ok := m.current()
 	if !ok || m.gameUnderway(inst.Dir) {
@@ -28,6 +28,21 @@ func (m *model) playCmd(join bool) tea.Cmd {
 	if p, ok := m.pending(); ok && p.Dir == inst.Dir {
 		return nil
 	}
+	if m.jobShown(inst.Dir) {
+		m.notifyBusy()
+		return nil
+	}
+	m.holdOpen = false
+	if info := m.home[inst.Dir]; join && info.gtnh && !info.modsAsked && info.modsURL == "" {
+		return m.askServerMods(inst, func(m *model) tea.Cmd { return m.playCmd(join) })
+	}
+	return m.syncMods(inst, func(m *model) tea.Cmd { return m.launchCmd(inst, join) })
+}
+
+// launchCmd starts inst through Prism Launcher, joining its saved server when join is
+// set. A launcher that can't be found or started is told in a dialog titled "I couldn't
+// start the game", and nil is returned.
+func (m *model) launchCmd(inst prism.Instance, join bool) tea.Cmd {
 	dataDir := prism.DataDirOf(m.cfg.PrismDirs, inst)
 	server := ""
 	if join {
@@ -71,10 +86,10 @@ func (m *model) dismissPlay() {
 	}
 }
 
-// onLaunched quits when the launcher shouldn't stay open, else starts watching the game
-// in m.play.
+// onLaunched quits when the launcher shouldn't stay open, unless the launch came with a
+// warning or a job still runs; else it starts watching the game in m.play.
 func (m *model) onLaunched() tea.Cmd {
-	if !m.app.StaysOpen() {
+	if !m.app.StaysOpen() && !m.holdOpen && m.job == nil {
 		_, cmd := m.quit()
 		return cmd
 	}

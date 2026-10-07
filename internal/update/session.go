@@ -1,6 +1,7 @@
 package update
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,6 +31,9 @@ type Options struct {
 	Installed     string // manifest version the instance currently runs
 	Target        string // manifest version to install
 	CustomModsURL string // server extra-mods archive; "" = none. Saved for next time.
+	// CustomModsAsked marks CustomModsURL as the player's answer (asked, or given on the
+	// command line); it is saved, and a remembered "asked" is never unset.
+	CustomModsAsked bool
 }
 
 // Session is a prepared update: new pack downloaded and verified, plan computed. Call
@@ -44,17 +48,23 @@ type Session struct {
 	Flavor         manifest.Flavor
 	BaselineSource string // "saved" or "reconstructed from <version>"
 	Plan           *Plan
-	customMods     *CustomModsArchive // fetched in Prepare when a link is set
-	customErr      error
+	// ModsPlan is what the server-mods sync after the pack's files will do, worked out
+	// from what the plan leaves in mods/ (nil: no link, nothing from an old one). Apply
+	// works it out again once the files are in place, with the same-mod checks.
+	ModsPlan *ModsPlan
+	// ModsErr is why the server's archive couldn't be fetched; the sync then works from
+	// the copy of the last one, or leaves the server mods as they are.
+	ModsErr error
+	mods    *ModsArchive
 }
 
 // Result summarizes a finished update.
 type Result struct {
-	From, To   string
-	Renamed    string // new display name, "" if unchanged
-	BackupDir  string
-	CustomMods *CustomModsResult
-	CustomErr  error
+	From, To  string
+	Renamed   string // new display name, "" if unchanged
+	BackupDir string
+	Mods      *ModsPlan // what the server-mods sync did; nil when none ran or it failed
+	ModsErr   error     // why the server's mods couldn't be fetched or synced
 }
 
 // FlavorOf returns the pack flavor an instance uses.
@@ -133,15 +143,37 @@ func Prepare(opts Options, rep Reporter) (s *Session, err error) {
 
 	if opts.CustomModsURL != "" {
 		// Fetch now so the summary already knows which jars are the server's, not the
-		// player's own. A failure is not fatal: Apply retries and reports it.
-		rep.Step("Checking your server's extra mods")
-		if s.customMods, s.customErr = FetchCustomMods(opts.Client, opts.CustomModsURL); s.customErr != nil {
-			rep.Warn(s.customErr.Error())
-		} else {
-			s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, s.customMods.Names())
+		// player's own. A failure is not fatal: the sync works from the last copy, if any.
+		rep.Step("Checking your server's mods")
+		s.mods, s.ModsErr = fetchMods(context.Background(), opts.Client, opts.CustomModsURL, dir, rep.Progress)
+		if s.ModsErr != nil {
+			rep.Warn("I couldn't check your server's mods: " + s.ModsErr.Error() + ".")
+			s.mods = cachedMods(opts.CustomModsURL, dir)
 		}
 	}
+	if s.ModsPlan = s.planMods(false); s.ModsPlan != nil {
+		s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, append(s.mods.Names(), s.ModsPlan.Names(ModSetAside)...))
+	}
 	return s, nil
+}
+
+// planMods works out the server-mods sync of this update: for the confirmation, from
+// what the pack plan will leave in mods/ (final false); for Apply, from mods/ once the
+// pack's files are in place, checking every server jar for a mod the new pack has (final
+// true). nil when there's nothing to sync.
+func (s *Session) planMods(final bool) *ModsPlan {
+	link := s.opts.CustomModsURL
+	switch {
+	case link == "" && len(managedOf(s.state)) == 0:
+		return nil
+	case link != "" && s.mods == nil:
+		return keepMods(s.opts.Instance, s.state)
+	}
+	in := modsInputFor(s.mods, s.opts.Instance, s.state, s.nextFP, final, final)
+	if !final {
+		in.afterPack(s.Plan, s.nextFP)
+	}
+	return planMods(in)
 }
 
 func (s *Session) loadBaseline(rep Reporter) error {
@@ -190,10 +222,11 @@ func (s *Session) loadBaseline(rep Reporter) error {
 // ErrGameRunning is returned by Apply and Restore when the game still runs from the instance.
 var ErrGameRunning = errors.New("the game is still running from this instance -- close Minecraft and try again")
 
-// Apply executes the plan, then renames the instance, syncs custom mods, saves the new
-// baseline and prunes older backups. If the pack changes fail, everything is rolled
-// back. A custom-mods failure is reported in Result.CustomErr but does not undo the
-// update.
+// Apply executes the plan, then renames the instance, syncs the server's mods, saves the
+// new baseline and prunes older backups. If the pack changes fail, everything is rolled
+// back. The server-mods sync never touches the network (Prepare fetched the archive)
+// and isn't part of the backup: the server's mods follow the server, not the GTNH
+// version. Its failure is reported in Result.ModsErr but does not undo the update.
 func (s *Session) Apply(rep Reporter) (*Result, error) {
 	defer s.Close()
 	inst := s.opts.Instance
@@ -205,7 +238,6 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	res := &Result{From: s.opts.Installed, To: s.opts.Target, BackupDir: backupDir}
 
 	added := addedPaths(s.Plan, inst.Dir)
-	var addedMods []string
 
 	rep.Step("Updating files")
 	if err := Apply(s.Plan, s.next, inst.Dir, backupDir, itemProgress(rep)); err != nil {
@@ -218,53 +250,44 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 		res.Renamed = name
 	}
 
-	var managed []string
-	var serverAddress string
+	st := State{}
 	if s.state != nil {
-		managed, serverAddress = s.state.CustomMods, s.state.ServerAddress
+		st = *s.state
 	}
-	nextFP := s.nextFP
-	if s.opts.CustomModsURL != "" {
-		rep.Step("Syncing your server's extra mods")
-		var cm *CustomModsResult
-		archive, err := s.customMods, s.customErr
-		if archive == nil {
-			archive, err = FetchCustomMods(s.opts.Client, s.opts.CustomModsURL)
+	link := s.opts.CustomModsURL
+	st.Version, st.Baseline = s.opts.Target, s.nextFP
+	st.CustomModsURL = link
+	st.CustomModsAsked = st.CustomModsAsked || s.opts.CustomModsAsked
+	res.ModsErr = s.ModsErr
+	if mp := s.planMods(true); mp != nil {
+		if mp.writes() && link == "" {
+			rep.Step("Removing the old server's mods")
+		} else if mp.writes() {
+			rep.Step("Syncing your server's mods")
 		}
-		if err == nil {
-			cm, err = SyncCustomMods(archive, inst, managed, nextFP, backupDir)
-		}
-		if err != nil {
-			res.CustomErr = err
-			rep.Warn("your server's extra mods could not be synced: " + err.Error())
+		if err := applyModsPlan(mp, s.mods, inst); err != nil {
+			res.ModsErr = err // shown in the summary; not fatal
 		} else {
-			res.CustomMods, managed = cm, cm.Installed
-			addedMods = newlyAdded(cm.Added, filepath.Join(backupDir, "custom-mods"))
-			s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, cm.Installed)
+			res.Mods = mp
+			setManaged(&st, mp.Managed)
+			if link != "" && s.ModsErr == nil {
+				st.CustomModsSynced = time.Now()
+			}
+			s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, append(mp.Installed(), mp.Names(ModSetAside)...))
 		}
 	}
-
-	if s.opts.CustomModsURL == "" && len(managed) > 0 {
-		// Sync switched off (e.g. moved to another server): take out the jars it put in.
-		rep.Step("Removing the old server's extra mods")
-		cm, err := RemoveCustomMods(inst, managed, backupDir)
-		if err != nil {
-			res.CustomErr = err
-			rep.Warn("the old server's extra mods could not be removed: " + err.Error())
-		} else {
-			res.CustomMods, managed = cm, nil
-		}
+	if link == "" {
+		st.CustomModsSynced = time.Time{}
+		dropModsCache(filepath.Join(inst.Dir, StateDir))
 	}
-	st := &State{Version: s.opts.Target, Baseline: nextFP, CustomMods: managed,
-		CustomModsURL: s.opts.CustomModsURL, CustomModsAsked: true, ServerAddress: serverAddress}
-	if err := SaveState(inst.Dir, st); err != nil {
+	if err := SaveState(inst.Dir, &st); err != nil {
 		return nil, fmt.Errorf("update applied, but saving updater state failed: %w", err)
 	}
 	// Keep only the newest backup, but never let a run that changed nothing (and so
 	// made no backup) throw away the last real one.
 	if _, err := os.Stat(backupDir); err == nil {
 		info := BackupInfo{From: s.opts.Installed, To: s.opts.Target, When: time.Now(),
-			PrevState: s.state, Added: added, AddedMods: addedMods}
+			PrevState: s.state, Added: added}
 		if res.Renamed != "" {
 			info.PrevName = inst.Name
 		}
@@ -278,7 +301,8 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	return res, nil
 }
 
-// Close releases the downloaded pack. Safe to call more than once.
+// Close releases the downloaded pack and the server's archive. Safe to call more than
+// once.
 func (s *Session) Close() {
 	if s.next != nil {
 		s.next.Close()
@@ -288,6 +312,7 @@ func (s *Session) Close() {
 		os.Remove(s.zipPath)
 		s.zipPath = ""
 	}
+	s.mods.Close()
 }
 
 // pruneBackups removes older backup-* dirs, keeping keep.
@@ -322,20 +347,8 @@ func addedPaths(pl *Plan, instDir string) []string {
 	return out
 }
 
-// newlyAdded returns the jars the sync wrote that had no previous copy stashed in
-// stashDir, i.e. the ones a restore must delete rather than move back.
-func newlyAdded(names []string, stashDir string) []string {
-	var out []string
-	for _, n := range names {
-		if _, err := os.Lstat(filepath.Join(stashDir, n)); errors.Is(err, os.ErrNotExist) {
-			out = append(out, n)
-		}
-	}
-	return out
-}
-
-// withoutNames drops jars (possibly ".disabled") the custom-mods sync now manages: on a
-// first run they were already on disk and looked like the player's own mods.
+// withoutNames drops jars (possibly ".disabled") the server-mods sync manages or moves
+// aside: they aren't mods the player added that stay as they are.
 func withoutNames(mods, drop []string) []string {
 	skip := map[string]bool{}
 	for _, d := range drop {

@@ -1,6 +1,6 @@
 // Command gtnh-update updates a GT: New Horizons Prism Launcher instance in place to any
 // version from the official GTNH manifest, keeping worlds and the player's settings, and
-// optionally syncs a server's extra mods.
+// keeps a server's extra mods in sync (before every -play, and with every update).
 //
 // Run it without arguments for the interactive TUI. For scripting:
 //
@@ -171,7 +171,7 @@ func checkPlayFlags(play, create, yes bool, instance string) error {
 }
 
 // playHeadless starts an instance in Prism Launcher, updating it to target first when
-// one is given.
+// one is given (which syncs the server's mods too), else syncing its server's mods.
 func playHeadless(client *http.Client, dirs []string, instName, installed, target, serverMods string, configs update.Choice) error {
 	if target != "" {
 		if err := headless(client, dirs, instName, installed, target, serverMods, configs); err != nil {
@@ -184,6 +184,9 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 	inst, err := findInstance(dirs, instName)
 	if err != nil {
 		return err
+	}
+	if target == "" && inst.GTNH {
+		syncModsHeadless(client, inst, serverMods)
 	}
 	cfg, _ := appcfg.Load() // an unreadable settings file just means: find Prism automatically
 	dataDir := prism.DataDirOf(dirs, inst)
@@ -199,6 +202,23 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 	}
 	fmt.Printf("Started %s in Prism Launcher.\n", inst.Name)
 	return nil
+}
+
+// syncModsHeadless syncs the server's mods of inst before the game starts, with the
+// -server-mods link when given. Nothing it runs into stops the game: it's only told.
+func syncModsHeadless(client *http.Client, inst prism.Instance, serverMods string) {
+	rep := &textReporter{}
+	s, err := update.PrepareModsSync(update.ModsSyncOptions{Client: client, Instance: inst, URL: serverMods}, rep)
+	if err != nil {
+		fmt.Printf("  heads up: your server's mods couldn't be synced: %v\n", err)
+		return
+	}
+	if s.FetchErr != nil {
+		fmt.Printf("  heads up: I couldn't check your server's mods: %v.\n", s.FetchErr)
+	}
+	link := s.Link
+	p, err := s.Apply(rep)
+	printMods(link, p, err)
 }
 
 func selfUpdate(client *http.Client) error {
@@ -333,6 +353,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		}
 		installed = det.Version
 	}
+	modsGiven := serverMods != "" // the flag is the player's answer
 	switch {
 	case serverMods == "none":
 		serverMods = ""
@@ -345,7 +366,8 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	}
 	rep := &textReporter{}
 	s, err := update.Prepare(update.Options{
-		Client: client, Manifest: m, Instance: inst, Installed: installed, Target: target, CustomModsURL: serverMods,
+		Client: client, Manifest: m, Instance: inst, Installed: installed, Target: target,
+		CustomModsURL: serverMods, CustomModsAsked: modsGiven,
 	}, rep)
 	if err != nil {
 		return err
@@ -370,10 +392,11 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	if res.Renamed != "" {
 		fmt.Printf("  renamed in Prism to %q\n", res.Renamed)
 	}
-	printCustomMods(res.CustomMods)
-	if res.CustomErr != nil {
-		fmt.Printf("  heads up: your server's extra mods couldn't be synced: %v\n", res.CustomErr)
+	modsErr := res.ModsErr
+	if modsErr == s.ModsErr {
+		modsErr = nil // Prepare told already
 	}
+	printMods(serverMods, res.Mods, modsErr)
 	for _, c := range pl.Chosen(update.KeepMine) {
 		fmt.Println("  kept your version, new one saved as .mcnew:", c)
 	}
@@ -389,14 +412,42 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	return nil
 }
 
-// printCustomMods prints the server-mods line of a run's summary (cm nil = no sync ran).
-func printCustomMods(cm *update.CustomModsResult) {
-	if cm == nil {
+// printMods prints what a server-mods sync from link did (p nil: none ran) and why it
+// failed (err).
+func printMods(link string, p *update.ModsPlan, err error) {
+	if err != nil {
+		fmt.Printf("  heads up: your server's mods couldn't be synced: %v\n", err)
+	}
+	if p == nil {
 		return
 	}
-	fmt.Printf("  server extra mods: %d installed (%d new or updated, %d removed)\n", len(cm.Installed), len(cm.Added), len(cm.Removed))
-	if len(cm.Skipped) > 0 {
-		fmt.Println("  skipped (GTNH ships a mod with that name):", strings.Join(cm.Skipped, ", "))
+	if link != "" {
+		fmt.Printf("  server mods from %s: %d\n", link, len(p.Managed))
+	}
+	var removed, mine []string
+	for _, c := range p.Changes {
+		if c.Kind == update.ModRemove || c.Kind == update.ModSkip && c.Disk != "" {
+			removed = append(removed, c.Disk)
+		}
+		if c.Preserve {
+			mine = append(mine, c.Disk)
+		}
+	}
+	for _, l := range []struct {
+		what  string
+		names []string
+	}{
+		{"server mods added", p.Names(update.ModAdd)},
+		{"server mods updated", append(p.Names(update.ModUpdate), p.Names(update.ModReplace)...)},
+		{"server mods removed", removed},
+		{"your own jars moved to .gtnh-updater/" + update.ReplacedMods + " to make way for the server's", mine},
+		{"server mods left out, the instance has them already", p.Names(update.ModSkip)},
+		{"dropped by the server but kept, you changed them", p.Names(update.ModKeep)},
+		{"left out of the server's zip (in a folder, or a name Windows doesn't allow)", p.Ignored},
+	} {
+		if len(l.names) > 0 {
+			fmt.Printf("  %s: %s\n", l.what, strings.Join(l.names, ", "))
+		}
 	}
 }
 
@@ -426,10 +477,11 @@ func createHeadless(client *http.Client, dirs []string, name, target, serverMods
 	}
 	fmt.Printf("\nDone: %s is ready in Prism.\n", opts.Name)
 	fmt.Printf("  %d files installed\n", res.Files)
-	if res.CustomErr != nil {
-		fmt.Printf("  heads up: your server's extra mods couldn't be installed: %v\n", res.CustomErr)
+	modsErr := res.ModsErr
+	if modsErr == c.ModsErr {
+		modsErr = nil // PrepareCreate told already
 	}
-	printCustomMods(res.CustomMods)
+	printMods(opts.CustomModsURL, res.Mods, modsErr)
 	return nil
 }
 

@@ -44,24 +44,23 @@ func TestC8NoticeOfAnUpdate(t *testing.T) {
 			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched · 2 new config versions saved as .mcnew"}},
 		{"taken configs say nothing", &update.Result{To: "2.8.4"}, takeNew(planOf(0, 0, conflictZeta)),
 			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched"}},
-		{"server mods failed", &update.Result{To: "2.8.4", CustomErr: errors.New("404 on the link")}, planOf(0, 0),
+		{"server mods failed", &update.Result{To: "2.8.4", ModsErr: errors.New("I couldn't install a.jar: disk full (your mods are as they were)")}, planOf(0, 0),
 			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched",
-				warn: "Your server's extra mods couldn't be synced (404 on the link). I'll try again next time."}},
-		{"one server mod", &update.Result{To: "2.8.4", CustomMods: &update.CustomModsResult{Installed: []string{"a.jar"}}}, planOf(0, 0),
-			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: "1 extra mod from your server installed"}},
-		{"server mods installed win over removed", &update.Result{To: "2.8.4", CustomMods: &update.CustomModsResult{
-			Installed: []string{"a.jar", "b.jar", "c.jar"}, Removed: []string{"x.jar"}}}, planOf(0, 0),
-			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: "3 extra mods from your server installed"}},
-		{"one server mod removed", &update.Result{To: "2.8.4", CustomMods: &update.CustomModsResult{Removed: []string{"x.jar"}}}, planOf(0, 0),
-			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: "Removed 1 extra mod from your old server"}},
-		{"server mods removed", &update.Result{To: "2.8.4", CustomMods: &update.CustomModsResult{Removed: []string{"x.jar", "y.jar"}}}, planOf(0, 0),
-			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: "Removed 2 extra mods from your old server"}},
-		{"server mods unchanged", &update.Result{To: "2.8.4", CustomMods: &update.CustomModsResult{}}, planOf(0, 0),
+				warn: []string{"I couldn't sync your server's mods: I couldn't install a.jar: disk full (your mods are as they were)."}}},
+		{"server out of reach", &update.Result{To: "2.8.4", Mods: modsPlanOf(), ModsErr: errors.New("the link doesn't lead to a file anymore")}, planOf(0, 0),
+			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched",
+				warn: []string{"I couldn't check your server's mods: the link doesn't lead to a file anymore."}}},
+		{"one server mod", &update.Result{To: "2.8.4", Mods: modsPlanOf(update.ModAdd, "a.jar")}, planOf(0, 0),
+			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: []string{"Server mods: 1 new"}}},
+		{"server mods counted", &update.Result{To: "2.8.4", Mods: modsPlanOf(update.ModAdd, "a.jar", update.ModUpdate, "b.jar",
+			update.ModReplace, "c.jar", update.ModRemove, "x.jar", update.ModAdopt, "y.jar")}, planOf(0, 0),
+			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched", info: []string{"Server mods: 1 new, 2 updated, 1 removed"}}},
+		{"server mods unchanged", &update.Result{To: "2.8.4", Mods: modsPlanOf(update.ModAdopt, "y.jar")}, planOf(0, 0),
 			notice{text: "Updated to GTNH 2.8.4 just now · your files already matched"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := noticeOf(c.r, c.pl); got != c.want {
+			if got := noticeOf(c.r, c.pl); !reflect.DeepEqual(got, c.want) {
 				t.Errorf("noticeOf =\n%+v\nwant\n%+v", got, c.want)
 			}
 		})
@@ -79,11 +78,13 @@ func TestC8NoticeLinesStyleEachPart(t *testing.T) {
 	}{
 		{"text only", notice{text: "Updated to GTNH 2.8.4 just now"},
 			[]string{"  " + okSty.Render("Updated to GTNH 2.8.4 just now")}},
-		{"all parts", notice{text: "Updated", warn: "Mods failed.", info: "1 extra mod from your server installed"},
-			[]string{"  " + okSty.Render("Updated"), "  " + warnSty.Render("Mods failed."),
-				"  " + dimSty.Render("1 extra mod from your server installed")}},
-		{"info without warn", notice{text: "Updated", info: "Removed 1 extra mod from your old server"},
-			[]string{"  " + okSty.Render("Updated"), "  " + dimSty.Render("Removed 1 extra mod from your old server")}},
+		{"all parts", notice{text: "Updated", warn: []string{"Mods failed.", "Look here."}, info: []string{"Server mods: 1 new", "Left out"}},
+			[]string{"  " + okSty.Render("Updated"), "  " + warnSty.Render("Mods failed."), "  " + warnSty.Render("Look here."),
+				"  " + dimSty.Render("Server mods: 1 new"), "  " + dimSty.Render("Left out")}},
+		{"info without warn", notice{text: "Updated", info: []string{"Server mods: 1 removed"}},
+			[]string{"  " + okSty.Render("Updated"), "  " + dimSty.Render("Server mods: 1 removed")}},
+		{"warn without text", notice{warn: []string{"I couldn't sync your server's mods."}},
+			[]string{"  " + warnSty.Render("I couldn't sync your server's mods.")}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -126,8 +127,8 @@ func applyUpdate(t *testing.T, m *model, in prism.Instance, pl *update.Plan, r *
 // a refresh.
 func TestC8NoticeShowsUnderTheUpdateHeading(t *testing.T) {
 	m, _, in := askedHome(t, Config{})
-	r := &update.Result{To: "2.8.4", CustomErr: errors.New("x"),
-		CustomMods: &update.CustomModsResult{Installed: []string{"a.jar"}}}
+	r := &update.Result{To: "2.8.4", ModsErr: errors.New("the link doesn't lead to a file anymore"),
+		Mods: modsPlanOf(update.ModAdd, "a.jar")}
 	applyUpdate(t, m, in, planOf(2, 1), r, []prism.Instance{in})
 
 	before := pageLines(m, 78)
@@ -137,8 +138,9 @@ func TestC8NoticeShowsUnderTheUpdateHeading(t *testing.T) {
 	want := []string{
 		"Update",
 		"  Updated to GTNH 2.8.4 just now · 2 files updated, 1 removed",
-		"  Your server's extra mods couldn't be synced (x). I'll try again next time.",
-		"  1 extra mod from your server installed",
+		"  I couldn't check your server's mods: the link doesn't lead to a file",
+		"  anymore.",
+		"  Server mods: 1 new",
 		"  You have the newest stable version.",
 	}
 	for name, lines := range map[string][]string{"after the reload": before, "after a refresh": after} {

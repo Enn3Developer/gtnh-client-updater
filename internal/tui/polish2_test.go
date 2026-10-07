@@ -706,7 +706,7 @@ func TestPolish2C7UpdateSectionSaysBusyWhileTheJobRuns(t *testing.T) {
 	for _, phase := range []string{"prepare", "apply"} {
 		t.Run(phase, func(t *testing.T) {
 			m, in := jobModel(t, phase)
-			m.notices[in.Dir] = notice{text: "Updated to GTNH 2.8.4 just now", info: "2 extra mods from your server installed"}
+			m.notices[in.Dir] = notice{text: "Updated to GTNH 2.8.4 just now", info: []string{"Server mods: 2 new"}}
 
 			got := pageLines(m, 78)
 

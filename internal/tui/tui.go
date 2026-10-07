@@ -81,6 +81,9 @@ type homeInfo struct {
 	backup                                *update.Backup // newest restorable backup; nil = nothing to undo
 	settings                              prism.Settings
 	settingsErr                           error
+	mods                                  int       // server mods the sync manages
+	synced                                time.Time // when they were last synced with the server; zero = never
+	modsAsked                             bool      // the player answered whether the server has extra mods
 }
 
 type model struct {
@@ -115,6 +118,8 @@ type model struct {
 	isRunning    func(inst prism.Instance) (bool, error)
 	saveApp      func(appcfg.Config) error
 	restore      func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
+	prepareMods  func(update.ModsSyncOptions, update.Reporter) (*update.ModsSync, error)
+	applyMods    func(*update.ModsSync, update.Reporter) (*update.ModsPlan, error)
 	now          func() time.Time
 
 	// job state
@@ -128,8 +133,11 @@ type model struct {
 	cancelCreate    context.CancelFunc // stops the running PrepareCreate; nil when none runs
 	quitAfterCancel bool               // quit once the cancelled PrepareCreate has returned
 	target          string
-	serverMods      string // URL, "" = none
-	serverModsAsked bool
+	serverMods      string                 // the server-mods link of the update or creation, "" = none
+	serverModsGiven bool                   // serverMods came from the command line: it's the player's answer
+	holdOpen        bool                   // the launch came with a warning: stay open even if set to quit
+	modsOverride    string                 // the server-mods link the next sync uses and saves ("none" = none); "" = the instance's
+	afterMods       func(m *model) tea.Cmd // runs when the jobMods is done, whatever its outcome
 	newName         string
 	detect          update.Detection
 	nameUsed        bool              // cfg.Name was offered already
@@ -147,47 +155,9 @@ func newModel(cfg Config) *model {
 		cfg: cfg, spin: sp, width: 80, height: 24,
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore, now: time.Now,
+		prepareMods: update.PrepareModsSync, applyMods: (*update.ModsSync).Apply,
 		notices: map[string]notice{},
 	}
-}
-
-// Messages from background work.
-type (
-	loadedMsg struct {
-		m     *manifest.Manifest
-		insts []prism.Instance
-	}
-	stepMsg     string
-	progressMsg struct{ done, total int64 }
-	warnMsg     string
-	preparedMsg struct{ s *update.Session }
-	createReady struct{ c *update.Creation }
-	createdMsg  struct{ r *update.CreateResult }
-	appliedMsg  struct{ r *update.Result }
-	errMsg      struct{ err error }
-	newerMsg    struct{ r *selfupdate.Release }
-	selfDoneMsg struct{}
-	launchedMsg struct{}
-	pollTick    struct{ gen int }
-	pollMsg     struct {
-		gen     int
-		running bool
-		err     error
-	}
-	// launchFailedMsg: Prism Launcher couldn't be started for the game.
-	launchFailedMsg struct{ err error }
-	reloadedMsg     struct{ insts []prism.Instance }
-	restoredMsg     struct{ r *update.RestoreResult }
-)
-
-func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }
-
-// orErr is the message a background command sends: errMsg if it failed, msg otherwise.
-func orErr(err error, msg tea.Msg) tea.Msg {
-	if err != nil {
-		return errMsg{err}
-	}
-	return msg
 }
 
 // Init sets the window title, starts the spinner, the load and (when asked) the
@@ -254,6 +224,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case restoredMsg:
 		if m.job != nil {
 			return m, m.onRestored(msg.r)
+		}
+	case modsPreparedMsg:
+		return m, m.onModsPrepared(msg.s)
+	case modsSyncedMsg:
+		if m.job != nil {
+			return m, m.onModsSynced(msg)
 		}
 	case selfDoneMsg:
 		if m.job != nil {
@@ -399,6 +375,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	}
 	if st != nil {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
+		info.mods, info.synced, info.modsAsked = len(st.CustomMods), st.CustomModsSynced, st.CustomModsAsked
 	}
 	if in.GTNH {
 		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ const (
 	undoLine1  = "Files the update added are removed and the files it replaced are put back exactly as they were"
 	undoLine2  = "Worlds, maps and settings aren't touched"
 	undoLine3  = "Settings you changed since then are kept (server, mods link, memory, Java)"
+	undoMods   = "Your server's mods stay as they are: they follow the server, not the GTNH version"
 	renameLine = "The instance name in Prism goes back too"
 	closeFirst = "Make sure Minecraft is closed before you continue."
 )
@@ -195,9 +197,24 @@ func TestC2UndoConfirmationSaysWhatGoingBackDoes(t *testing.T) {
 	if dialogTitle(m) != "Go back to GTNH 2.8.0?" || !eq(dialogButtons(m), []string{"Undo", "Cancel"}) || m.dialog.btn != 0 {
 		t.Fatalf("dialog %q buttons %q, want Go back to GTNH 2.8.0? [Undo Cancel] on Undo", dialogTitle(m), dialogButtons(m))
 	}
-	want := []string{undoLine1, undoLine2, undoLine3, "", downgradeWarning("2.8.1")}
+	want := []string{undoLine1, undoLine2, undoLine3, undoMods, "", downgradeWarning("2.8.1")}
 	if got := bodyLines(t, m); !eq(got, want) {
 		t.Errorf("body\n%q\nwant\n%q", got, want)
+	}
+}
+
+// C2: without server mods the confirmation doesn't mention them.
+func TestC2UndoConfirmationWithoutServerModsLeavesThemOut(t *testing.T) {
+	root := t.TempDir()
+	spec := fullSpec("Home")
+	spec.mods = ""
+	in := makeInst(t, root, spec)
+	m, _ := loadedModel(root, 80, 24, in)
+
+	m.confirmUndo(in, update.Backup{Dir: fixtureBackupDir(in), Info: update.BackupInfo{From: "2.8.4", To: "2.8.1"}})
+
+	if got := bodyLines(t, m); !eq(got, []string{undoLine1, undoLine2, undoLine3}) {
+		t.Errorf("body %q, want the three lines without the server mods", got)
 	}
 }
 
@@ -210,11 +227,11 @@ func TestC2RenameLineOnlyWhenTheNameCarriesTheUpdatedVersion(t *testing.T) {
 		want     []string
 	}{
 		{"name has To", "GT New Horizons 2.8.1", "2.8.0", "2.8.1",
-			[]string{undoLine1, undoLine2, undoLine3, renameLine, "", downgradeWarning("2.8.1")}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods, renameLine, "", downgradeWarning("2.8.1")}},
 		{"name lacks To", "Home", "2.8.0", "2.8.1",
-			[]string{undoLine1, undoLine2, undoLine3, "", downgradeWarning("2.8.1")}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods, "", downgradeWarning("2.8.1")}},
 		{"To equals From", "GT New Horizons 2.8.1", "2.8.1", "2.8.1",
-			[]string{undoLine1, undoLine2, undoLine3}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -241,11 +258,11 @@ func TestC2UndoWarningsFollowTheRunStateAndTheDirection(t *testing.T) {
 		want       []string
 	}{
 		{"back up to a newer version", false, "2.8.4", "2.8.1",
-			[]string{undoLine1, undoLine2, undoLine3}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods}},
 		{"unknown run state", true, "2.8.4", "2.8.1",
-			[]string{undoLine1, undoLine2, undoLine3, "", closeFirst}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods, "", closeFirst}},
 		{"unknown run state and a downgrade", true, "2.8.0", "2.8.4",
-			[]string{undoLine1, undoLine2, undoLine3, "", closeFirst, "", downgradeWarning("2.8.4")}},
+			[]string{undoLine1, undoLine2, undoLine3, undoMods, "", closeFirst, "", downgradeWarning("2.8.4")}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -377,7 +394,7 @@ func TestC3RestoredEndsTheJobWithANotice(t *testing.T) {
 			if m.job != nil {
 				t.Errorf("job %+v, want none", m.job)
 			}
-			if got := m.notices[in.Dir]; got != (notice{text: c.text}) {
+			if got := m.notices[in.Dir]; !reflect.DeepEqual(got, notice{text: c.text}) {
 				t.Errorf("notice %+v, want text %q", got, c.text)
 			}
 			msgs := runCmd(cmd)
@@ -401,9 +418,9 @@ func TestC3SkippedFilesAreWarnedAbout(t *testing.T) {
 
 	want := notice{
 		text: "Back on GTNH 2.8.0 just now · 2 files put back, 1 removed",
-		warn: "I couldn't put these back myself — they live outside the instance folder: ../shared/options.txt, ../shared/servers.dat. They're still in " + b.Dir + ".",
+		warn: []string{"I couldn't put these back myself — they live outside the instance folder: ../shared/options.txt, ../shared/servers.dat. They're still in " + b.Dir + "."},
 	}
-	if got := m.notices[in.Dir]; got != want {
+	if got := m.notices[in.Dir]; !reflect.DeepEqual(got, want) {
 		t.Errorf("notice\n%+v\nwant\n%+v", got, want)
 	}
 }

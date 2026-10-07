@@ -14,10 +14,13 @@ import (
 )
 
 // playModel is a loaded model whose only instance lives in the second of two Prism
-// data dirs, so DataDirOf has to pick it rather than fall back to the first.
+// data dirs, so DataDirOf has to pick it rather than fall back to the first. Its server
+// has no extra mods, so Play launches right away.
 func playModel(t *testing.T) (*model, *fakes, prism.Instance, string) {
 	other, root := t.TempDir(), t.TempDir()
-	in := makeInst(t, root, fullSpec("Home"))
+	spec := fullSpec("Home")
+	spec.mods, spec.modsAsked = "", true
+	in := makeInst(t, root, spec)
 	m, f := newTestModel(Config{PrismDirs: []string{other, root}}, 80, 30)
 	m.Update(loadedMsg{m: testManifest(), insts: []prism.Instance{in}})
 	m.focus = focusPage

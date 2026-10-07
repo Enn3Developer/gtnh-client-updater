@@ -3,6 +3,7 @@ package update
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"net/http"
@@ -342,7 +343,7 @@ func TestSessionEndToEnd(t *testing.T) {
 	os.WriteFile(filepath.Join(inst.Dir, "mmc-pack.json"), []byte(oldPack["mmc-pack.json"]), 0o644)
 
 	opts := Options{Client: client, Manifest: m, Instance: inst, Installed: "2.8.4", Target: "2.9.0",
-		CustomModsURL: "https://files.example/custom_mods.zip"}
+		CustomModsURL: "https://files.example/custom_mods.zip", CustomModsAsked: true}
 	rep := &nopReporter{}
 	s, err := Prepare(opts, rep)
 	if err != nil {
@@ -382,8 +383,8 @@ func TestSessionEndToEnd(t *testing.T) {
 		t.Errorf("state %+v", st)
 	}
 
-	// Server drops the custom mod: a re-run at the same version removes it again, and
-	// uses the saved baseline.
+	// The link stops working: a re-run at the same version (on the saved baseline, no
+	// pack download) keeps the server's mods and says why.
 	delete(files, "/custom_mods.zip")
 	opts.Installed = "2.9.0"
 	s, err = Prepare(opts, rep)
@@ -396,11 +397,24 @@ func TestSessionEndToEnd(t *testing.T) {
 	if s.next != nil || downloads["/new.zip"] != 1 {
 		t.Errorf("same-version rerun downloaded the pack again (%d downloads)", downloads["/new.zip"])
 	}
-	if _, err := s.Apply(rep); err != nil {
+	res, err = s.Apply(rep)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := read(t, inst, ".minecraft/mods/extra-1.jar"); ok {
-		t.Error("custom mod removed on the server is still installed")
+	if got, _ := read(t, inst, ".minecraft/mods/extra-1.jar"); got != "e1" || !errors.Is(res.ModsErr, ErrModsNotFound) {
+		t.Errorf("a missing archive: extra-1.jar = %q, ModsErr %v; want the jar kept and ErrModsNotFound", got, res.ModsErr)
+	}
+
+	// Server drops the custom mod (an empty archive): the re-run removes it.
+	files["/custom_mods.zip"] = zipBytes(t, "", nil)
+	if s, err = Prepare(opts, rep); err != nil {
+		t.Fatal(err)
+	}
+	if res, err = s.Apply(rep); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := read(t, inst, ".minecraft/mods/extra-1.jar"); ok || fmt.Sprint(res.Mods.Names(ModRemove)) != "[extra-1.jar]" {
+		t.Errorf("custom mod removed on the server is still installed (plan %+v)", res.Mods)
 	}
 
 	// The link is remembered; switching it off takes the synced jars out.
@@ -451,8 +465,8 @@ func TestSessionEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := read(t, inst, ".minecraft/mods/extra-1.jar"); ok || res.CustomMods == nil || len(res.CustomMods.Removed) != 1 {
-		t.Errorf("switching the sync off left the jar: %+v", res.CustomMods)
+	if _, ok := read(t, inst, ".minecraft/mods/extra-1.jar"); ok || res.Mods == nil || res.Mods.Count(ModRemove) != 1 {
+		t.Errorf("switching the sync off left the jar: %+v", res.Mods)
 	}
 	if st, _ := LoadState(inst.Dir); st.CustomModsURL != "" || !st.CustomModsAsked || len(st.CustomMods) != 0 {
 		t.Errorf("state after switching off: %+v", st)

@@ -26,7 +26,10 @@ type BackupInfo struct {
 	PrevName  string    `json:"prevName,omitempty"`  // instance name before the rename; "" if unchanged
 	PrevState *State    `json:"prevState,omitempty"` // state.json before the update; nil if there was none
 	Added     []string  `json:"added,omitempty"`     // backup-mirror paths (slashed) the update created
-	AddedMods []string  `json:"addedMods,omitempty"` // server extra-mod jars the sync created
+	// AddedMods are server extra-mod jars the sync created, written by older launchers
+	// only: the server's mods aren't part of an update's backup any more, and a restore
+	// leaves them alone.
+	AddedMods []string `json:"addedMods,omitempty"`
 }
 
 // Backup is one restorable backup dir with its manifest.
@@ -88,7 +91,9 @@ func writeBackupInfo(backupDir string, info BackupInfo) error {
 }
 
 // Restore undoes the update recorded in b: removes what it added, moves the stashed files
-// back, restores the updater state and the instance name. There is no undo; on failure
+// back, restores the updater state and the instance name. The server's mods aren't
+// touched: they follow the server, not the GTNH version (a backup from an older launcher
+// that holds some puts them in the replaced-mods folder). There is no undo; on failure
 // the backup dir stays so the player can retry.
 func Restore(inst prism.Instance, b Backup, rep Reporter) (*RestoreResult, error) {
 	if prism.Running(inst) {
@@ -125,8 +130,8 @@ func Restore(inst prism.Instance, b Backup, rep Reporter) (*RestoreResult, error
 	return res, nil
 }
 
-// removeAdded deletes the files and extra-mod jars the update created from nothing.
-// Paths outside the instance (_external) are left alone and reported as skipped.
+// removeAdded deletes the files the update created from nothing. Paths outside the
+// instance (_external) are left alone and reported as skipped.
 func removeAdded(inst prism.Instance, info BackupInfo, res *RestoreResult) error {
 	var dirs []string
 	remove := func(p string) error {
@@ -150,17 +155,14 @@ func removeAdded(inst prism.Instance, info BackupInfo, res *RestoreResult) error
 			return err
 		}
 	}
-	for _, name := range info.AddedMods {
-		if err := remove(filepath.Join(inst.GameDir, "mods", name)); err != nil {
-			return err
-		}
-	}
 	pruneEmptyDirs(dirs, inst.Dir)
 	return nil
 }
 
 // moveBack moves every stashed file in backupDir to where it came from, overwriting
-// what the update put there. _external files stay in the backup and are reported.
+// what the update put there. _external files stay in the backup and are reported; the
+// server-mod jars an older launcher stashed (custom-mods/) go to the replaced-mods
+// folder, so they can't end up next to the server's current ones.
 func moveBack(inst prism.Instance, backupDir string, rep Reporter, res *RestoreResult) error {
 	manifest := filepath.Join(backupDir, BackupManifest)
 	var files []string
@@ -187,7 +189,9 @@ func moveBack(inst prism.Instance, backupDir string, rep Reporter, res *RestoreR
 		case "_external":
 			res.Skipped = append(res.Skipped, filepath.ToSlash(rel))
 		case "custom-mods":
-			dst = filepath.Join(inst.GameDir, "mods", rest)
+			if err := keepFile(f, filepath.Join(inst.Dir, StateDir, ReplacedMods), filepath.Base(rest)); err != nil {
+				return err
+			}
 		default:
 			dst = filepath.Join(inst.Dir, rel)
 		}
@@ -205,22 +209,21 @@ func moveBack(inst prism.Instance, backupDir string, rep Reporter, res *RestoreR
 	return nil
 }
 
-// restoreState puts back the pre-update state, keeping the player's current per-instance
-// settings (extra-mods URL, server address), which are not part of the update.
+// restoreState puts back the pre-update version and baseline. Everything else is kept as
+// it is now: the player's settings (mods link, server address) and the server-mods sync's
+// notes, since a restore leaves the server's mods alone.
 func restoreState(instDir string, prev *State) error {
 	cur, err := LoadState(instDir)
 	if err != nil {
 		return err
 	}
-	st := &State{Baseline: map[string]pack.Fingerprint{}}
-	if prev != nil {
-		cp := *prev
-		st = &cp
-	}
+	st := State{}
 	if cur != nil {
-		st.CustomModsURL, st.CustomModsAsked, st.ServerAddress = cur.CustomModsURL, cur.CustomModsAsked, cur.ServerAddress
-	} else {
-		st.CustomModsURL, st.CustomModsAsked, st.ServerAddress = "", false, ""
+		st = *cur
 	}
-	return SaveState(instDir, st)
+	st.Version, st.Baseline = "", map[string]pack.Fingerprint{}
+	if prev != nil {
+		st.Version, st.Baseline = prev.Version, prev.Baseline
+	}
+	return SaveState(instDir, &st)
 }

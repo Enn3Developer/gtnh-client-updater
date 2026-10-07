@@ -37,7 +37,8 @@ func listInstances(dirs []string) []prism.Instance {
 
 // afterLoad marks the workspace loaded, preselects Config.Instance (by name or folder),
 // refreshes and starts the creation Config.Create asks for, else the update Config.Target
-// asks for, else the game when Config.Play asks to.
+// asks for, else the game when Config.Play asks to (its mods synced from
+// Config.ServerMods when given).
 func (m *model) afterLoad() tea.Cmd {
 	m.loaded = true
 	m.focus = focusSidebar
@@ -65,6 +66,7 @@ func (m *model) afterLoad() tea.Cmd {
 		return m.startUpdate(v)
 	}
 	if m.cfg.Play {
+		m.modsOverride = m.cfg.ServerMods
 		return m.playCmd(false)
 	}
 	return nil

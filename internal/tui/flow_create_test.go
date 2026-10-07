@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -223,91 +224,39 @@ func TestC5UnknownTargetFromTheCommandLineIsExplained(t *testing.T) {
 
 // ---- C6 server mods ----
 
-// C6: settled on the command line, nothing is asked.
-func TestC6SettledServerModsGoStraightToTheName(t *testing.T) {
-	cases := []struct{ cfg, want string }{
-		{"none", ""},
-		{"https://cfg.example.org/x.zip", "https://cfg.example.org/x.zip"},
+// C6: a creation never asks about server mods: they're asked with the server address.
+func TestC6CreationNeverAsksAboutServerMods(t *testing.T) {
+	m, _, _ := createModel(t, Config{}, "Home")
+	m.pickCreateVersion()
+
+	press(m, "enter")
+
+	if dialogTitle(m) != nameTitle {
+		t.Fatalf("dialog %q, want the name question", dialogTitle(m))
+	}
+}
+
+// C6: the command line's link is the new instance's, and counts as the player's answer.
+func TestC6CreationTakesTheServerModsOfTheCommandLine(t *testing.T) {
+	cases := []struct {
+		cfg, want string
+		given     bool
+	}{
+		{"", "", false},
+		{"none", "", true},
+		{"https://cfg.example.org/x.zip", "https://cfg.example.org/x.zip", true},
 	}
 	for _, c := range cases {
 		t.Run(c.cfg, func(t *testing.T) {
 			m, _, _ := createModel(t, Config{ServerMods: c.cfg}, "Home")
 			m.serverMods = "https://stale.example.org/old.zip"
-			m.pickCreateVersion()
 
-			press(m, "enter")
+			m.beginCreate("2.8.1", "My Pack")
 
-			if dialogTitle(m) != nameTitle || m.serverMods != c.want {
-				t.Errorf("dialog %q serverMods %q, want the name question and %q", dialogTitle(m), m.serverMods, c.want)
+			if m.serverMods != c.want || m.serverModsGiven != c.given {
+				t.Errorf("serverMods %q given %v, want %q %v", m.serverMods, m.serverModsGiven, c.want, c.given)
 			}
 		})
-	}
-}
-
-// C6: not settled, the update flow's question is asked with an empty value.
-func TestC6UnsettledServerModsAreAsked(t *testing.T) {
-	m, _, _ := createModel(t, Config{}, "Home")
-	m.pickCreateVersion()
-
-	press(m, "enter")
-
-	if dialogTitle(m) != modsTitle || m.dialog.input == nil {
-		t.Fatalf("dialog %q, want the server-mods question", dialogTitle(m))
-	}
-	d := m.dialog
-	if d.input.Value() != "" || d.input.Placeholder != "https://…/custom_mods.zip" {
-		t.Errorf("value %q placeholder %q", d.input.Value(), d.input.Placeholder)
-	}
-	if d.note != "Leave it empty if there's none. You can change it later in Settings." || !eq(d.buttons, []string{"Continue"}) {
-		t.Errorf("note %q buttons %q", d.note, d.buttons)
-	}
-	if got := d.body(200); got != serverModsIntro {
-		t.Errorf("intro %q", got)
-	}
-	if m.job != nil {
-		t.Errorf("job %+v started while asking", m.job)
-	}
-}
-
-// C6
-func TestC6AnInvalidServerModsLinkKeepsTheQuestion(t *testing.T) {
-	m, _, _ := createModel(t, Config{}, "Home")
-	m.pickCreateVersion()
-	press(m, "enter")
-
-	press(m, "http://x", "enter")
-
-	if dialogTitle(m) != modsTitle || m.job != nil {
-		t.Fatalf("dialog %q job %+v, want the question kept", dialogTitle(m), m.job)
-	}
-	if m.dialog.inputErr != msgBadModsLink {
-		t.Errorf("inputErr %q, want msgBadModsLink", m.dialog.inputErr)
-	}
-}
-
-// C6: esc cancels the whole creation.
-func TestC6EscOnTheServerModsQuestionCancelsTheCreation(t *testing.T) {
-	m, _, _ := createModel(t, Config{}, "Home")
-	m.pickCreateVersion()
-	press(m, "enter")
-
-	cmd := press(m, "esc")
-
-	if cmd != nil || m.dialog != nil || m.job != nil {
-		t.Errorf("cmd %v dialog %q job %+v, want nothing", cmd != nil, dialogTitle(m), m.job)
-	}
-}
-
-// C6
-func TestC6ContinueKeepsTheLinkAndAsksTheName(t *testing.T) {
-	m, _, _ := createModel(t, Config{}, "Home")
-	m.pickCreateVersion()
-	press(m, "enter")
-
-	press(m, "https://mods.example.org/m.zip", "enter")
-
-	if dialogTitle(m) != nameTitle || m.serverMods != "https://mods.example.org/m.zip" {
-		t.Errorf("dialog %q serverMods %q, want the name question with the link", dialogTitle(m), m.serverMods)
 	}
 }
 
@@ -590,15 +539,23 @@ func TestC9ReadyAsksToConfirmTheCreation(t *testing.T) {
 	cases := []struct {
 		name       string
 		serverMods string
+		mods       *update.ModsPlan
+		warns      []string
 		flavor     manifest.Flavor
 		files      int
 		want       func(dir string) []string
 	}{
-		{"server mods, java 17", "https://mods.example.org/m.zip", manifest.Java17, 1234, func(dir string) []string {
-			return []string{"1,234 files will be installed", "In " + dir, "Server mods installed from mods.example.org",
-				"Java 17+ pack", "Your other instances aren't touched"}
-		}},
-		{"java 8", "", manifest.Java8, 2, func(dir string) []string {
+		{"server mods, java 17", "https://mods.example.org/m.zip", modsPlanOf(update.ModAdd, "a.jar", update.ModAdd, "b.jar"), nil,
+			manifest.Java17, 1234, func(dir string) []string {
+				return []string{"1,234 files will be installed", "In " + dir, "Server mods from mods.example.org: 2 new",
+					"Java 17+ pack", "Your other instances aren't touched"}
+			}},
+		{"server mods out of reach", "https://mods.example.org/m.zip", nil, []string{"I couldn't get your server's mods: the link doesn't lead to a file anymore."},
+			manifest.Java17, 2, func(dir string) []string {
+				return []string{"2 files will be installed", "In " + dir, "Java 17+ pack", "Your other instances aren't touched", "",
+					"Heads up: I couldn't get your server's mods: the link doesn't lead to a file anymore."}
+			}},
+		{"java 8", "", nil, nil, manifest.Java8, 2, func(dir string) []string {
 			return []string{"2 files will be installed", "In " + dir, "This version only comes as a Java 8 pack",
 				"Your other instances aren't touched"}
 		}},
@@ -606,8 +563,8 @@ func TestC9ReadyAsksToConfirmTheCreation(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			m, _, _ := creating(t, "Home")
-			m.serverMods = c.serverMods
-			cr := &update.Creation{Dir: createDir(t), Flavor: c.flavor, Files: c.files}
+			m.serverMods, m.warns = c.serverMods, c.warns
+			cr := &update.Creation{Dir: createDir(t), Flavor: c.flavor, Files: c.files, ModsPlan: c.mods}
 
 			m.Update(createReady{cr})
 
@@ -682,15 +639,16 @@ func TestC9CreatedEndsTheJobWithANotice(t *testing.T) {
 			return &update.CreateResult{Instance: in, Files: 1234}
 		}, notice{text: "Created just now with GTNH 2.8.1 · 1,234 files installed"}},
 		{"server mods failed", func(in prism.Instance) *update.CreateResult {
-			return &update.CreateResult{Instance: in, Files: 2, CustomErr: errors.New("404 on the link")}
+			return &update.CreateResult{Instance: in, Files: 2, ModsErr: errors.New("the link doesn't lead to a file anymore")}
 		}, notice{text: "Created just now with GTNH 2.8.1 · 2 files installed",
-			warn: "Your server's extra mods couldn't be synced (404 on the link). I'll try again next time."}},
+			warn: []string{"I couldn't sync your server's mods: the link doesn't lead to a file anymore."}}},
 		{"one server mod", func(in prism.Instance) *update.CreateResult {
-			return &update.CreateResult{Instance: in, Files: 2, CustomMods: &update.CustomModsResult{Installed: []string{"a.jar"}}}
-		}, notice{text: "Created just now with GTNH 2.8.1 · 2 files installed", info: "1 extra mod from your server installed"}},
-		{"server mods", func(in prism.Instance) *update.CreateResult {
-			return &update.CreateResult{Instance: in, Files: 2, CustomMods: &update.CustomModsResult{Installed: []string{"a.jar", "b.jar", "c.jar"}}}
-		}, notice{text: "Created just now with GTNH 2.8.1 · 2 files installed", info: "3 extra mods from your server installed"}},
+			return &update.CreateResult{Instance: in, Files: 2, Mods: modsPlanOf(update.ModAdd, "a.jar")}
+		}, notice{text: "Created just now with GTNH 2.8.1 · 2 files installed", info: []string{"Server mods: 1 new"}}},
+		{"server mods, one GTNH has", func(in prism.Instance) *update.CreateResult {
+			return &update.CreateResult{Instance: in, Files: 2, Mods: modsPlanOf(update.ModAdd, "a.jar", update.ModAdd, "b.jar", update.ModSkip, "core.jar")}
+		}, notice{text: "Created just now with GTNH 2.8.1 · 2 files installed",
+			info: []string{"Server mods: 2 new", "Left out, this instance has it already: core.jar"}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -703,7 +661,7 @@ func TestC9CreatedEndsTheJobWithANotice(t *testing.T) {
 			if m.job != nil {
 				t.Errorf("job %+v, want none", m.job)
 			}
-			if got := m.notices[in.Dir]; got != c.want {
+			if got := m.notices[in.Dir]; !reflect.DeepEqual(got, c.want) {
 				t.Errorf("notice\n%+v\nwant\n%+v", got, c.want)
 			}
 			msgs := runCmd(cmd)

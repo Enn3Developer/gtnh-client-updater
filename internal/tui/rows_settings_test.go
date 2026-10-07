@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -20,6 +21,11 @@ func TestC4SettingValueOfEachKey(t *testing.T) {
 			OverrideWindow: true, WinWidth: 1280, WinHeight: 720,
 		},
 	}
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.Local)
+	synced := overridden
+	synced.mods, synced.synced = 3, now.Add(-3*24*time.Hour)
+	one := synced
+	one.mods = 1
 	// Values without the Override flags are what Prism ignores.
 	ignored := homeInfo{settings: prism.Settings{
 		MinMemMB: 2048, MaxMemMB: 6144, JvmArgs: "-XX:+UseZGC", JavaPath: "/usr/bin/java", WinWidth: 1280, WinHeight: 720,
@@ -39,12 +45,14 @@ func TestC4SettingValueOfEachKey(t *testing.T) {
 		{"window", ignored, prismDefault},
 		{"server", overridden, "mc.example.net:25565"},
 		{"server", ignored, "none"},
-		{"mods", overridden, "dl.example.com"},
+		{"mods", overridden, "dl.example.com · not synced yet"},
+		{"mods", synced, "dl.example.com · 3 mods · synced 3 days ago"},
+		{"mods", one, "dl.example.com · 1 mod · synced 3 days ago"},
 		{"mods", ignored, "none"},
 	}
 	for _, c := range cases {
 		t.Run(c.key+"="+c.want, func(t *testing.T) {
-			if got := settingValue(c.key, c.info); got != c.want {
+			if got := settingValue(c.key, c.info, now); got != c.want {
 				t.Errorf("settingValue(%s) = %q, want %q", c.key, got, c.want)
 			}
 		})

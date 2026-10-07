@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -37,18 +38,23 @@ type Creation struct {
 	Instance prism.Instance // Dir, Name, GameDir = Dir/.minecraft, GTNH = true
 	Flavor   manifest.Flavor
 	Files    int // pack entries that will be written (every entry, instance.cfg included)
+	// ModsPlan is what installing the server's mods will do (nil: no link, or the
+	// archive couldn't be fetched: ModsErr says why).
+	ModsPlan *ModsPlan
+	ModsErr  error
 
 	opts    CreateOptions
 	pack    *pack.Pack
 	zipPath string
+	mods    *ModsArchive
 }
 
 // CreateResult summarizes a finished creation.
 type CreateResult struct {
-	Instance   prism.Instance
-	Files      int // files written (same as Creation.Files)
-	CustomMods *CustomModsResult
-	CustomErr  error
+	Instance prism.Instance
+	Files    int       // files written (same as Creation.Files)
+	Mods     *ModsPlan // what installing the server's mods did; nil when none ran or it failed
+	ModsErr  error     // why the server's mods couldn't be fetched or installed
 }
 
 // ErrInstanceExists means the chosen name is already taken in the instances dir.
@@ -214,7 +220,43 @@ func PrepareCreate(opts CreateOptions, rep Reporter) (_ *Creation, err error) {
 		return nil, fmt.Errorf("The download of GTNH %s is damaged: %w", target.Version, err)
 	}
 	cr.Files = len(cr.pack.Entries)
+	if opts.CustomModsURL != "" {
+		// Fetched here, where the player can still cancel, so Apply never waits on the
+		// network. A failure is not fatal: the instance just starts without them.
+		rep.Step("Getting your server's mods")
+		cr.mods, cr.ModsErr = fetchMods(ctx, opts.Client, opts.CustomModsURL, stateDir, rep.Progress)
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("I couldn't download your server's mods: %w", ctx.Err())
+		}
+		if cr.ModsErr != nil {
+			rep.Warn("I couldn't get your server's mods: " + cr.ModsErr.Error() + ".")
+		} else {
+			cr.ModsPlan = planMods(cr.modsInput(false))
+		}
+	}
 	return cr, nil
+}
+
+// modsInput is what installing the server's mods into the new instance looks at: once
+// the pack's files are written (ids true), or as they will be (a preview).
+func (c *Creation) modsInput(ids bool) modsInput {
+	fps := c.pack.Fingerprints()
+	in := modsInputFor(c.mods, c.Instance, nil, fps, ids, true)
+	if !ids {
+		var files []string
+		for p := range fps {
+			if name, ok := strings.CutPrefix(p, pack.GameDir+"mods/"); ok && !strings.Contains(name, "/") {
+				files = append(files, name)
+			}
+		}
+		sort.Strings(files)
+		in.files, in.pack = files, packJars(fps, files)
+		in.fp = func(name string) (pack.Fingerprint, bool) {
+			fp, ok := fps[pack.GameDir+"mods/"+name]
+			return fp, ok
+		}
+	}
+	return in
 }
 
 // Apply writes the pack into the new instance, installs the server's extra mods, saves
@@ -253,28 +295,21 @@ func (c *Creation) Apply(rep Reporter) (res *CreateResult, err error) {
 	}
 
 	fps := c.pack.Fingerprints()
-	res = &CreateResult{Instance: c.Instance, Files: c.Files}
-	var managed []string
-	if c.opts.CustomModsURL != "" {
-		rep.Step("Installing your server's extra mods")
-		backupDir := filepath.Join(c.Dir, StateDir, "backup-"+time.Now().Format("20060102-150405"))
-		archive, err := FetchCustomMods(c.opts.Client, c.opts.CustomModsURL)
-		var cm *CustomModsResult
-		if err == nil {
-			cm, err = SyncCustomMods(archive, c.Instance, nil, fps, backupDir)
-		}
-		// A fresh instance has nothing to stash; drop the (empty) dirs if any were made.
-		os.Remove(filepath.Join(backupDir, "custom-mods"))
-		os.Remove(backupDir)
-		if err != nil {
-			res.CustomErr = err // shown in the summary; not fatal
-		} else {
-			res.CustomMods, managed = cm, cm.Installed
-		}
-	}
-	st := &State{Version: c.opts.Target, Baseline: fps, CustomMods: managed,
+	res = &CreateResult{Instance: c.Instance, Files: c.Files, ModsErr: c.ModsErr}
+	st := &State{Version: c.opts.Target, Baseline: fps,
 		CustomModsURL: c.opts.CustomModsURL, CustomModsAsked: c.opts.CustomModsAsked,
 		ServerAddress: c.opts.ServerAddress}
+	if c.mods != nil {
+		rep.Step("Installing your server's mods")
+		mp := planMods(c.modsInput(true))
+		if err := applyModsPlan(mp, c.mods, c.Instance); err != nil {
+			res.ModsErr = err // shown in the summary; not fatal
+		} else {
+			res.Mods = mp
+			setManaged(st, mp.Managed)
+			st.CustomModsSynced = time.Now()
+		}
+	}
 	if err := SaveState(c.Dir, st); err != nil {
 		return nil, fmt.Errorf("I couldn't save my notes about the new instance: %w", err)
 	}
@@ -316,7 +351,8 @@ func writeNew(disk string, open func() (io.ReadCloser, error)) error {
 	return nil
 }
 
-// release closes and deletes the download. Safe to call more than once.
+// release closes and deletes the download and closes the server's archive. Safe to call
+// more than once.
 func (c *Creation) release() {
 	if c.pack != nil {
 		c.pack.Close()
@@ -326,6 +362,7 @@ func (c *Creation) release() {
 		os.Remove(c.zipPath)
 		c.zipPath = ""
 	}
+	c.mods.Close()
 }
 
 // Close releases the download and removes the instance folder unless Apply finished

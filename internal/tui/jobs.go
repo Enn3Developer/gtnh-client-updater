@@ -22,6 +22,7 @@ const (
 	jobCreate
 	jobRestore
 	jobSelf
+	jobMods // a sync of the server's mods on its own
 )
 
 // job is the background work shown inline on its instance's page.

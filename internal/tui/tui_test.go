@@ -137,7 +137,7 @@ func TestC5TabDoesNothingWithASingleInstance(t *testing.T) {
 func TestC5EnterOnThePagePlayRowLaunches(t *testing.T) {
 	m, f := oneFull(t)
 
-	runCmd(press(m, "enter"))
+	settle(m, press(m, "enter"))
 
 	if len(f.launches) != 1 || f.launches[0].server != "" {
 		t.Errorf("launches %+v, want one plain play", f.launches)
@@ -150,7 +150,7 @@ func TestC5EnterInTheSidebarPlays(t *testing.T) {
 	m.focus = focusSidebar
 	press(m, "down")
 
-	runCmd(press(m, "enter"))
+	settle(m, press(m, "enter"))
 
 	if len(f.launches) != 1 || f.launches[0].inst.Name != "Second" {
 		t.Errorf("launches %+v, want one of Second", f.launches)
@@ -162,7 +162,7 @@ func TestC5PPlaysFromAnyRow(t *testing.T) {
 	m, f := oneFull(t)
 	m.row = 7
 
-	runCmd(press(m, "p"))
+	settle(m, press(m, "p"))
 
 	if len(f.launches) != 1 || f.launches[0].inst.Name != "Home" {
 		t.Errorf("launches %+v, want one of Home", f.launches)
@@ -173,7 +173,7 @@ func TestC5PPlaysFromAnyRow(t *testing.T) {
 func TestC5JJoinsTheSavedServer(t *testing.T) {
 	m, f := oneFull(t)
 
-	runCmd(press(m, "j"))
+	settle(m, press(m, "j"))
 
 	if len(f.launches) != 1 || f.launches[0].server != "play.example.org" {
 		t.Errorf("launches %+v, want one joining play.example.org", f.launches)

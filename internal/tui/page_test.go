@@ -34,7 +34,7 @@ func TestC4GTNHPageTopToBottom(t *testing.T) {
 		"  Java           Prism's default",
 		"  Window         Prism's default",
 		"  Server         play.example.org",
-		"  Server mods    mods.example.org",
+		"  Server mods    mods.example.org · not synced yet",
 		"",
 		"Launcher",
 		"  After I start the game  stay open",

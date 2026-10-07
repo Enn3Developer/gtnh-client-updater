@@ -57,13 +57,18 @@ func (m *model) editSetting(id string) tea.Cmd {
 	m.edit = &settingEdit{id: id, input: field}
 	m.savedRow = ""
 	m.focus = focusPage
+	m.selectRow(id)
+	return nil
+}
+
+// selectRow selects the page row with id, if the page has one.
+func (m *model) selectRow(id string) {
 	for i, r := range m.rows() {
 		if r.id == id {
 			m.row = i
-			break
+			return
 		}
 	}
-	return nil
 }
 
 // toggleAfterPlay flips whether the launcher stays open after Play and saves it.
@@ -122,6 +127,13 @@ func (m *model) saveEdit() tea.Cmd {
 	}
 	m.refresh()
 	m.savedRow = e.id
+	m.selectRow(e.id) // a first server adds the join row above it
+	switch info := m.home[in.Dir]; {
+	case e.id == "mods":
+		return m.syncMods(in, nil) // a new link gets its mods now, none takes them out
+	case e.id == "server" && v != "" && info.gtnh && !info.modsAsked && info.modsURL == "":
+		return m.askServerMods(in, nil)
+	}
 	return nil
 }
 
