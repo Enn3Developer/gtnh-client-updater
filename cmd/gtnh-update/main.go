@@ -8,6 +8,7 @@
 //	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] -yes
 //	gtnh-update -create -version <ver|latest|latest-stable> [-name <name>] [-server-mods <url>] -yes
 //	gtnh-update -play -instance <dir|name> [-version <ver>] -yes
+//	gtnh-update -instance <dir|name> -server-mods <url|none> -yes
 //
 // -configs new|mine decides what happens to config files changed both by the player and
 // by the new version (default new); in the TUI it only changes the preselected answer.
@@ -122,6 +123,8 @@ func run() error {
 			noticeNewer(client)
 		}
 		return playHeadless(client, dirs, *instance, *installed, *target, *serverMods, choice)
+	case *yes && *target == "" && *serverMods != "" && *instance != "":
+		return modsLinkHeadless(client, dirs, *instance, *serverMods)
 	case *yes:
 		if *instance == "" || *target == "" {
 			return errors.New("-yes needs -instance and -version")
@@ -158,6 +161,8 @@ Run it without options for the launcher's screen. For scripts:
     	make a new instance
   gtnh-update -play -yes -instance "GTNH" [-version latest]
     	start it in Prism; with -version, update it first
+  gtnh-update -instance "GTNH" -server-mods https://example.org/mods.zip -yes
+    	use your server's extra mods (checked and installed now; "none" stops)
   gtnh-update -self-update
     	update the launcher itself
 
@@ -258,6 +263,40 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 		return err
 	}
 	fmt.Printf("Started %s in Prism Launcher.\n", inst.Name)
+	return nil
+}
+
+// modsLinkHeadless sets the server-mods link of an instance (-server-mods, "none" = none)
+// and syncs from it at once. A new link the server can't give isn't saved.
+func modsLinkHeadless(client *http.Client, dirs []string, instName, link string) error {
+	inst, err := findInstance(dirs, instName)
+	if err != nil {
+		return err
+	}
+	if !inst.GTNH {
+		return fmt.Errorf("%s isn't a GTNH instance", inst.Name)
+	}
+	st, err := update.LoadState(inst.Dir)
+	if err != nil {
+		return err
+	}
+	s, err := update.PrepareModsSync(update.ModsSyncOptions{Client: client, Instance: inst, URL: link}, &textReporter{})
+	if err != nil {
+		return err
+	}
+	if s.FetchErr != nil && link != "none" && (st == nil || st.CustomModsURL != link) {
+		s.Close()
+		return fmt.Errorf("I couldn't use that link, so I didn't save it: %w", s.FetchErr)
+	}
+	if s.FetchErr != nil {
+		fmt.Printf("  heads up: I couldn't check your server's mods: %v.\n", s.FetchErr)
+	}
+	p, err := s.Apply(&textReporter{})
+	printMods(s.Link, p, err)
+	if err != nil {
+		return errors.New("the link wasn't changed")
+	}
+	fmt.Printf("Done: %s uses %s.\n", inst.Name, orDefault(s.Link, "no server mods"))
 	return nil
 }
 

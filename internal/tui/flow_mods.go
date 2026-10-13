@@ -58,6 +58,9 @@ func (m *model) syncMods(inst prism.Instance, then func(*model) tea.Cmd) tea.Cmd
 	if info := m.home[inst.Dir]; !info.gtnh || info.modsURL == "" && info.mods == 0 && override == "" {
 		return then(m)
 	}
+	if m.job != nil && m.job.auto {
+		return m.waitAutoMods(inst, override, then)
+	}
 	if m.job != nil {
 		m.notices[inst.Dir] = notice{warn: []string{"I didn't check your server's mods because I'm busy with " +
 			m.jobName() + ". I'll do it the next time you play."}}
@@ -102,6 +105,9 @@ func (m *model) onModsPrepared(s *update.ModsSync) tea.Cmd {
 		f.reopen(m, why)
 		return nil
 	}
+	if cmd, ok := m.autoTried(s); ok {
+		return cmd
+	}
 	m.job.phase = "apply"
 	apply, rep := m.applyMods, m.reporter()
 	return func() tea.Msg {
@@ -114,6 +120,10 @@ func (m *model) onModsPrepared(s *update.ModsSync) tea.Cmd {
 // what waited for it. A sync started in a dialog with nothing after it says what it did
 // in a dialog instead.
 func (m *model) onModsSynced(msg modsSyncedMsg) tea.Cmd {
+	if m.job.auto {
+		m.refresh()
+		return m.endAutoMods(autoSynced(msg, m.home[m.job.dir]), true)
+	}
 	j, then, f := m.job, m.afterMods, m.modsFlow
 	if f != nil {
 		m.endModsFlow()
@@ -137,6 +147,9 @@ func (m *model) onModsSynced(msg modsSyncedMsg) tea.Cmd {
 // the player stopped goes back to the field; one started in a dialog with nothing after
 // it says so in a dialog.
 func (m *model) onModsErr(err error) tea.Cmd {
+	if m.job.auto {
+		return m.endAutoMods(autoFailed(err))
+	}
 	j, then, f := m.job, m.afterMods, m.modsFlow
 	if f != nil {
 		m.endModsFlow()

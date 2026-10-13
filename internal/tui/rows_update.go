@@ -40,6 +40,9 @@ func (m *model) updateEntries() []entry {
 	if n, ok := m.notices[in.Dir]; ok {
 		es = append(es, textEntries(m.noticeLines(measure(m.pageWidth()), n)...)...)
 	}
+	if l := m.autoLine(in.Dir); l != "" {
+		es = append(es, entry{text: infoLine(l)})
+	}
 	if m.manifest == nil {
 		return append(append(es, m.offlineEntries()...), m.undoEntries(info)...)
 	}

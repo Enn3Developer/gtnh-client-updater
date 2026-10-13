@@ -26,7 +26,8 @@ stay `gtnh-update`.
 
 ```
 cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -play,
-                             -list, -self-update, -V; launches TUI; -h is `usage`
+                             -list, -self-update, -V, -instance X -server-mods L -yes
+                             (`modsLinkHeadless`); launches TUI; -h is `usage`
                              (intro, examples, options); words after the options are
                              refused (`checkArgs`)
 internal/appcfg/             launcher-wide settings: config.json under
@@ -94,6 +95,8 @@ internal/tui/                bubbletea UI, one persistent workspace (see "TUI wo
                              confirmation lines; flow_mods_dialog.go the Server mods
                              dialog (`manageMods`, `askModsLink`, `modsFlow`: a sync
                              shown in a progress dialog, then `resultDialog`);
+                             flow_mods_auto.go the syncs at start (`startAutoMods`,
+                             `job.auto`, `waitAutoMods`);
                              flow_create.go new instance; flow_restore.go undo; flow_self.go
                              launcher self-update (incl. progressDialog); flow_play.go
                              playCmd and the game monitor; reporter.go engine progress ->
@@ -292,7 +295,7 @@ else that some files may have changed and the backup folder is still there.
 
 A server can add jars on top of GTNH: a zip behind a link the server owner hands out
 (`State.CustomModsURL`). They follow the server, not the GTNH version: they're synced
-before every Play, right after the link is saved, and with every update and creation,
+when the launcher opens, before every Play, right after the link is saved, and with every update and creation,
 and never go into an update's backup or undo.
 
 - **Fetch** (servermods_fetch.go `fetchMods`): https only, redirects too (`httpsOnly`);
@@ -328,6 +331,24 @@ and never go into an update's backup or undo.
   overrides the link and is saved, "none" = no link) → `ModsSync.Apply` (refuses while
   the game runs, saves `CustomMods`/`CustomModsFP`, `CustomModsSynced` when the server
   answered; without a link drops the copy).
+- **At start** (flow_mods_auto.go): after load (no `-create`/`-version`/`-play`) `afterLoad`
+  sends `autoModsMsg`, and `startAutoMods` queues every GTNH instance with a link (the
+  selected one first, with `-server-mods` when given) and syncs them one by one as
+  `jobMods` with `job.auto`: same sync as Play (journaled, rollback, the player's jars
+  never deleted), so the player never has to open anything. Chosen over "only check at
+  start, install at Play" because mods then also arrive for a game started from Prism,
+  and the sync is local and fast once the archive is fetched; the risk is a game
+  starting during it, which `ModsSync.Apply`'s `ErrGameRunning` check covers as at Play
+  (the next Play syncs). An auto job is quiet: `jobShown` is false (the Play rows and
+  Update section stay; `autoLine` "◐ Checking your server's mods…" under Update; the
+  sidebar's ◐ via `jobOn`), and its outcome is a notice, never a dialog (`autoSynced`:
+  "Server mods synced just now · 2 new" / "Your server's mods are up to date."; `autoFailed`:
+  why, or "The game is running, so I'll sync … next time you play."; a cancelled one says
+  nothing). Play during it doesn't refuse (`waitAutoMods`): on the same instance it waits
+  for that sync, on another it stops the download (`autoCancel`) and syncs its own; the
+  rest of the queue is dropped. Other actions say "Just a moment" (`notifyBusy`). A
+  `-server-mods` link that can't be fetched is not saved and nothing changes (`tryLink`,
+  `autoTried`).
 - **TUI**: the sync is `jobMods` (title "Syncing your server's mods"; prepare = the fetch,
   apply follows at once, no confirmation). Before Play it never ends in an error dialog:
   the notice says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed
@@ -354,7 +375,9 @@ and never go into an update's backup or undo.
   confirmations list "Server mods from <host>: …" with the warnings and dim lines of
   `modsPreview`/`modsLines`.
 - **CLI**: `-yes` updates and `-create` print the sync (`printMods`); `-play -yes` syncs
-  before the launch (`syncModsHeadless`).
+  before the launch (`syncModsHeadless`); `-instance X -server-mods <link|none> -yes`
+  without `-version` sets the link and syncs (`modsLinkHeadless`; a new link that can't
+  be fetched is refused, not saved); without `-yes` the start sync uses it.
 - **mcconsole** (the server side) publishes an empty zip when the last jar goes, never no
   file: a 404 keeps the installed mods (a broken link isn't "no mods").
 

@@ -147,6 +147,9 @@ type model struct {
 	modsOverride    string                 // the server-mods link the next sync uses and saves ("none" = none); "" = the instance's
 	afterMods       func(m *model) tea.Cmd // runs when the jobMods is done, whatever its outcome
 	modsFlow        *modsFlow              // the jobMods started in a dialog, shown there; nil = none
+	autoQueue       []prism.Instance       // instances whose server mods the launcher syncs on its own next
+	autoLink        string                 // the command line's link for the first of them; "" = theirs
+	autoCancel      context.CancelFunc     // stops the download of the running auto sync
 	newName         string
 	detect          update.Detection
 	nameUsed        bool              // cfg.Name was offered already
@@ -245,6 +248,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.job != nil {
 			return m, m.onRestored(msg.r)
 		}
+	case autoModsMsg:
+		return m, m.startAutoMods()
 	case modsPreparedMsg:
 		return m, m.onModsPrepared(msg.s)
 	case modsSyncedMsg:

@@ -50,6 +50,8 @@ type (
 		p        *update.ModsPlan
 		fetchErr error
 	}
+	// autoModsMsg: the instances are loaded, start the syncs of their server's mods.
+	autoModsMsg struct{}
 	// noPrismMsg: no Prism data dir was found or given.
 	noPrismMsg struct{}
 )
