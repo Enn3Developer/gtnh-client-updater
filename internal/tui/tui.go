@@ -137,6 +137,7 @@ type model struct {
 	creation        *update.Creation
 	cancelCreate    context.CancelFunc // stops the running PrepareCreate; nil when none runs
 	quitAfterCancel bool               // quit once the cancelled PrepareCreate has returned
+	quitRefused     bool               // the last key was a q or ctrl+c refused mid-apply
 	target          string
 	serverMods      string                 // the server-mods link of the update or creation, "" = none
 	serverModsGiven bool                   // serverMods came from the command line: it's the player's answer
@@ -260,6 +261,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notify("Something went wrong", msg.err.Error())
 	case tea.KeyMsg:
+		m.quitRefused = false
 		if cmd, ok := m.keyEdit(msg); ok {
 			return m, cmd
 		}
@@ -411,7 +413,8 @@ func (m *model) quit() (tea.Model, tea.Cmd) {
 // quits once it has cleaned up, else quits.
 func (m *model) quitKey() tea.Cmd {
 	if m.busyApplying() {
-		return nil // never quit mid-apply
+		m.quitRefused = true // never quit mid-apply; the status bar says so
+		return nil
 	}
 	if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
 		m.cancelCreate() // quit once the download has cleaned up (C10)

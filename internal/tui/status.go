@@ -36,6 +36,10 @@ func statusBar(width int, pairs ...string) string {
 	return line + bg.Render(strings.Repeat(" ", max(width-ansi.StringWidth(line), 0)))
 }
 
+// cantQuitNow replaces the "please don't close" pair after q or ctrl+c was refused
+// mid-apply, until the next key.
+const cantQuitNow = "I can't quit in the middle of this — wait for it to finish"
+
 // statusPairs are the key/label pairs for what's on screen now (C7).
 func (m *model) statusPairs() []string {
 	switch {
@@ -46,6 +50,9 @@ func (m *model) statusPairs() []string {
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
 	case m.dialog != nil && m.dialog.buttons == nil && m.dialog.list == nil && m.dialog.input == nil:
+		if m.quitRefused {
+			return []string{"", cantQuitNow}
+		}
 		return []string{"", "updating the launcher — please don't close this window"} // the progress dialog (C6)
 	case m.dialog != nil:
 		return m.dialogPairs()
@@ -64,6 +71,9 @@ func (m *model) statusPairs() []string {
 		if m.sidebarShows() {
 			pairs = append(pairs, "tab", "instances")
 		}
+	}
+	if m.busyApplying() && m.quitRefused {
+		return append(pairs, "", cantQuitNow)
 	}
 	if m.busyApplying() {
 		return append(pairs, "", "updating — please don't close this window")

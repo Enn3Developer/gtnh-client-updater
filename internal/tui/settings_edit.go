@@ -101,6 +101,7 @@ func (m *model) keyEdit(k tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	case "ctrl+c":
 		if m.busyApplying() {
+			m.quitRefused = true
 			return nil, true // never quit mid-apply; keep the field as typed
 		}
 		m.cancelEdit()

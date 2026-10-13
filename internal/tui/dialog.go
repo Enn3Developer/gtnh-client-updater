@@ -258,6 +258,9 @@ func (m *model) keyDialog(k tea.KeyMsg) (cmd tea.Cmd, handled bool) {
 	if d == nil {
 		return nil, false
 	}
+	if s := k.String(); d.buttons == nil && d.list == nil && d.input == nil && (s == "q" || s == "ctrl+c") {
+		m.quitRefused = m.busyApplying() // the progress dialog: say why nothing happens
+	}
 	if d.input != nil {
 		return m.keyInput(k), true
 	}

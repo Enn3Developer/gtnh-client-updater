@@ -269,3 +269,17 @@ func TestC14StatusBarDuringTheLauncherUpdate(t *testing.T) {
 		})
 	}
 }
+
+// q in the launcher's progress dialog says why nothing happens.
+func TestSelfUpdateProgressSaysWhyQDoesNothing(t *testing.T) {
+	m := selfRunning(t)
+
+	cmd := press(m, "q")
+
+	if m.quitting || hasQuit(runCmd(cmd)) {
+		t.Fatalf("q quit mid self-update")
+	}
+	if got := m.statusPairs(); len(got) != 2 || got[1] != cantQuitNow {
+		t.Errorf("statusPairs = %q, want %q", got, cantQuitNow)
+	}
+}

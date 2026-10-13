@@ -546,7 +546,8 @@ reads what the page shows about each instance into `m.home`.
   save · esc cancel". Otherwise sidebar focus "↑↓ instance · enter play · tab page" or
   page focus "↑↓ move · enter run|edit [· tab instances]", then "n new instance", "a show
   all" (when non-GTNH instances exist or all are shown), then "updating please don't
-  close this window" while applying, "stopping cleaning up…" while a cancelled create
+  close this window" while applying (after a refused q/ctrl+c, until the next key: "I
+  can't quit in the middle of this — wait for it to finish", `quitRefused`), "stopping cleaning up…" while a cancelled create
   download cleans up, else "q quit".
 - **Dialogs** (dialog.go): one at a time (`m.dialog`), a rounded dim-bordered box with the
   title in the top border, content on the bar background, buttons as right-aligned chips
