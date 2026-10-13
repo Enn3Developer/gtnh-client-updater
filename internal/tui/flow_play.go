@@ -50,7 +50,7 @@ func (m *model) launchCmd(inst prism.Instance, join bool) tea.Cmd {
 	}
 	l, err := m.findLauncher(dataDir, m.app.PrismExe)
 	if errors.Is(err, prism.ErrLauncherNotFound) {
-		m.notify(launchFailedTitle, "I couldn't find Prism Launcher on this computer. Start the game from Prism yourself, or tell me where Prism is in the settings.")
+		m.launcherMissing()
 		return nil
 	}
 	if err != nil {
@@ -65,6 +65,29 @@ func (m *model) launchCmd(inst prism.Instance, join bool) tea.Cmd {
 		}
 		return launchedMsg{}
 	}
+}
+
+// setPrismButton opens the Prism Launcher setting from the launcher-missing dialog.
+const setPrismButton = "Set Prism's location"
+
+// launcherMissing says Prism Launcher couldn't be found (at the place the settings name,
+// when they do) and offers to open that setting.
+func (m *model) launcherMissing() {
+	text := "I couldn't find Prism Launcher on this computer. Start the game from Prism yourself, or tell me where Prism is in the settings."
+	if exe := m.app.PrismExe; exe != "" {
+		text = "Prism Launcher isn't at " + exe + " anymore, where the settings say it is. Start the game from Prism yourself, or fix its location in the settings."
+	}
+	m.openDialog(&dialog{
+		title: launchFailedTitle, body: func(int) string { return text },
+		buttons: []string{setPrismButton, "OK"},
+		onButton: func(m *model, label string) tea.Cmd {
+			m.closeDialog()
+			if label == setPrismButton {
+				return m.editSetting("prism")
+			}
+			return nil
+		},
+	})
 }
 
 // gameUnderway reports whether the game of the instance in dir is starting or running.

@@ -236,7 +236,9 @@ running, and says "One thing at a time" while a job runs on the instance.
    instance while it's watched.
 
 A launcher that can't be found → dialog "I couldn't start the game" telling the player to
-start the game from Prism or set Prism's location in the settings.
+start the game from Prism or set Prism's location in the settings (naming the saved
+location when it's gone), `[ Set Prism's location ]  [ OK ]`; the first opens that
+setting for editing (`launcherMissing`).
 
 Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
 (same as `-yes` update), else syncs the server's mods (`syncModsHeadless`; `-server-mods`
