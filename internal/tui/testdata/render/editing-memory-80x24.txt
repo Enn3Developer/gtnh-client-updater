@@ -13,8 +13,8 @@ Instances        │ Older
                  │
                  │ Settings
                  │ ▸ Memory         6144
-                 │   How much memory the game may use, in MB — GTNH runs well
-                 │   with 6144 to 8192. Empty means Prism's default.
+                 │   Memory for the game, like 8 GB or 8192 MB — GTNH runs well
+                 │   with 6 to 8 GB. Empty means Prism's default.
                  │   Java arguments Prism's default
                  │   Java           Prism's default
                  │   Window         Prism's default

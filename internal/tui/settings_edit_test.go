@@ -410,7 +410,7 @@ func TestC3EscCancelsWithoutSaving(t *testing.T) {
 
 // C3
 func TestC3MoveKeysAreIgnoredWhileEditing(t *testing.T) {
-	for _, k := range []string{"up", "down", "tab", "shift+tab", "left", "right"} {
+	for _, k := range []string{"up", "down", "tab", "shift+tab"} {
 		t.Run(k, func(t *testing.T) {
 			m, _ := twoGTNH(t)
 			m.focus = focusPage
@@ -501,7 +501,7 @@ func TestC4ARefusedValueKeepsEditingWithTheReason(t *testing.T) {
 
 	seSave(t, m, "memory", "abc")
 
-	if m.edit == nil || m.edit.err != "Give me a whole number of MB between 1024 and 65536." {
+	if m.edit == nil || m.edit.err != "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB." {
 		t.Fatalf("edit after a bad value = %+v, want still editing with the memory message", m.edit)
 	}
 	if after := seCfg(t, in.Dir); after != before {
@@ -780,7 +780,7 @@ func TestC6CheckSettingMessages(t *testing.T) {
 	const (
 		badServer = "That doesn't look like a server address — try play.example.com or play.example.com:25565."
 		badMods   = "That doesn't look like a download link — it should start with https://"
-		badMemory = "Give me a whole number of MB between 1024 and 65536."
+		badMemory = "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB."
 		badFile   = "I can't find a file there."
 		badWindow = "Give me width and height like 1920x1080."
 	)
@@ -878,10 +878,10 @@ func TestC2EditingRendersTheFieldHelpAndErrorAt80x24(t *testing.T) {
 	if !strings.HasPrefix(strings.TrimLeft(field, " "), "▸ Memory         8192") {
 		t.Errorf("field line = %q, want ▸ Memory and the value 8192", field)
 	}
-	if !containsLine(plain, "How much memory the game may use") {
+	if !containsLine(plain, "Memory for the game, like 8 GB") {
 		t.Errorf("no help line:\n%s", strings.Join(plain, "\n"))
 	}
-	if !containsLine(refused, "Give me a whole number of MB between 1024 and 65536.") {
+	if !containsLine(refused, "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB.") {
 		t.Errorf("no error line after a refused value:\n%s", strings.Join(refused, "\n"))
 	}
 }

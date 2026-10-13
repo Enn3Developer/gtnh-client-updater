@@ -106,7 +106,7 @@ func TestC4LongJavaArgumentsAreTruncatedToFit(t *testing.T) {
 // C2
 func TestC2SettingHelpTexts(t *testing.T) {
 	cases := []struct{ id, want string }{
-		{"memory", "How much memory the game may use, in MB — GTNH runs well with 6144 to 8192. Empty means Prism's default."},
+		{"memory", "Memory for the game, like 8 GB or 8192 MB — GTNH runs well with 6 to 8 GB. Empty means Prism's default."},
 		{"jvm", "Extra arguments for Java. Only change this if someone told you what to put here. Empty means Prism's default."},
 		{"java", "Full path of the java program Prism should use for this instance. Empty means Prism's default."},
 		{"window", "Width and height of the game window, like 1920x1080. Empty means Prism's default."},
@@ -139,7 +139,7 @@ func TestC2TheEditedRowIsTheFieldAndItsHelp(t *testing.T) {
 	if first := ansi.Strip(lines[0]); !strings.HasPrefix(first, "▸ Memory         8192") || strings.Contains(first, ">") {
 		t.Errorf("field line = %q, want ▸, the label padded to 15 and the value without a prompt", first)
 	}
-	if help := ansi.Strip(lines[1]); help != "  How much memory the game may use, in MB — GTNH runs well with 6144 to 8192. Empty means Prism's default." {
+	if help := ansi.Strip(lines[1]); help != "  Memory for the game, like 8 GB or 8192 MB — GTNH runs well with 6 to 8 GB. Empty means Prism's default." {
 		t.Errorf("help line = %q", help)
 	}
 }

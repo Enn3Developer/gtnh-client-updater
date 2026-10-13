@@ -400,7 +400,11 @@ and never go into an update's backup or undo.
   whole number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024,
   it)); Java path and Prism location must be existing regular files; window `WxH` (x or
   ×), each 320–16384. An empty value means Prism's default / none. Server and mods link go
-  to state.json via `update.UpdateState`, the Prism location to appcfg.
+  to state.json via `update.UpdateState`, the Prism location to appcfg. Before the check
+  `normalSetting` puts what was typed into that form: memory via `parseMemory` ("8 GB",
+  "8G", "8192 MB"; a bare number up to 64 is GB), a window size without spaces, paths
+  through `cleanPath` (quotes, ~), and a folder given for Java or Prism becomes the
+  program inside it (`bin/java[w].exe`, `prismlauncher[.exe]`, a macOS `.app`).
 - **Restore only removes paths recorded in `Added`** and only moves back files the backup
   holds; nothing outside that list is deleted. Never "guess" added files from a
   manifest-less backup.
@@ -582,8 +586,8 @@ reads what the page shows about each instance into `m.home`.
   turns it into "▸ <label>  <text field>" with a dim help line (`settingHelp`) and a red
   error line. While editing (`keyEdit`) enter saves (`saveEdit`: `checkSetting` → on an
   error the message stays in the row and editing continues; else `saveSetting`,
-  `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab/`←→` are
-  swallowed, other keys type. An empty value means Prism's default / none. The "After I
+  `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab are
+  swallowed, other keys (`←→` included: they move the cursor) go to the field. An empty value means Prism's default / none. The "After I
   start the game" row toggles stay/quit on enter and saves at once. Saving the Server mods
   row starts the sync; saving a server on an instance never asked about its mods opens
   the mods question. Editing is refused while a dialog is open or a job runs on the
