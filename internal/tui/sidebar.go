@@ -13,7 +13,9 @@ func (m *model) sidebarShows() bool {
 	return m.loaded && len(m.visible()) > 1
 }
 
-// sidebarWidth is clamp(longest visible name + 4, 16, 28); 0 when the sidebar is hidden.
+// sidebarWidth is clamp(longest visible name + 4, 16, 28), but at most a third of the
+// terminal (at least 10) so a narrow one keeps room for the page; 0 when the sidebar is
+// hidden.
 func (m *model) sidebarWidth() int {
 	if !m.sidebarShows() {
 		return 0
@@ -22,7 +24,7 @@ func (m *model) sidebarWidth() int {
 	for _, in := range m.visible() {
 		longest = max(longest, ansi.StringWidth(in.Name))
 	}
-	return max(min(longest+4, 28), 16)
+	return min(max(min(longest+4, 28), 16), max(m.width/3, 10))
 }
 
 // sidebarView is the dim "Instances" heading and one glyph + name line per visible

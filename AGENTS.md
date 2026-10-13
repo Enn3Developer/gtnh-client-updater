@@ -481,7 +481,8 @@ reads what the page shows about each instance into `m.home`.
   right side gives way first.
 - **Sidebar** (sidebar.go): only when loaded and more than one instance is visible
   (`sidebarShows`; `visible()` = the GTNH instances, or all of them after `a`, plus the
-  pending one). Width clamp(longest name + 4, 16, 28) (`sidebarWidth`). A dim "Instances"
+  pending one). Width clamp(longest name + 4, 16, 28), at most max(width/3, 10)
+  so a narrow terminal keeps room for the page (`sidebarWidth`). A dim "Instances"
   heading, then one "<glyph> <name>" line per instance, scrolled to keep the selection
   visible. Glyphs (`glyph`): ● up to date (ok colour), ▲ newer version out (warn), ○ not
   GTNH or version unknown (dim), ◐ (accent) for the instance whose game is being watched
@@ -539,7 +540,7 @@ reads what the page shows about each instance into `m.home`.
   page; `esc` on the play row dismisses a finished game state. Letter shortcuts work with
   no dialog open (see "Keys" under Invariants).
 - **Status bar** (`statusPairs`, status.go): key/label chips on the bar background; pairs
-  that don't fit are dropped from the end. Before load: "q quit". With a dialog, its pairs
+  that don't fit are dropped from the end, except a last "q quit", which stays. Before load: "q quit". With a dialog, its pairs
   (`dialogPairs`; list: ↑↓ move · enter choose · esc cancel [· space switch]; input:
   enter continue · esc cancel; buttons: ←→ choose · enter ok · esc cancel; the progress
   dialog: "updating please don't close this window"). While editing a setting: "enter

@@ -11,8 +11,37 @@ import (
 )
 
 // statusBar is the bottom line: key/label pairs on barBg across width; pairs that don't
-// fit are dropped from the end, a lone first pair is truncated (C7).
+// fit are dropped from the end, a lone first pair is truncated (C7). A last "q quit"
+// stays: the pairs before it give way first, so a narrow terminal still says how to quit.
 func statusBar(width int, pairs ...string) string {
+	if n := len(pairs) / 2; n > 1 && pairs[2*n-2] == "q" && pairsWidth(pairs...) > width-1 {
+		quit := pairs[2*n-2 : 2*n]
+		for k := n - 1; k >= 1; k-- {
+			if pairsWidth(pairs[:2*k]...)+3+pairsWidth(quit...) <= width-1 {
+				return barOf(width, append(slices.Clone(pairs[:2*k]), quit...)...)
+			}
+		}
+	}
+	return barOf(width, pairs...)
+}
+
+// pairsWidth is how wide the pairs are on the status bar.
+func pairsWidth(pairs ...string) int {
+	w := 0
+	for i := 0; i+1 < len(pairs); i += 2 {
+		if i > 0 {
+			w += 3
+		}
+		w += ansi.StringWidth(pairs[i+1])
+		if pairs[i] != "" {
+			w += ansi.StringWidth(pairs[i]) + 1
+		}
+	}
+	return w
+}
+
+// barOf draws pairs as statusBar does, dropping from the end what doesn't fit.
+func barOf(width int, pairs ...string) string {
 	bg := lipgloss.NewStyle().Background(barBg)
 	keySty := titleSty.Background(barBg)
 	labelSty := dimSty.Background(barBg)
