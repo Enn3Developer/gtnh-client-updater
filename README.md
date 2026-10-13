@@ -106,9 +106,14 @@ game starts.
 
 Some servers add a few mods on top of GTNH: a `.zip` of jars behind a link the server owner
 gives you. gtnh-update asks for it the first time you press **j** (Play & join) or save a
-server in Settings; change or remove it later in Settings. From then on the server's mods
-are synced every time you press Play, right after you change the link, and with every
+server in Settings, or press enter on *Server mods* in Settings to add it yourself. A link
+is only saved once the mods could be downloaded from it; if not, you're told why right
+there. From then on the server's mods are synced every time you press Play and with every
 update.
+
+With a link set, *Server mods* shows it and the mods it installed, and lets you **check for
+new mods** right away (no need to start the game), **use another link**, or **stop using
+them**; each tells you what changed.
 
 - Only mods that came from the link are ever removed, and not if you changed them.
 - If one of your own jars is in the way of a server mod (same file or same mod), it's moved

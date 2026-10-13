@@ -151,7 +151,11 @@ func TestC1UnreadableSettingsRefuseTheInstanceCfgSettings(t *testing.T) {
 
 // C1: unreadable settings don't refuse the settings kept elsewhere.
 func TestC1UnreadableSettingsStillAllowServerModsAndPrism(t *testing.T) {
-	for _, id := range []string{"server", "mods", "prism"} {
+	m, _, _ := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", noCfg: true})
+	if m.editSetting("mods"); dialogTitle(m) != modsDialogTitle {
+		t.Errorf("editSetting(mods) with unreadable settings: dialog %q, want the Server mods dialog", dialogTitle(m))
+	}
+	for _, id := range []string{"server", "prism"} {
 		t.Run(id, func(t *testing.T) {
 			m, _, _ := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", noCfg: true})
 
@@ -327,7 +331,7 @@ func TestC1RawSettingValueIsTheStoredValue(t *testing.T) {
 		{"window off", "window", off, app, ""},
 		{"server set", "server", set, app, "mc.example.net:25565"},
 		{"server none", "server", off, app, ""},
-		{"mods set", "mods", set, app, "https://dl.example.com/pack/extra.zip"},
+		{"mods set", "mods", set, app, ""}, // its own dialog
 		{"mods none", "mods", off, app, ""},
 		{"prism set", "prism", off, app, "/opt/prism/prismlauncher"},
 		{"prism auto", "prism", off, appcfg.Config{}, ""},
@@ -359,7 +363,7 @@ func TestC1RawSettingValueWithEverythingSetPicksEachOwnValue(t *testing.T) {
 		{"java", "/usr/lib/jvm/java-21/bin/java"},
 		{"window", "1920x1080"},
 		{"server", "mc.example.net:25565"},
-		{"mods", "https://dl.example.com/pack/extra.zip"},
+		{"mods", ""},
 		{"prism", "/opt/prism/prismlauncher"},
 		{"after", ""},
 		{"unknown", ""},
@@ -679,28 +683,6 @@ func TestC4ServerCleared(t *testing.T) {
 }
 
 // C4
-func TestC4ModsLinkIsSavedAndMarkedAsked(t *testing.T) {
-	m, _, in := seHome(t, "")
-
-	seSave(t, m, "mods", "https://dl.example.com/extra.zip")
-
-	if st := seState(t, in.Dir); st.CustomModsURL != "https://dl.example.com/extra.zip" || !st.CustomModsAsked {
-		t.Errorf("state = url %q asked %v, want the link and asked", st.CustomModsURL, st.CustomModsAsked)
-	}
-}
-
-// C4
-func TestC4ModsClearedIsNoneButAsked(t *testing.T) {
-	m, _, in := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", mods: "https://old.example.org/m.zip"})
-
-	seSave(t, m, "mods", "")
-
-	if st := seState(t, in.Dir); st.CustomModsURL != "" || !st.CustomModsAsked {
-		t.Errorf("state = url %q asked %v, want none and asked", st.CustomModsURL, st.CustomModsAsked)
-	}
-}
-
-// C4
 func TestC4PrismLocationIsSavedToTheAppSettings(t *testing.T) {
 	m, f, _ := seHome(t, "")
 	exe := seFile(t, "prismlauncher")
@@ -804,8 +786,6 @@ func TestC6CheckSettingMessages(t *testing.T) {
 		{"server", "a b", badServer}, {"server", "http://x", badServer}, {"server", "play.example.com", ""},
 		{"server", ":25565", badServer}, {"server", "host:abc", badServer}, {"server", "host:1", ""},
 		{"server", "host:25565:1", badServer},
-
-		{"mods", "http://x", badMods}, {"mods", "https://dl.example.com/extra.zip", ""}, {"mods", "ftp://x", badMods},
 
 		{"java", file, ""}, {"java", dir, badFile}, {"java", missing, badFile},
 		{"prism", file, ""}, {"prism", dir, badFile}, {"prism", missing, badFile},

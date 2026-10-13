@@ -48,6 +48,8 @@ func (m *model) editSetting(id string) tea.Cmd {
 	case "after":
 		m.toggleAfterPlay()
 		return nil
+	case "mods":
+		return m.manageMods() // a dialog of its own: the link is checked before it's saved
 	}
 	field := textinput.New()
 	field.Prompt = ""
@@ -132,10 +134,7 @@ func (m *model) saveEdit() tea.Cmd {
 	m.refresh()
 	m.savedRow = e.id
 	m.selectRow(e.id) // a first server adds the join row above it
-	switch info := m.home[in.Dir]; {
-	case e.id == "mods":
-		return m.syncMods(in, nil) // a new link gets its mods now, none takes them out
-	case e.id == "server" && v != "" && info.gtnh && !info.modsAsked && info.modsURL == "":
+	if info := m.home[in.Dir]; e.id == "server" && v != "" && info.gtnh && !info.modsAsked && info.modsURL == "" {
 		return m.askServerMods(in, nil)
 	}
 	return nil
@@ -159,8 +158,6 @@ func settingHelp(id string) string {
 		return "Width and height of the game window, like 1920x1080. Empty means Prism's default."
 	case "server":
 		return "The server you usually play on, like play.example.com or play.example.com:25565. Empty means none."
-	case "mods":
-		return "The link your server owner gave you for its extra mods. Empty means none."
 	case "prism":
 		return "Where Prism Launcher is on this computer — the full path of its program. Empty lets me find it myself."
 	}
@@ -246,10 +243,6 @@ func checkSetting(id, v string) string {
 		if !checkServerAddress(v) {
 			return msgBadServer
 		}
-	case "mods":
-		if update.CheckCustomModsURL(v) != nil {
-			return msgBadModsLink
-		}
 	case "memory":
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1024 || n > 65536 {
@@ -273,11 +266,6 @@ func (m *model) saveSetting(dir, id, v string) error {
 	switch id {
 	case "server":
 		return update.UpdateState(dir, func(st *update.State) { st.ServerAddress = v })
-	case "mods":
-		return update.UpdateState(dir, func(st *update.State) {
-			st.CustomModsURL = v
-			st.CustomModsAsked = true
-		})
 	case "prism":
 		prev := m.app
 		m.app.PrismExe = v
@@ -372,8 +360,6 @@ func rawSettingValue(id string, info homeInfo, app appcfg.Config) string {
 		return fmt.Sprintf("%dx%d", s.WinWidth, s.WinHeight)
 	case id == "server":
 		return info.server
-	case id == "mods":
-		return info.modsURL
 	case id == "prism":
 		return app.PrismExe
 	}

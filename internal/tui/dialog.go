@@ -24,6 +24,7 @@ type dialog struct {
 	inputErr string
 	onPick   func(m *model, key string) tea.Cmd // enter on a list item; nil = press the button
 	note     string
+	pairs    func(m *model) []string // the status bar's pairs; nil = the kind's own
 }
 
 // ditem is one choice of a list dialog.
@@ -324,6 +325,8 @@ func (m *model) keyInput(k tea.KeyMsg) tea.Cmd {
 // dialogPairs are the status bar's key/label pairs for the open dialog (C11).
 func (m *model) dialogPairs() []string {
 	switch d := m.dialog; {
+	case d.pairs != nil:
+		return d.pairs(m)
 	case d.list != nil:
 		pairs := []string{"↑↓", "move", "enter", "choose", "esc", "cancel"}
 		if d.list.toggle != nil {

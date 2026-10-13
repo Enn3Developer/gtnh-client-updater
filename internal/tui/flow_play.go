@@ -34,7 +34,7 @@ func (m *model) playCmd(join bool) tea.Cmd {
 	}
 	m.holdOpen = false
 	if info := m.home[inst.Dir]; join && info.gtnh && !info.modsAsked && info.modsURL == "" {
-		return m.askServerMods(inst, func(m *model) tea.Cmd { return m.playCmd(join) })
+		return m.askServerMods(inst, func(m *model) tea.Cmd { return m.launchCmd(inst, join) })
 	}
 	return m.syncMods(inst, func(m *model) tea.Cmd { return m.launchCmd(inst, join) })
 }

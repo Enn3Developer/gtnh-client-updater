@@ -78,6 +78,8 @@ func (m *model) statusPairs() []string {
 		return m.dialogPairs()
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
+	case m.dialog != nil && m.dialog.pairs != nil:
+		return m.dialog.pairs(m)
 	case m.dialog != nil && m.dialog.buttons == nil && m.dialog.list == nil && m.dialog.input == nil:
 		if m.quitRefused {
 			return []string{"", cantQuitNow}

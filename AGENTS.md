@@ -89,8 +89,11 @@ internal/tui/                bubbletea UI, one persistent workspace (see "TUI wo
                              status.go statusBar, statusPairs; flow_load.go load, afterLoad,
                              cfgInstance, reload; flow_update.go startUpdate -> prepare ->
                              conflicts/resolve/confirm -> apply -> notice; flow_mods.go the
-                             server-mods sync job (`syncMods`), the mods question
-                             (`askServerMods`), mods notices and confirmation lines;
+                             server-mods sync job (`syncMods`/`startModsSync`), the
+                             mods question (`askServerMods`), mods notices and
+                             confirmation lines; flow_mods_dialog.go the Server mods
+                             dialog (`manageMods`, `askModsLink`, `modsFlow`: a sync
+                             shown in a progress dialog, then `resultDialog`);
                              flow_create.go new instance; flow_restore.go undo; flow_self.go
                              launcher self-update (incl. progressDialog); flow_play.go
                              playCmd and the game monitor; reporter.go engine progress ->
@@ -326,14 +329,28 @@ and never go into an update's backup or undo.
   the game runs, saves `CustomMods`/`CustomModsFP`, `CustomModsSynced` when the server
   answered; without a link drops the copy).
 - **TUI**: the sync is `jobMods` (title "Syncing your server's mods"; prepare = the fetch,
-  apply follows at once, no confirmation). It never ends in an error dialog: the notice
-  says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed N mods of
-  your old server just now") or why not (`modsNotice`, `addMods`); nothing changed and
-  the server answered → no notice. The question "Does your server have extra mods?"
-  (`askServerMods`) comes on Play and join, or after saving a server address, on an
-  instance never asked; updates and creations never ask. Saving the Server mods row
-  syncs at once (clearing it takes the jars out). The row shows "<host> · N mods ·
-  synced <ago>" or "<host> · not synced yet" (`modsValue`). Update and create
+  apply follows at once, no confirmation). Before Play it never ends in an error dialog:
+  the notice says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed
+  N mods of your old server just now") or why not (`modsNotice`, `addMods`); nothing
+  changed and the server answered → no notice. The question "Does your server have extra
+  mods?" (`askServerMods`) comes on Play and join, or after saving a server address, on
+  an instance never asked; updates and creations never ask. The row shows "<host> · N
+  mods · synced <ago>" or "<host> · not synced yet" (`modsValue`) and is not edited in
+  place: enter (`manageMods`) opens "Your server's mods" — without a link the field for
+  one; with a link the link, the mods it installed and when (`modsSummary`), and "Check
+  for new mods" (sync now) / "Use another link" (the field, holding the link) / "Stop
+  using them" (sync with "none"). Refused with "One thing at a time" while a job runs.
+- **Link field** (`askModsLink`, also the question): pasted quotes/spaces are dropped
+  (`cleanLink`); not https → `msgBadModsLink`; empty = none (an earlier link's jars are
+  taken out by a sync). A link is never saved before it works: Continue syncs from it
+  (`ModsSyncOptions.URL`, which only Apply saves) in a progress dialog ("Checking your
+  server's mods", esc stops the download via its Context and goes back to the field);
+  a *new* link whose fetch fails (`ModsSync.FetchErr`) is thrown away and the field
+  comes back with "I couldn't use that link: <reason>." Started from the row, the sync
+  ends in `resultDialog` ("Done: 2 new.", "You have all of the server's mods already.",
+  "I took out N mods of your server.", warnings, "From <host> now: <jars>") or the error
+  dialog ("Nothing was changed." / rolled back); from the question it ends in the
+  notice and the launch (`modsFlow.next`). Update and create
   confirmations list "Server mods from <host>: …" with the warnings and dim lines of
   `modsPreview`/`modsLines`.
 - **CLI**: `-yes` updates and `-create` print the sync (`printMods`); `-play -yes` syncs
@@ -400,10 +417,10 @@ and never go into an update's backup or undo.
   `MinecraftWinHeight`. (`prism.SetName` only builds the instance.cfg of a *new*
   instance.) Clearing a setting turns its `Override*` flag off and keeps the values.
 - **Settings validation lives in `tui.checkSetting`** (settings_edit.go): server
-  `host[:port]` (`checkServerAddress`); mods link `update.CheckCustomModsURL`; memory a
+  `host[:port]` (`checkServerAddress`); memory a
   whole number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024,
   it)); Java path and Prism location must be existing regular files; window `WxH` (x or
-  ×), each 320–16384. An empty value means Prism's default / none. Server and mods link go
+  ×), each 320–16384. An empty value means Prism's default / none. The server goes
   to state.json via `update.UpdateState`, the Prism location to appcfg. Before the check
   `normalSetting` puts what was typed into that form: memory via `parseMemory` ("8 GB",
   "8G", "8192 MB"; a bare number up to 64 is GB), a window size without spaces, paths
@@ -569,13 +586,15 @@ reads what the page shows about each instance into `m.home`.
   - notify (`notify`): title + text, OK;
   - progress (`progressDialog`, flow_self.go): buttonless, shows the running job's
     progress line and step text, takes and ignores every key; used by the launcher
-    self-update.
+    self-update, and by a server-mods sync from its dialog, where esc stops the download
+    and the status bar says "esc cancel" (`dialog.pairs` overrides `dialogPairs`).
 
   A dialog takes every key (`keyDialog`): esc = cancel/close, `←→`/tab/shift+tab move
   between buttons, enter activates; in a list `↑↓` move and enter picks; in an input
   dialog (`keyInput`) every key but enter/esc/tab/shift+tab goes to the field.
 - **Jobs** (jobs.go): kinds update, create, restore, self, mods (`jobKind`; mods is the
-  server-mods sync, see "Server mods", which never ends in an error dialog); phase "prepare" |
+  server-mods sync, see "Server mods", which ends in an error dialog only when started
+  from the Server mods dialog); phase "prepare" |
   "apply"; one at a time — starting another shows "One thing at a time" (`notifyBusy`).
   The job block (`jobBlock`) replaces the Play rows of its instance: "◐ <title>" (hint
   "please wait" while applying), a progress bar with percentage and "N of M files" / MB
@@ -601,9 +620,9 @@ reads what the page shows about each instance into `m.home`.
   error the message stays in the row and editing continues; else `saveSetting`,
   `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab are
   swallowed, other keys (`←→` included: they move the cursor) go to the field. An empty value means Prism's default / none. The "After I
-  start the game" row toggles stay/quit on enter and saves at once. Saving the Server mods
-  row starts the sync; saving a server on an instance never asked about its mods opens
-  the mods question. Editing is refused while a dialog is open or a job runs on the
+  start the game" row toggles stay/quit on enter and saves at once. The Server mods row isn't
+  edited in place (its own dialog, see "Server mods"); saving a server on an instance
+  never asked about its mods opens the mods question. Editing is refused while a dialog is open or a job runs on the
   instance; a save failure shows the dialog "I couldn't save that setting".
 
 ## UI voice

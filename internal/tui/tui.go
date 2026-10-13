@@ -83,6 +83,7 @@ type homeInfo struct {
 	settings                              prism.Settings
 	settingsErr                           error
 	mods                                  int       // server mods the sync manages
+	modNames                              []string  // their file names
 	synced                                time.Time // when they were last synced with the server; zero = never
 	modsAsked                             bool      // the player answered whether the server has extra mods
 }
@@ -145,6 +146,7 @@ type model struct {
 	holdOpen        bool                   // the launch came with a warning: stay open even if set to quit
 	modsOverride    string                 // the server-mods link the next sync uses and saves ("none" = none); "" = the instance's
 	afterMods       func(m *model) tea.Cmd // runs when the jobMods is done, whatever its outcome
+	modsFlow        *modsFlow              // the jobMods started in a dialog, shown there; nil = none
 	newName         string
 	detect          update.Detection
 	nameUsed        bool              // cfg.Name was offered already
@@ -395,6 +397,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	if st != nil {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
 		info.mods, info.synced, info.modsAsked = len(st.CustomMods), st.CustomModsSynced, st.CustomModsAsked
+		info.modNames = st.CustomMods
 	}
 	if in.GTNH {
 		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {

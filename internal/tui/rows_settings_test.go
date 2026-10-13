@@ -111,7 +111,7 @@ func TestC2SettingHelpTexts(t *testing.T) {
 		{"java", "Full path of the java program Prism should use for this instance. Empty means Prism's default."},
 		{"window", "Width and height of the game window, like 1920x1080. Empty means Prism's default."},
 		{"server", "The server you usually play on, like play.example.com or play.example.com:25565. Empty means none."},
-		{"mods", "The link your server owner gave you for its extra mods. Empty means none."},
+		{"mods", ""}, // its own dialog
 		{"prism", "Where Prism Launcher is on this computer — the full path of its program. Empty lets me find it myself."},
 		{"after", ""},
 		{"play", ""},

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -36,32 +38,11 @@ func serverModsLink(cfg string, st *update.State) (url string, given bool) {
 	return "", false
 }
 
-// askServerMods asks whether the server of inst has extra mods and saves the answer,
-// then runs next, or without one syncs the mods the answer named. esc just closes.
+// askServerMods asks whether the server of inst has extra mods (Play and join, or a
+// first server saved), then runs next, which comes after the sync of the answer.
 func (m *model) askServerMods(inst prism.Instance, next func(*model) tea.Cmd) tea.Cmd {
-	m.openInput("Does your server have extra mods?", serverModsIntro, "", "https://…/custom_mods.zip",
-		"Leave it empty if there's none. You can change it later in Settings.", []string{"Continue"},
-		func(m *model, label, value string) tea.Cmd {
-			if label == "" {
-				m.closeDialog()
-				return nil
-			}
-			if value != "" && update.CheckCustomModsURL(value) != nil {
-				m.dialog.inputErr = msgBadModsLink
-				return nil
-			}
-			m.closeDialog()
-			err := update.UpdateState(inst.Dir, func(st *update.State) { st.CustomModsURL, st.CustomModsAsked = value, true })
-			if err != nil {
-				m.notify(couldntSaveSetting, err.Error())
-				return nil
-			}
-			m.refresh()
-			if next != nil {
-				return next(m)
-			}
-			return m.syncMods(inst, nil)
-		})
+	m.askModsLink(inst, "Does your server have extra mods?", serverModsIntro, "",
+		"Leave it empty if there's none. You can change it later in Settings.", next)
 	return nil
 }
 
@@ -83,10 +64,19 @@ func (m *model) syncMods(inst prism.Instance, then func(*model) tea.Cmd) tea.Cmd
 		m.holdOpen = true
 		return then(m)
 	}
+	return m.startModsSync(inst, override, nil, then)
+}
+
+// startModsSync starts the sync job of inst from url (a ModsSyncOptions.URL), then
+// runs then (nil = nothing more).
+func (m *model) startModsSync(inst prism.Instance, url string, ctx context.Context, then func(*model) tea.Cmd) tea.Cmd {
+	if then == nil {
+		then = func(*model) tea.Cmd { return nil }
+	}
 	m.job = &job{kind: jobMods, dir: inst.Dir, title: "Syncing your server's mods", phase: "prepare"}
 	m.afterMods = then
 	m.startBusy()
-	opts := update.ModsSyncOptions{Client: m.cfg.Client, Instance: inst, URL: override}
+	opts := update.ModsSyncOptions{Context: ctx, Client: m.cfg.Client, Instance: inst, URL: url}
 	prepare, rep := m.prepareMods, m.reporter()
 	return func() tea.Msg {
 		s, err := prepare(opts, rep)
@@ -95,10 +85,21 @@ func (m *model) syncMods(inst prism.Instance, then func(*model) tea.Cmd) tea.Cmd
 }
 
 // onModsPrepared carries out the planned sync right away: the player asked for these
-// mods, there's nothing to confirm.
+// mods, there's nothing to confirm. A new link the server couldn't give, or a download
+// the player stopped, goes back to the field instead.
 func (m *model) onModsPrepared(s *update.ModsSync) tea.Cmd {
 	if m.job == nil || m.job.kind != jobMods {
 		s.Close()
+		return nil
+	}
+	if f := m.modsFlow; f != nil && (f.cancelled || f.try && s.FetchErr != nil) {
+		s.Close()
+		why := ""
+		if !f.cancelled {
+			why = "I couldn't use that link: " + s.FetchErr.Error() + "."
+		}
+		m.endModsFlow()
+		f.reopen(m, why)
 		return nil
 	}
 	m.job.phase = "apply"
@@ -110,23 +111,50 @@ func (m *model) onModsPrepared(s *update.ModsSync) tea.Cmd {
 }
 
 // onModsSynced ends the sync with its notice, when it has something to say, and runs
-// what waited for it.
+// what waited for it. A sync started in a dialog with nothing after it says what it did
+// in a dialog instead.
 func (m *model) onModsSynced(msg modsSyncedMsg) tea.Cmd {
-	j, then := m.job, m.afterMods
+	j, then, f := m.job, m.afterMods, m.modsFlow
+	if f != nil {
+		m.endModsFlow()
+	}
 	m.job, m.afterMods = nil, nil
 	m.refresh()
-	if n, ok := modsNotice(msg.p, msg.fetchErr, m.home[j.dir].modsURL != ""); ok {
+	info := m.home[j.dir]
+	if f != nil && f.next == nil {
+		lines, warn, dim := modsResult(msg.p, msg.fetchErr, info)
+		m.resultDialog(modsDialogTitle, lines, warn, dim)
+		return nil
+	}
+	if n, ok := modsNotice(msg.p, msg.fetchErr, info.modsURL != ""); ok {
 		m.notices[j.dir] = n
 		m.holdOpen = m.holdOpen || len(n.warn) > 0
 	}
 	return then(m)
 }
 
-// onModsErr ends a sync that failed with a warning; what waited for it still runs.
+// onModsErr ends a sync that failed with a warning; what waited for it still runs. One
+// the player stopped goes back to the field; one started in a dialog with nothing after
+// it says so in a dialog.
 func (m *model) onModsErr(err error) tea.Cmd {
-	j, then := m.job, m.afterMods
+	j, then, f := m.job, m.afterMods, m.modsFlow
+	if f != nil {
+		m.endModsFlow()
+	}
 	m.job, m.afterMods = nil, nil
 	m.refresh()
+	switch {
+	case f != nil && f.cancelled:
+		f.reopen(m, "")
+		return nil
+	case f != nil && f.next == nil:
+		outcome := "Nothing was changed."
+		if errors.Is(err, update.ErrModsRolledBack) {
+			outcome = "Everything was put back the way it was."
+		}
+		m.errorDialog(fmt.Errorf("I couldn't sync your server's mods: %w.", err), outcome)
+		return nil
+	}
 	m.notices[j.dir] = notice{warn: []string{"I couldn't sync your server's mods: " + err.Error() + "."}}
 	m.holdOpen = true
 	return then(m)
