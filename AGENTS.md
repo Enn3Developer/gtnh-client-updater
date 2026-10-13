@@ -26,7 +26,9 @@ stay `gtnh-update`.
 
 ```
 cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -play,
-                             -list, -self-update, -V; launches TUI
+                             -list, -self-update, -V; launches TUI; -h is `usage`
+                             (intro, examples, options); words after the options are
+                             refused (`checkArgs`)
 internal/appcfg/             launcher-wide settings: config.json under
                              os.UserConfigDir()/gtnh-update (Config.PrismExe "prismExe",
                              Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen,

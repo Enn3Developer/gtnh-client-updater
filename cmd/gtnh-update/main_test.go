@@ -580,3 +580,38 @@ func TestC6ConfigChoiceKeepsItsOwnErrorText(t *testing.T) {
 		t.Errorf("configChoice(\"both\") error = %v, want %q", err, want)
 	}
 }
+
+// ---- -h and stray words ----
+
+func TestCheckArgsRefusesWordsAfterTheOptions(t *testing.T) {
+	if err := checkArgs(nil); err != nil {
+		t.Errorf("no args: %v", err)
+	}
+	err := checkArgs([]string{"GTNH", "-yes"})
+	if err == nil || !strings.Contains(err.Error(), `"GTNH"`) || !strings.Contains(err.Error(), `-instance "GTNH"`) {
+		t.Errorf("checkArgs(GTNH -yes) = %v, want it refused with a hint", err)
+	}
+}
+
+func TestUsageShowsExamplesThenTheOptions(t *testing.T) {
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("gtnh-update", flag.ContinueOnError)
+	fs.Bool("yes", false, "don't ask")
+	var out strings.Builder
+	fs.SetOutput(&out)
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	usage()
+
+	got := out.String()
+	if !strings.HasPrefix(got, "GTNH Launcher (gtnh-update)") || !strings.Contains(got, "  gtnh-update -list\n") ||
+		!strings.Contains(got, "Options:\n  -yes") {
+		t.Errorf("usage:\n%s", got)
+	}
+	for _, l := range strings.Split(got, "\n") {
+		if len(l) > 80 && !strings.HasPrefix(l, "    \t") {
+			t.Errorf("line wider than 80 columns: %q", l)
+		}
+	}
+}

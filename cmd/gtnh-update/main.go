@@ -63,7 +63,11 @@ func run() error {
 		noCheck    = flag.Bool("no-update-check", false, "don't check GitHub for a newer gtnh-update")
 		showVer    = flag.Bool("V", false, "print the gtnh-update version")
 	)
+	flag.Usage = usage
 	flag.Parse()
+	if err := checkArgs(flag.Args()); err != nil {
+		return err
+	}
 	selfupdate.CleanupOld()
 	if *showVer {
 		if packaged != "" {
@@ -139,6 +143,41 @@ func run() error {
 		return selfupdate.Restart()
 	}
 	return nil
+}
+
+const usageText = `GTNH Launcher (gtnh-update): play, update and make GT: New Horizons instances in
+Prism Launcher, keeping your worlds, settings and config tweaks.
+
+Run it without options for the launcher's screen. For scripts:
+
+  gtnh-update -list
+    	your instances and all GTNH versions
+  gtnh-update -instance "GTNH" -version latest-stable -yes
+    	update an instance
+  gtnh-update -create -version latest-stable -name "GTNH" -yes
+    	make a new instance
+  gtnh-update -play -yes -instance "GTNH" [-version latest]
+    	start it in Prism; with -version, update it first
+  gtnh-update -self-update
+    	update the launcher itself
+
+Options:
+`
+
+// usage prints what the program is, examples and the options (-h).
+func usage() {
+	out := flag.CommandLine.Output()
+	fmt.Fprint(out, usageText)
+	flag.PrintDefaults()
+}
+
+// checkArgs refuses words left after the options: the flag package stops at the first
+// one, so `gtnh-update GTNH -yes` would silently ignore -yes and open the screen.
+func checkArgs(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return fmt.Errorf("I don't know what %q means here: options start with a dash, like -instance %q (see -h)", args[0], args[0])
 }
 
 // dataDirs are the Prism data dirs to scan: -prism-dir when given, else the folder the
