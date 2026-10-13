@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 )
@@ -45,15 +46,19 @@ func (m *model) updateEntries() []entry {
 	switch {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
-			"Which version is this? Tell me and I'll check for updates",
+			m.fitRow("Which version is this? Tell me and I'll check for updates", "Which version is this? Tell me"),
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
 	case info.rec != info.version:
-		text := "GTNH " + info.rec + " is out"
+		out := "GTNH " + info.rec + " is out"
+		variants := []string{out}
 		if r, ok := m.release(info.rec); ok {
-			text += " · " + releaseDesc(r, now)
+			kind := out + " · " + strings.ToLower(kindOf(r))
+			variants = []string{out + " · " + releaseDesc(r, now), kind, out}
 		}
-		es = append(es, entry{row: ptr(hintedRow("update", "u", text,
+		es = append(es, entry{row: ptr(hintedRow("update", "u", m.fitRow(variants...),
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
+	case !m.isStable(info.version):
+		es = append(es, entry{text: infoLine("You have the newest version.")})
 	default:
 		es = append(es, entry{text: infoLine("You have the newest stable version.")})
 	}
@@ -66,7 +71,8 @@ func (m *model) updateEntries() []entry {
 func (m *model) undoEntries(info homeInfo) []entry {
 	var es []entry
 	if b := info.backup; b != nil {
-		text := "Last update " + b.Info.From + " → " + b.Info.To + ", " + ago(b.Info.When, m.now()) + " · undo"
+		what := "Last update " + b.Info.From + " → " + b.Info.To
+		text := m.fitRow(what+", "+ago(b.Info.When, m.now())+" · undo", what+" · undo", "Undo the update to "+b.Info.To)
 		es = append(es, entry{row: ptr(hintedRow("undo", "b", text,
 			func(m *model) tea.Cmd { return m.startUndo() }))})
 	}
@@ -87,6 +93,26 @@ func (m *model) offlineEntries() []entry {
 }
 
 func ptr(r row) *row { return &r }
+
+// fitRow is the first of variants (longest first) that fits whole in a hinted page row,
+// else the last one, which the row truncates.
+func (m *model) fitRow(variants ...string) string {
+	// hintCol puts every hint at most measure - widest hint - 1, and the text must end
+	// 3 columns before it; the widest hint is the play row's "enter"
+	room := measure(m.pageWidth()) - len("enter") - 4
+	for _, v := range variants {
+		if ansi.StringWidth(v) <= room {
+			return v
+		}
+	}
+	return variants[len(variants)-1]
+}
+
+// isStable reports whether version is a stable release in the manifest.
+func (m *model) isStable(version string) bool {
+	r, ok := m.release(version)
+	return ok && r.Stable()
+}
 
 // release is the manifest entry of version.
 func (m *model) release(version string) (manifest.Release, bool) {

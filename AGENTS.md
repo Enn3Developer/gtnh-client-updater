@@ -494,7 +494,10 @@ reads what the page shows about each instance into `m.home`.
     notice lines (`notice`: the ok line, then warn lines, then dim info lines), then the
     update row: "GTNH <rec> is out · <kind> · <ago>"
     (hint `u`), "Which version is this? Tell me and I'll check for updates"
-    for an unknown version, or the dim info line "You have the newest stable version.";
+    for an unknown version, or the dim info line "You have the newest stable version."
+    ("You have the newest version." on a beta or RC); on a narrow page these rows drop
+    their least useful part (the age, then the kind or the from-version) instead of being
+    cut mid-word (`fitRow`);
     "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
     exists, "Last update A → B, <ago> · undo" (hint `b`).
   - "Settings" heading (rows_settings.go): Memory, Java arguments, Java, Window and, for
