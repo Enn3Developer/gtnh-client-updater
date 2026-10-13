@@ -111,6 +111,7 @@ type model struct {
 	launchDir  string // Dir of the instance whose launch is under way
 	loaded     bool
 	loadErr    error
+	noPrism    bool // no Prism data dir: the page asks for it
 	quitting   bool
 	restart    bool
 	home       map[string]homeInfo // per instance Dir, filled by refresh
@@ -199,6 +200,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.afterLoad()
 	case manifestMsg:
 		return m, m.onManifest(msg)
+	case noPrismMsg:
+		m.noPrism = true
 	case newerMsg:
 		m.newer = msg.r
 	case stepMsg:

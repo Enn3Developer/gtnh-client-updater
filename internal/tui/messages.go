@@ -50,6 +50,8 @@ type (
 		p        *update.ModsPlan
 		fetchErr error
 	}
+	// noPrismMsg: no Prism data dir was found or given.
+	noPrismMsg struct{}
 )
 
 func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }

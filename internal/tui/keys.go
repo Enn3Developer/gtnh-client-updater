@@ -9,6 +9,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if s == "q" || s == "ctrl+c" {
 		return m, m.quitKey()
 	}
+	if m.noPrism && s == "enter" {
+		m.askPrismDir()
+	}
 	if !m.loaded {
 		return m, nil
 	}

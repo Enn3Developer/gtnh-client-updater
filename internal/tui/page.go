@@ -121,6 +121,8 @@ func (m *model) sectionLines(width int, es []entry) []string {
 // first moved so the selected row is fully visible and off the "more" markers (C4).
 func (m *model) pageView(width, height int) string {
 	switch {
+	case m.noPrism:
+		return noPrismView(width)
 	case m.loadErr != nil:
 		return m.loadErrView(width)
 	case !m.loaded:

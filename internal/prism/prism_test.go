@@ -58,6 +58,22 @@ func TestInstancesDir(t *testing.T) {
 	}
 }
 
+func TestDataDirAt(t *testing.T) {
+	d := t.TempDir()
+	os.WriteFile(filepath.Join(d, "prismlauncher.cfg"), []byte("InstanceDir=instances\n"), 0o644)
+	os.MkdirAll(filepath.Join(d, "instances", "GTNH"), 0o755)
+	for _, p := range []string{d, d + string(filepath.Separator), filepath.Join(d, "prismlauncher.cfg"), filepath.Join(d, "instances")} {
+		if got, ok := DataDirAt(p); !ok || got != d {
+			t.Errorf("DataDirAt(%q) = %q, %v; want %q", p, got, ok, d)
+		}
+	}
+	for _, p := range []string{filepath.Join(d, "instances", "GTNH"), t.TempDir(), filepath.Join(d, "missing", "x")} {
+		if got, ok := DataDirAt(p); ok {
+			t.Errorf("DataDirAt(%q) = %q, want none", p, got)
+		}
+	}
+}
+
 // C8
 func TestSetName(t *testing.T) {
 	for _, tc := range []struct{ name, cfg, want string }{

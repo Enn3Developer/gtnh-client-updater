@@ -4,7 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -16,10 +19,57 @@ import (
 // (fetchManifest), so Play and the settings work offline and on a slow connection.
 func (m *model) load() tea.Msg {
 	if len(m.cfg.PrismDirs) == 0 {
-		return errMsg{errors.New("I couldn't find Prism Launcher on this computer.\n\n" +
-			"If it's installed somewhere unusual, start me with\n  -prism-dir <the folder that contains prismlauncher.cfg>")}
+		return noPrismMsg{}
 	}
 	return loadedMsg{insts: listInstances(m.cfg.PrismDirs)} // no instances at all: the page offers to create one
+}
+
+// noPrismText is the page when no Prism data dir was found; enter asks for it.
+const noPrismText = "I start your GTNH instances through Prism Launcher (prismlauncher.org), so it needs to be installed. " +
+	"If it is, press enter and show me the folder where Prism keeps its data — the one with prismlauncher.cfg in it."
+
+// noPrismView is the page when no Prism data dir was found: what's wrong in red, then
+// what to do, wrapped to width.
+func noPrismView(width int) string {
+	return badSty.Render("I couldn't find Prism Launcher on this computer.") + "\n\n" + wrap(noPrismText, width)
+}
+
+// askPrismDir asks for Prism's data folder, remembers it in the launcher settings and
+// loads from it.
+func (m *model) askPrismDir() {
+	m.openInput("Where does Prism keep its data?", "Paste the folder's path here. For a portable Prism, it's the folder Prism itself is in.",
+		"", prismDirExample(), "", []string{"Continue"},
+		func(m *model, label, value string) tea.Cmd {
+			if label == "" {
+				m.closeDialog()
+				return nil
+			}
+			dir, ok := prism.DataDirAt(cleanPath(value))
+			if !ok {
+				m.dialog.inputErr = msgBadPrismDir
+				return nil
+			}
+			m.closeDialog()
+			m.app.PrismDir = dir
+			if err := m.saveApp(m.app); err != nil {
+				m.notify(couldntSaveSetting, "I'll use that folder now, but I couldn't remember it for next time: "+err.Error())
+			}
+			m.cfg.PrismDirs, m.noPrism = []string{dir}, false
+			return tea.Batch(m.load, m.fetchManifest)
+		})
+}
+
+const msgBadPrismDir = "I can't find Prism's files there — it's the folder with prismlauncher.cfg in it."
+
+// prismDirExample is where Prism keeps its data on this OS, as the field's placeholder.
+func prismDirExample() string {
+	switch runtime.GOOS {
+	case "windows":
+		return `C:\Users\you\AppData\Roaming\PrismLauncher`
+	case "darwin":
+		return "~/Library/Application Support/PrismLauncher"
+	}
+	return "~/.local/share/PrismLauncher"
 }
 
 // fetchManifest gets the list of GTNH versions and sends manifestMsg.
@@ -158,6 +208,21 @@ func (m *model) cfgInstance() (prism.Instance, error) {
 		return in, nil
 	}
 	return prism.Instance{}, fmt.Errorf("I couldn't find an instance called %q.", m.cfg.Instance)
+}
+
+// cleanPath is a path as a player pastes it, made usable: spaces around it and the
+// quotes Windows' "Copy as path" adds go, and a leading ~ is the home folder.
+func cleanPath(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+		v = strings.TrimSpace(v[1 : len(v)-1])
+	}
+	if v == "~" || strings.HasPrefix(v, "~/") || strings.HasPrefix(v, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			v = filepath.Join(home, v[1:])
+		}
+	}
+	return v
 }
 
 func sameDir(a, b string) bool {

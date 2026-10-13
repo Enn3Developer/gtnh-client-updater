@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -88,10 +89,7 @@ func run() error {
 			return err
 		}
 	}
-	dirs := prism.DataDirs()
-	if *prismDir != "" {
-		dirs = []string{*prismDir}
-	}
+	dirs := dataDirs(*prismDir)
 	client := &http.Client{Transport: &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		// Without these, a computer that's offline behind a dead route waits minutes on
@@ -141,6 +139,21 @@ func run() error {
 		return selfupdate.Restart()
 	}
 	return nil
+}
+
+// dataDirs are the Prism data dirs to scan: -prism-dir when given, else the folder the
+// player showed the launcher (appcfg PrismDir) first, then the ones found automatically.
+func dataDirs(flagDir string) []string {
+	if flagDir != "" {
+		return []string{flagDir}
+	}
+	dirs := prism.DataDirs()
+	if cfg, err := appcfg.Load(); err == nil && cfg.PrismDir != "" {
+		if d, ok := prism.DataDirAt(cfg.PrismDir); ok && !slices.Contains(dirs, d) {
+			dirs = append([]string{d}, dirs...)
+		}
+	}
+	return dirs
 }
 
 // configChoice maps the -configs flag to the engine's choice for conflicting configs.

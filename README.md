@@ -146,6 +146,7 @@ Prism's data folder is found automatically in its standard place on Windows, mac
 Linux (including Flatpak), or next to `gtnh-update` for portable installs. To start the
 game, gtnh-update looks for the Prism program the same way (Flatpak, portable, then the
 usual install places); if it can't find it, set *Prism Launcher location* in Settings.
+If Prism's data folder isn't found, gtnh-update asks you for it once and remembers it.
 Launcher-wide settings are saved in `gtnh-update/config.json` in your user config folder.
 
 ## How it works

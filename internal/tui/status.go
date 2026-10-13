@@ -39,6 +39,10 @@ func statusBar(width int, pairs ...string) string {
 // statusPairs are the key/label pairs for what's on screen now (C7).
 func (m *model) statusPairs() []string {
 	switch {
+	case m.noPrism && m.dialog == nil:
+		return []string{"enter", "show me where", "q", "quit"}
+	case m.noPrism:
+		return m.dialogPairs()
 	case !m.loaded || m.loadErr != nil:
 		return []string{"q", "quit"}
 	case m.dialog != nil && m.dialog.buttons == nil && m.dialog.list == nil && m.dialog.input == nil:

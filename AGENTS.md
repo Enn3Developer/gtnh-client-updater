@@ -29,7 +29,9 @@ cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -config
                              -list, -self-update, -V; launches TUI
 internal/appcfg/             launcher-wide settings: config.json under
                              os.UserConfigDir()/gtnh-update (Config.PrismExe "prismExe",
-                             Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen)
+                             Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen,
+                             Config.PrismDir "prismDir": the Prism data dir the player
+                             showed the TUI, scanned first unless -prism-dir is given)
 internal/manifest/           fetch/parse versions.json, version ordering, URL pinning,
                              manifest.Resolve (latest / latest-stable / exact key)
 internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download,
@@ -409,7 +411,7 @@ and never go into an update's backup or undo.
   failed process listing as "not running".
 - `appcfg` `config.json` is persisted on players' machines: **add fields only**
   (omitempty, zero value = old behavior: `PrismExe` "" = find Prism, `AfterPlay` "" =
-  stay). Don't rename `prismExe`/`afterPlay`.
+  stay, `PrismDir` "" = find the data dir). Don't rename `prismExe`/`afterPlay`/`prismDir`.
 - **Keys** (`tui.key`, no dialog open): `p` play, `j` the join row, `u` the update row,
   `o` choose another version, `b` the undo row (each a no-op when the page has no such
   row), `r` fetch the GTNH manifest again after a failed fetch, `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
@@ -499,6 +501,12 @@ reads what the page shows about each instance into `m.home`.
     to the line "I couldn't read this instance's settings".
   - "Launcher" heading: "After I start the game" (quit | stay open and show whether it's
     running) and "Prism Launcher" (the path | found automatically).
+
+  With no Prism data dir (`noPrismMsg`) the page says "I couldn't find Prism Launcher on
+  this computer." and enter opens the input "Where does Prism keep its data?"
+  (`askPrismDir`): `prism.DataDirAt` accepts the data dir, its prismlauncher.cfg or a
+  folder right inside it (pasted quotes and ~ are cleaned by `cleanPath`); the folder is
+  saved as appcfg `PrismDir` and loaded at once.
 
   Loading never waits for the network: `load` lists the instances and `fetchManifest`
   gets the manifest on its own (`manifestMsg`; `m.manifest` nil until then). Without it
