@@ -47,7 +47,11 @@ It's a small program that runs in a terminal window, with arrow keys and Enter â
    | **n** | Make a new GTNH instance |
    | **a** | Also show instances that aren't GTNH |
    | **v** | Update gtnh-update itself, when a new version is out |
+   | **r** | Check for GTNH versions again, after the GTNH server couldn't be reached |
    | **q** | Quit |
+
+   No internet? Play, Undo and Settings still work; updates wait until the GTNH server
+   can be reached again.
 
 **Playing.** gtnh-update finds Prism by itself and asks it to start the game, so Prism still
 handles your Microsoft login and Java. By default it then stays open and tells you when the
@@ -56,7 +60,8 @@ a look at Prism's window â€” it may be asking you something. You can quit gtnh-u
 time; the game keeps running.
 
 **Settings** (**s**) are per instance: the server to join, your server's extra-mods link,
-memory for the game, Java arguments, which Java to use and the window size. Leave a value
+memory for the game (like `8 GB` or `8192`), Java arguments, which Java to use and the
+window size. Leave a value
 empty to go back to Prism's default. These are the same settings Prism has, so if Prism is
 open while you change them, restart Prism. Two settings are for gtnh-update itself: whether
 it stays open or quits after you press Play, and where Prism is, if it can't find it on its
