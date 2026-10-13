@@ -44,6 +44,8 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.runRow("versions")
 	case "b":
 		return m, m.runRow("undo")
+	case "r":
+		return m, m.retryManifest()
 	case "s":
 		m.jumpToSettings()
 	case "n":

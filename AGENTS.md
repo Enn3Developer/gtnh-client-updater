@@ -412,7 +412,7 @@ and never go into an update's backup or undo.
   stay). Don't rename `prismExe`/`afterPlay`.
 - **Keys** (`tui.key`, no dialog open): `p` play, `j` the join row, `u` the update row,
   `o` choose another version, `b` the undo row (each a no-op when the page has no such
-  row), `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
+  row), `r` fetch the GTNH manifest again after a failed fetch, `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
   `a` show all instances, `v` launcher update (only when a newer release is known),
   `q`/`ctrl+c` quit. `↑↓` move the instance (sidebar) or the row (page);
   tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and on the page runs the
@@ -499,6 +499,16 @@ reads what the page shows about each instance into `m.home`.
     to the line "I couldn't read this instance's settings".
   - "Launcher" heading: "After I start the game" (quit | stay open and show whether it's
     running) and "Prism Launcher" (the path | found automatically).
+
+  Loading never waits for the network: `load` lists the instances and `fetchManifest`
+  gets the manifest on its own (`manifestMsg`; `m.manifest` nil until then). Without it
+  the Update section shows a spinner "Checking for new GTNH versions…" or, after a failed
+  fetch (`m.manifestErr`), a yellow "I can't reach the GTNH download server…" line and a
+  "Try again" row (hint `r`); Play, Undo and Settings keep working, the sidebar marks a
+  known version with a dim ●, `update.DetectVersion` uses only the state and the
+  changelog's own version, and update/versions/new say why they can't
+  (`offlineNotice`). A `-create`/`-version` from the command line waits for the manifest
+  (`startPending`).
 
   A row is "▸ " + accent bold text when selected, else two spaces + text, with its key
   hint right-aligned and dim (`rowLine`). The page scrolls so the selected row is fully

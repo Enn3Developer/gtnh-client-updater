@@ -11,6 +11,12 @@ import (
 
 // Messages from background work.
 type (
+	// loadedMsg: the instances are listed (m: the manifest too, when it came with them).
+	// manifestMsg: the GTNH version list, or why it couldn't be fetched.
+	manifestMsg struct {
+		m   *manifest.Manifest
+		err error
+	}
 	loadedMsg struct {
 		m     *manifest.Manifest
 		insts []prism.Instance

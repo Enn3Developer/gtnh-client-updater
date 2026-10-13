@@ -19,7 +19,9 @@ var changelogRe = regexp.MustCompile(`^changelog from .+ to (.+)\.md$`)
 
 // DetectVersion guesses which manifest version an instance runs, most reliable first:
 // the updater's own state, the "changelog from X to Y.md" file every pack ships in its
-// game dir, then a manifest key embedded in the instance name or directory name.
+// game dir, then a manifest key embedded in the instance name or directory name. Without
+// a manifest (m nil: the GTNH server couldn't be reached) only the state and the
+// changelog's own version string are used.
 func DetectVersion(inst prism.Instance, st *State, m *manifest.Manifest) Detection {
 	if st != nil && st.Version != "" {
 		return Detection{st.Version, "updater state"}
@@ -37,6 +39,15 @@ func fromChangelog(gameDir string, m *manifest.Manifest) string {
 	ents, err := os.ReadDir(gameDir)
 	if err != nil {
 		return ""
+	}
+	if m == nil {
+		best := ""
+		for _, e := range ents {
+			if sub := changelogRe.FindStringSubmatch(e.Name()); sub != nil && manifest.CompareVersions(sub[1], best) > 0 {
+				best = sub[1]
+			}
+		}
+		return best
 	}
 	best, bestIdx := "", len(m.Releases)
 	for _, e := range ents {
@@ -56,6 +67,9 @@ func fromChangelog(gameDir string, m *manifest.Manifest) string {
 }
 
 func fromName(inst prism.Instance, m *manifest.Manifest) string {
+	if m == nil {
+		return ""
+	}
 	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, "_", " ")) }
 	hay := norm(inst.Name) + "\x00" + norm(baseName(inst.Dir))
 	best := ""

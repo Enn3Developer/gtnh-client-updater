@@ -56,6 +56,10 @@ func (m *model) startUpdate(target string) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if m.manifest == nil {
+		m.offlineNotice()
+		return nil
+	}
 	running, err := m.isRunning(inst)
 	if err == nil && running {
 		m.notify("The game is running", inst.Name+" is running right now. Close Minecraft, then try again.")

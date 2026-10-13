@@ -54,12 +54,13 @@ func (m *model) sidebarView(height int) string {
 }
 
 // glyph is an instance's status mark: ● up to date, ▲ newer version out, ○ not GTNH or
-// version unknown (C3; the playing instance's ◐ is the sidebar's to draw).
+// version unknown (C3; the playing instance's ◐ is the sidebar's to draw). Without the
+// manifest (rec "") a known version is a dim ●: nothing is known about updates.
 func glyph(info homeInfo) string {
 	switch {
 	case !info.gtnh || info.version == "":
 		return "○"
-	case info.rec != info.version:
+	case info.rec != "" && info.rec != info.version:
 		return "▲"
 	}
 	return "●"
@@ -69,6 +70,9 @@ func glyph(info homeInfo) string {
 func glyphSty(info homeInfo) lipgloss.Style {
 	switch glyph(info) {
 	case "●":
+		if info.rec == "" {
+			return dimSty
+		}
 		return okSty
 	case "▲":
 		return warnSty

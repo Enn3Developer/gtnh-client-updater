@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,18 +12,76 @@ import (
 	"github.com/Enn3Developer/gtnh-client-updater/internal/prism"
 )
 
+// load lists the instances, which needs no network: the manifest comes on its own
+// (fetchManifest), so Play and the settings work offline and on a slow connection.
 func (m *model) load() tea.Msg {
 	if len(m.cfg.PrismDirs) == 0 {
 		return errMsg{errors.New("I couldn't find Prism Launcher on this computer.\n\n" +
 			"If it's installed somewhere unusual, start me with\n  -prism-dir <the folder that contains prismlauncher.cfg>")}
 	}
-	man, err := manifest.Fetch(m.cfg.Client)
-	if err != nil {
-		return errMsg{fmt.Errorf("I couldn't reach the GTNH download server to see which versions exist. "+
-			"Check your internet connection and try again.\n\n(%w)", err)}
-	}
-	return loadedMsg{man, listInstances(m.cfg.PrismDirs)} // no instances at all: the page offers to create one
+	return loadedMsg{insts: listInstances(m.cfg.PrismDirs)} // no instances at all: the page offers to create one
 }
+
+// fetchManifest gets the list of GTNH versions and sends manifestMsg.
+func (m *model) fetchManifest() tea.Msg {
+	man, err := manifest.Fetch(m.cfg.Client)
+	return manifestMsg{man, err}
+}
+
+// retryManifest fetches the manifest again after a failed fetch.
+func (m *model) retryManifest() tea.Cmd {
+	if m.manifest != nil || m.manifestErr == nil {
+		return nil
+	}
+	m.manifestErr = nil
+	return m.fetchManifest
+}
+
+// onManifest takes the fetched manifest (or why it couldn't be fetched), refreshes the
+// page and runs what the command line asked for once it's known.
+func (m *model) onManifest(msg manifestMsg) tea.Cmd {
+	if msg.err != nil {
+		m.manifestErr = msg.err
+	} else {
+		m.manifest, m.manifestErr = msg.m, nil
+	}
+	if !m.loaded {
+		return nil
+	}
+	m.refresh()
+	if !m.startPending {
+		return nil
+	}
+	m.startPending = false
+	if m.manifest == nil {
+		m.offlineNotice()
+		return nil
+	}
+	return m.startVersionTask()
+}
+
+// offlineNotice tells the player that something needs the GTNH server, which can't be
+// reached right now (or is still being asked).
+func (m *model) offlineNotice() {
+	if m.manifestErr == nil {
+		m.notify("Just a moment", "I'm still asking the GTNH download server which versions exist. Try again in a few seconds.")
+		return
+	}
+	m.notify(cantReachGTNH, "I need the GTNH download server for that, and I can't reach it right now. "+
+		"Check your internet connection, then press r to try again.\n\n("+netReason(m.manifestErr)+")")
+}
+
+// netReason is err without the request it came from: what went wrong on the network.
+func netReason(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err.Error()
+	}
+	return err.Error()
+}
+
+// cantReachGTNH heads what's said when the GTNH manifest couldn't be fetched.
+const cantReachGTNH = "I couldn't reach the GTNH download server"
 
 // listInstances lists the instances of every Prism data dir; unreadable dirs are skipped.
 func listInstances(dirs []string) []prism.Instance {
@@ -37,8 +96,8 @@ func listInstances(dirs []string) []prism.Instance {
 
 // afterLoad marks the workspace loaded, preselects Config.Instance (by name or folder),
 // refreshes and starts the creation Config.Create asks for, else the update Config.Target
-// asks for, else the game when Config.Play asks to (its mods synced from
-// Config.ServerMods when given).
+// asks for (both wait for the manifest), else the game when Config.Play asks to (its mods
+// synced from Config.ServerMods when given).
 func (m *model) afterLoad() tea.Cmd {
 	m.loaded = true
 	m.focus = focusSidebar
@@ -54,22 +113,36 @@ func (m *model) afterLoad() tea.Cmd {
 		m.selectDir(in.Dir)
 	}
 	m.refresh()
-	if m.cfg.Create {
-		return m.newInstance()
-	}
-	if _, ok := m.current(); ok && m.cfg.Target != "" {
-		v, err := manifest.Resolve(m.manifest, m.cfg.Target)
-		if err != nil {
-			m.notify("No such version", fmt.Sprintf("GTNH has no version called %q.", m.cfg.Target))
-			return nil
+	if _, ok := m.current(); m.cfg.Create || ok && m.cfg.Target != "" {
+		switch {
+		case m.manifest != nil:
+			return m.startVersionTask()
+		case m.manifestErr != nil:
+			m.offlineNotice()
+		default:
+			m.startPending = true // once the manifest is here
 		}
-		return m.startUpdate(v)
+		return nil
 	}
 	if m.cfg.Play {
 		m.modsOverride = m.cfg.ServerMods
 		return m.playCmd(false)
 	}
 	return nil
+}
+
+// startVersionTask starts the creation Config.Create asks for, else the update to
+// Config.Target; both need the manifest.
+func (m *model) startVersionTask() tea.Cmd {
+	if m.cfg.Create {
+		return m.newInstance()
+	}
+	v, err := manifest.Resolve(m.manifest, m.cfg.Target)
+	if err != nil {
+		m.notify("No such version", fmt.Sprintf("GTNH has no version called %q.", m.cfg.Target))
+		return nil
+	}
+	return m.startUpdate(v)
 }
 
 // cfgInstance finds the instance named on the command line, by name or folder; a folder

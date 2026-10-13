@@ -17,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -92,7 +93,11 @@ func run() error {
 		dirs = []string{*prismDir}
 	}
 	client := &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy: http.ProxyFromEnvironment,
+		// Without these, a computer that's offline behind a dead route waits minutes on
+		// the OS's connect timeout before saying anything.
+		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}}

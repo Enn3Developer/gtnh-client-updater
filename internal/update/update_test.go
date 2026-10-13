@@ -277,6 +277,23 @@ func TestDetectVersion(t *testing.T) {
 	}
 }
 
+// Offline (no manifest) the state and the changelog's own version still tell; the name
+// doesn't, as only manifest keys are looked for in it.
+func TestDetectVersionWithoutManifest(t *testing.T) {
+	inst := newInstance(t, "GT_New_Horizons_2.8.4_Java_17-25", nil)
+	if d := DetectVersion(inst, nil, nil); d.Version != "" {
+		t.Errorf("name without manifest: %+v", d)
+	}
+	os.WriteFile(filepath.Join(inst.GameDir, "changelog from 2.8.1 to 2.8.4.md"), nil, 0o644)
+	os.WriteFile(filepath.Join(inst.GameDir, "changelog from 2.8.4 to 2.9.0-beta-3.md"), nil, 0o644)
+	if d := DetectVersion(inst, nil, nil); d.Version != "2.9.0-beta-3" || d.Source != "pack changelog" {
+		t.Errorf("changelog without manifest: %+v", d)
+	}
+	if d := DetectVersion(inst, &State{Version: "2.8.1"}, nil); d.Version != "2.8.1" {
+		t.Errorf("state without manifest: %+v", d)
+	}
+}
+
 func TestRenameVersionKeepsSettings(t *testing.T) {
 	inst := newInstance(t, "My GTNH 2.8.4 run", nil)
 	name, ok, err := prism.RenameVersion(inst.Dir, "2.8.4", "2.9.0-RC-1")

@@ -93,7 +93,11 @@ type model struct {
 	width, height int
 	spin          spinner.Model
 
-	manifest   *manifest.Manifest
+	// the GTNH version list: nil until fetched; the page works without it
+	manifest     *manifest.Manifest
+	manifestErr  error // why the last fetch failed; nil while fetching or once fetched
+	startPending bool  // the command line's create/update waits for the manifest
+
 	insts      []prism.Instance
 	showAll    bool
 	sel        int // index into visible()
@@ -164,6 +168,9 @@ func newModel(cfg Config) *model {
 // self-update check, and loads the launcher settings into m.app.
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.SetWindowTitle("GTNH Launcher"), m.spin.Tick, m.load}
+	if len(m.cfg.PrismDirs) > 0 {
+		cmds = append(cmds, m.fetchManifest)
+	}
 	if m.cfg.UpdateCheck {
 		cmds = append(cmds, m.checkSelf)
 	}
@@ -185,8 +192,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case loadedMsg:
-		m.manifest, m.insts = msg.m, msg.insts
+		if msg.m != nil {
+			m.manifest = msg.m
+		}
+		m.insts = msg.insts
 		return m, m.afterLoad()
+	case manifestMsg:
+		return m, m.onManifest(msg)
 	case newerMsg:
 		m.newer = msg.r
 	case stepMsg:

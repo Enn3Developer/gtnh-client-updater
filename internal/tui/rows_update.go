@@ -39,6 +39,9 @@ func (m *model) updateEntries() []entry {
 	if n, ok := m.notices[in.Dir]; ok {
 		es = append(es, textEntries(m.noticeLines(measure(m.pageWidth()), n)...)...)
 	}
+	if m.manifest == nil {
+		return append(append(es, m.offlineEntries()...), m.undoEntries(info)...)
+	}
 	switch {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
@@ -56,12 +59,31 @@ func (m *model) updateEntries() []entry {
 	}
 	es = append(es, entry{row: ptr(hintedRow("versions", "o", "Choose another version…",
 		func(m *model) tea.Cmd { return m.chooseVersion() }))})
+	return append(es, m.undoEntries(info)...)
+}
+
+// undoEntries are the undo row, when info has a restorable backup, and a blank line.
+func (m *model) undoEntries(info homeInfo) []entry {
+	var es []entry
 	if b := info.backup; b != nil {
-		text := "Last update " + b.Info.From + " → " + b.Info.To + ", " + ago(b.Info.When, now) + " · undo"
+		text := "Last update " + b.Info.From + " → " + b.Info.To + ", " + ago(b.Info.When, m.now()) + " · undo"
 		es = append(es, entry{row: ptr(hintedRow("undo", "b", text,
 			func(m *model) tea.Cmd { return m.startUndo() }))})
 	}
 	return append(es, entry{})
+}
+
+// offlineEntries stand in for the update rows while the manifest isn't here: a spinner
+// while it's being fetched, else why it couldn't be and a "Try again" row.
+func (m *model) offlineEntries() []entry {
+	if m.manifestErr == nil {
+		return []entry{{text: "  " + strings.TrimSpace(m.spin.View()) + dimSty.Render(" Checking for new GTNH versions…")}}
+	}
+	var es []entry
+	for _, l := range wrapLines("I can't reach the GTNH download server, so I can't check for updates right now. Play still works.", measure(m.pageWidth())-2) {
+		es = append(es, entry{text: "  " + warnSty.Render(l)})
+	}
+	return append(es, entry{row: ptr(hintedRow("retry", "r", "Try again", func(m *model) tea.Cmd { return m.retryManifest() }))})
 }
 
 func ptr(r row) *row { return &r }
@@ -123,6 +145,10 @@ type notice struct {
 func (m *model) chooseVersion() tea.Cmd {
 	if m.job != nil {
 		m.notifyBusy()
+		return nil
+	}
+	if m.manifest == nil {
+		m.offlineNotice()
 		return nil
 	}
 	in, _ := m.current()
