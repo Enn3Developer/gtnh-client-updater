@@ -178,7 +178,7 @@ without a finished Apply, the folder is removed. Headless is
 `-create -version … [-name …] [-server-mods …] -yes`. Instances dir =
 `prism.InstancesDir(PrismDirs[0])`.
 
-TUI (flow_create.go): `n` (or `-create`, or the "Press n to make one." page when Prism has
+TUI (flow_create.go): `n` (or `-create`, or enter on the "Press enter or n to make one." page when Prism has
 no instances) → version picker list dialog "Which GTNH version do you want to install?"
 (recommended / Java 8 only marked; `-version` is used once instead) → name input
 dialog (server mods come only from `-server-mods`; the question waits for a server
@@ -532,8 +532,9 @@ reads what the page shows about each instance into `m.home`.
   hint right-aligned and dim (`rowLine`). The page scrolls so the selected row is fully
   visible and off the "↑ N more" / "↓ N more" markers (`scrollTo`, `bodyWindow`). Before
   load the page is a spinner "Looking for your GTNH instances…"; a load error shows in
-  red; with no visible instance it says "No GTNH instances in Prism yet." / "Press n to
-  make one.".
+  red; with no visible instance it says "No GTNH instances in Prism yet." / "Press enter or n
+  to make one." (+ "Press a to see your other instances." when Prism has others), enter
+  starts a new instance and the status bar is "enter new instance [· a show all] · q quit".
 - **Focus**: sidebar or page. After load the sidebar has focus (the page when the sidebar
   is hidden). `↑↓` move the instance or the row (changing instance resets row and scroll);
   tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and runs the row on the

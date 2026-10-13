@@ -88,6 +88,13 @@ func (m *model) statusPairs() []string {
 	case m.edit != nil:
 		return []string{"enter", "save", "esc", "cancel"}
 	}
+	if len(m.visible()) == 0 { // the empty page: nothing to move or run
+		pairs := []string{"enter", "new instance"}
+		if m.hasOthers() {
+			pairs = append(pairs, "a", "show all")
+		}
+		return append(pairs, "q", "quit")
+	}
 	var pairs []string
 	if m.focus == focusSidebar {
 		pairs = []string{"↑↓", "instance", "enter", "play", "tab", "page"}
@@ -108,13 +115,18 @@ func (m *model) statusPairs() []string {
 		return append(pairs, "", "updating — please don't close this window")
 	}
 	pairs = append(pairs, "n", "new instance")
-	if m.showAll || slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH }) {
+	if m.showAll || m.hasOthers() {
 		pairs = append(pairs, "a", "show all")
 	}
 	if m.quitAfterCancel && m.job != nil {
 		return append(pairs, "stopping", "cleaning up…")
 	}
 	return append(pairs, "q", "quit")
+}
+
+// hasOthers reports whether Prism has instances that aren't GTNH.
+func (m *model) hasOthers() bool {
+	return slices.ContainsFunc(m.insts, func(in prism.Instance) bool { return !in.GTNH })
 }
 
 // editsRow reports whether the selected page row is a settings or launcher row.

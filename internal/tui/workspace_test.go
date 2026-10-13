@@ -189,7 +189,7 @@ func TestC2NoInstancesOffersToMakeOne(t *testing.T) {
 
 	lines := screen(m)
 
-	if !containsLine(lines, "No GTNH instances in Prism yet.") || !containsLine(lines, "Press n to make one.") {
+	if !containsLine(lines, "No GTNH instances in Prism yet.") || !containsLine(lines, "Press enter or n to make one.") {
 		t.Errorf("empty workspace text missing: %q", lines)
 	}
 	if containsLine(lines, "Instances") {
@@ -352,3 +352,20 @@ func TestC5BeforeLoadOnlyQuitKeysAct(t *testing.T) {
 }
 
 var _ tea.Model = (*model)(nil)
+
+// The empty page: enter makes an instance, the status bar offers only what works there.
+func TestC2EmptyPageEnterMakesAnInstance(t *testing.T) {
+	root := t.TempDir()
+	m, _ := loadedModel(root, 80, 24, makeInst(t, root, instSpec{name: "Vanilla"}))
+
+	if got := strings.Join(m.statusPairs(), " "); got != "enter new instance a show all q quit" {
+		t.Errorf("status = %q", got)
+	}
+	if !containsLine(screen(m), "Press a to see your other instances.") {
+		t.Errorf("no hint about the other instances: %q", screen(m))
+	}
+	press(m, "enter")
+	if m.dialog == nil || m.dialog.title != "Which GTNH version do you want to install?" {
+		t.Errorf("enter on the empty page opened %+v", m.dialog)
+	}
+}

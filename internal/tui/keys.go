@@ -27,6 +27,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusPage
 		}
 	case "enter":
+		if len(m.visible()) == 0 {
+			return m, m.newInstance()
+		}
 		if m.focus == focusSidebar {
 			return m, m.playCmd(false)
 		}
