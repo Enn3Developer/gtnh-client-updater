@@ -47,7 +47,7 @@ func (m *model) updateEntries() []entry {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
 			m.fitRow("Which version is this? Tell me and I'll check for updates", "Which version is this? Tell me"),
-			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
+			func(m *model) tea.Cmd { return m.askInstalled() }))})
 	case info.rec != info.version:
 		out := "GTNH " + info.rec + " is out"
 		variants := []string{out}

@@ -497,7 +497,10 @@ reads what the page shows about each instance into `m.home`.
     notice lines (`notice`: the ok line, then warn lines, then dim info lines), then the
     update row: "GTNH <rec> is out · <kind> · <ago>"
     (hint `u`), "Which version is this? Tell me and I'll check for updates"
-    for an unknown version, or the dim info line "You have the newest stable version."
+    for an unknown version (`askInstalled`: the picker "Which GTNH version is X on right
+    now?", the answer kept for this run in `m.told`, so the page shows the version and
+    whether an update is out; nothing is downloaded until `u`), or the dim info line
+    "You have the newest stable version."
     ("You have the newest version." on a beta or RC); on a narrow page these rows drop
     their least useful part (the age, then the kind or the from-version) instead of being
     cut mid-word (`fitRow`);

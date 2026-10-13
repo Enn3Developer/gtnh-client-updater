@@ -332,3 +332,24 @@ func TestC9UpdateKeyOnAnUnknownVersionAsksFirst(t *testing.T) {
 		t.Errorf("cmd %v job %+v dialog %q, want the which-version question", cmd != nil, m.job, dialogTitle(m))
 	}
 }
+
+// C9: telling the version from the unknown-version row only checks for updates; the
+// update starts when the player asks for it.
+func TestC9TellingTheVersionChecksWithoutUpdating(t *testing.T) {
+	m, in := unknownHome(t, true)
+
+	cmd := press(m, "u", "down", "enter") // "which version?" → 2.8.1
+
+	if cmd != nil || m.job != nil || m.dialog != nil {
+		t.Fatalf("cmd %v job %+v dialog %q, want nothing started", cmd != nil, m.job, dialogTitle(m))
+	}
+	got := pageLines(m, 78)
+	if got[1] != "GTNH 2.8.1 · Java 8 · never played" || !containsLine(got, "GTNH 2.8.4 is out") {
+		t.Errorf("page after telling 2.8.1 = %q", got)
+	}
+	cmd = press(m, "u")
+	if cmd == nil || !m.jobShown(in.Dir) || m.target != "2.8.4" ||
+		m.detect != (update.Detection{Version: "2.8.1", Source: "you told me"}) {
+		t.Errorf("u then: job %+v target %q detect %+v, want the update from 2.8.1", m.job, m.target, m.detect)
+	}
+}

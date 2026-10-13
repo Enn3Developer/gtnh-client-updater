@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"strings"
@@ -150,6 +151,7 @@ type model struct {
 	targetUsed      bool              // cfg.Target was consumed by a creation
 	job             *job              // the running job shown inline; nil when none runs
 	notices         map[string]notice // outcome of the last job per instance Dir
+	told            map[string]string // the version the player said an instance is on, per Dir
 	runUnknown      bool              // the last check couldn't tell whether the game runs
 }
 
@@ -162,7 +164,7 @@ func newModel(cfg Config) *model {
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore, now: time.Now,
 		prepareMods: update.PrepareModsSync, applyMods: (*update.ModsSync).Apply,
-		notices: map[string]notice{},
+		notices: map[string]notice{}, told: map[string]string{},
 	}
 }
 
@@ -383,7 +385,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	st, _ := update.LoadState(in.Dir)
 	info := homeInfo{
 		gtnh:    in.GTNH,
-		version: update.DetectVersion(in, st, m.manifest).Version,
+		version: cmp.Or(update.DetectVersion(in, st, m.manifest).Version, m.told[in.Dir]),
 		played:  ago(in.LastLaunch, m.now()),
 		flavor:  update.FlavorOf(in),
 	}
