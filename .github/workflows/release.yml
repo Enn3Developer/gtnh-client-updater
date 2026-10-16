@@ -53,7 +53,13 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+        # A release drafted by hand on the web (which also creates the tag) gets the assets
+        # attached instead of failing with "a release with the same tag name already exists".
         run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            exit 0
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "gtnh-update ${GITHUB_REF_NAME#v}" \
             --notes-file .github/release-notes.md \
