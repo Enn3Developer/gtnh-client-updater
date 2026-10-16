@@ -63,7 +63,11 @@ func (m *model) settingsRows() []row {
 	}
 	var out []row
 	for _, k := range keys {
-		out = append(out, m.settingRow(k.id, k.label, settingValue(k.id, info, m.now()), labelWidth(k.id)))
+		r := m.settingRow(k.id, k.label, settingValue(k.id, info, m.now()), labelWidth(k.id))
+		if k.id == "mods" {
+			r.run = func(m *model) tea.Cmd { return m.manageMods() }
+		}
+		out = append(out, r)
 	}
 	return out
 }

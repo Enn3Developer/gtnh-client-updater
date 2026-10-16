@@ -56,6 +56,10 @@ func (m *model) startUpdate(target string) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	if m.manifest == nil {
+		m.offlineNotice()
+		return nil
+	}
 	running, err := m.isRunning(inst)
 	if err == nil && running {
 		m.notify("The game is running", inst.Name+" is running right now. Close Minecraft, then try again.")
@@ -68,9 +72,19 @@ func (m *model) startUpdate(target string) tea.Cmd {
 	} else {
 		m.detect = update.DetectVersion(inst, st, m.manifest)
 	}
+	if v := m.told[inst.Dir]; m.detect.Version == "" && v != "" {
+		m.detect = update.Detection{Version: v, Source: "you told me"}
+	}
 	if m.detect.Version != "" {
 		return m.beginPrepare(inst, st, target)
 	}
+	m.installedPicker(inst, func(m *model) tea.Cmd { return m.beginPrepare(inst, st, target) })
+	return nil
+}
+
+// installedPicker asks which GTNH version inst is on, remembers the answer for this run
+// (m.told, m.detect) and then runs next.
+func (m *model) installedPicker(inst prism.Instance, next func(*model) tea.Cmd) {
 	now := m.now()
 	items := make([]ditem, len(m.manifest.Releases))
 	for i, r := range m.manifest.Releases {
@@ -79,9 +93,30 @@ func (m *model) startUpdate(target string) tea.Cmd {
 	m.openList("Which GTNH version is "+inst.Name+" on right now?", "", items, "",
 		func(m *model, v string) tea.Cmd {
 			m.detect = update.Detection{Version: v, Source: "you told me"}
+			m.told[inst.Dir] = v
 			m.closeDialog()
-			return m.beginPrepare(inst, st, target)
+			return next(m)
 		})
+}
+
+// askInstalled asks which version the current instance is on, so the page can say
+// whether an update is out; nothing is downloaded until the player picks the update.
+func (m *model) askInstalled() tea.Cmd {
+	inst, ok := m.current()
+	switch {
+	case !ok:
+		return nil
+	case m.job != nil:
+		m.notifyBusy()
+		return nil
+	case m.manifest == nil:
+		m.offlineNotice()
+		return nil
+	}
+	m.installedPicker(inst, func(m *model) tea.Cmd {
+		m.refresh()
+		return nil
+	})
 	return nil
 }
 

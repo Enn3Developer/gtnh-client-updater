@@ -832,7 +832,7 @@ func TestC10ADownloadReadyAfterQuitIsThrownAway(t *testing.T) {
 	}
 }
 
-// C10: while the instance is written, quit keys do nothing.
+// C10: while the instance is written, quit keys do nothing but say why, until the next key.
 func TestC10QuitKeysDoNothingWhileWriting(t *testing.T) {
 	for _, k := range []string{"q", "ctrl+c"} {
 		t.Run(k, func(t *testing.T) {
@@ -845,8 +845,13 @@ func TestC10QuitKeysDoNothingWhileWriting(t *testing.T) {
 				t.Errorf("%s acted while writing: quitting %v quitAfterCancel %v", k, m.quitting, m.quitAfterCancel)
 			}
 			pairs := m.statusPairs()
+			if n := len(pairs); n < 2 || pairs[n-2] != "" || pairs[n-1] != cantQuitNow {
+				t.Errorf("statusPairs %q, want them to end with the keyless %q", pairs, cantQuitNow)
+			}
+			press(m, "down")
+			pairs = m.statusPairs()
 			if n := len(pairs); n < 2 || pairs[n-2] != "" || pairs[n-1] != "updating — please don't close this window" {
-				t.Errorf("statusPairs %q, want them to end with the keyless updating — please don't close this window", pairs)
+				t.Errorf("statusPairs after another key %q, want them to end with the keyless updating — please don't close this window", pairs)
 			}
 		})
 	}

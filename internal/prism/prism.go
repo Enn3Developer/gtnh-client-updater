@@ -54,6 +54,22 @@ func DataDirs() []string {
 	return out
 }
 
+// DataDirAt finds the Prism data dir a player points at: the folder with
+// prismlauncher.cfg itself, that file, or a folder right inside the data dir (like its
+// instances folder). false when none of those is one.
+func DataDirAt(path string) (string, bool) {
+	path = filepath.Clean(path)
+	if filepath.Base(path) == "prismlauncher.cfg" && isFile(path) {
+		return filepath.Dir(path), true
+	}
+	for _, d := range []string{path, filepath.Dir(path)} {
+		if isFile(filepath.Join(d, "prismlauncher.cfg")) {
+			return d, true
+		}
+	}
+	return "", false
+}
+
 // InstancesDir resolves the instances directory of a Prism data dir from the
 // InstanceDir setting in prismlauncher.cfg (relative to the data dir, or absolute).
 func InstancesDir(dataDir string) string {

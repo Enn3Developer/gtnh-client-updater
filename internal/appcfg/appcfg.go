@@ -1,4 +1,5 @@
-// Package appcfg is the launcher's own small settings file: the Prism executable override and what to do after Play.
+// Package appcfg is the launcher's own small settings file: the Prism executable and data
+// folder overrides and what to do after Play.
 package appcfg
 
 import (
@@ -12,6 +13,9 @@ import (
 type Config struct {
 	PrismExe  string `json:"prismExe,omitempty"`  // Prism executable the player pointed at; "" = find it automatically
 	AfterPlay string `json:"afterPlay,omitempty"` // AfterPlayStay (default) or AfterPlayQuit
+	// PrismDir is Prism's data folder (the one with prismlauncher.cfg) the player showed
+	// the launcher because it wasn't found; "" = find it automatically.
+	PrismDir string `json:"prismDir,omitempty"`
 }
 
 // AfterPlayStay keeps the launcher open after Play; it is also the default for empty or unknown values.

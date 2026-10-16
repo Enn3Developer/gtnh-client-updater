@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Enn3Developer/gtnh-client-updater/internal/manifest"
 )
@@ -39,32 +40,82 @@ func (m *model) updateEntries() []entry {
 	if n, ok := m.notices[in.Dir]; ok {
 		es = append(es, textEntries(m.noticeLines(measure(m.pageWidth()), n)...)...)
 	}
+	if l := m.autoLine(in.Dir); l != "" {
+		es = append(es, entry{text: infoLine(l)})
+	}
+	if m.manifest == nil {
+		return append(append(es, m.offlineEntries()...), m.undoEntries(info)...)
+	}
 	switch {
 	case info.version == "":
 		es = append(es, entry{row: ptr(hintedRow("update", "u",
-			"Which version is this? Tell me and I'll check for updates",
-			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
+			m.fitRow("Which version is this? Tell me and I'll check for updates", "Which version is this? Tell me"),
+			func(m *model) tea.Cmd { return m.askInstalled() }))})
 	case info.rec != info.version:
-		text := "GTNH " + info.rec + " is out"
+		out := "GTNH " + info.rec + " is out"
+		variants := []string{out}
 		if r, ok := m.release(info.rec); ok {
-			text += " · " + releaseDesc(r, now)
+			kind := out + " · " + strings.ToLower(kindOf(r))
+			variants = []string{out + " · " + releaseDesc(r, now), kind, out}
 		}
-		es = append(es, entry{row: ptr(hintedRow("update", "u", text,
+		es = append(es, entry{row: ptr(hintedRow("update", "u", m.fitRow(variants...),
 			func(m *model) tea.Cmd { return m.startUpdate(info.rec) }))})
+	case !m.isStable(info.version):
+		es = append(es, entry{text: infoLine("You have the newest version.")})
 	default:
 		es = append(es, entry{text: infoLine("You have the newest stable version.")})
 	}
 	es = append(es, entry{row: ptr(hintedRow("versions", "o", "Choose another version…",
 		func(m *model) tea.Cmd { return m.chooseVersion() }))})
+	return append(es, m.undoEntries(info)...)
+}
+
+// undoEntries are the undo row, when info has a restorable backup, and a blank line.
+func (m *model) undoEntries(info homeInfo) []entry {
+	var es []entry
 	if b := info.backup; b != nil {
-		text := "Last update " + b.Info.From + " → " + b.Info.To + ", " + ago(b.Info.When, now) + " · undo"
+		what := "Last update " + b.Info.From + " → " + b.Info.To
+		text := m.fitRow(what+", "+ago(b.Info.When, m.now())+" · undo", what+" · undo", "Undo the update to "+b.Info.To)
 		es = append(es, entry{row: ptr(hintedRow("undo", "b", text,
 			func(m *model) tea.Cmd { return m.startUndo() }))})
 	}
 	return append(es, entry{})
 }
 
+// offlineEntries stand in for the update rows while the manifest isn't here: a spinner
+// while it's being fetched, else why it couldn't be and a "Try again" row.
+func (m *model) offlineEntries() []entry {
+	if m.manifestErr == nil {
+		return []entry{{text: "  " + strings.TrimSpace(m.spin.View()) + dimSty.Render(" Checking for new GTNH versions…")}}
+	}
+	var es []entry
+	for _, l := range wrapLines("I can't reach the GTNH download server, so I can't check for updates right now. Play still works.", measure(m.pageWidth())-2) {
+		es = append(es, entry{text: "  " + warnSty.Render(l)})
+	}
+	return append(es, entry{row: ptr(hintedRow("retry", "r", "Try again", func(m *model) tea.Cmd { return m.retryManifest() }))})
+}
+
 func ptr(r row) *row { return &r }
+
+// fitRow is the first of variants (longest first) that fits whole in a hinted page row,
+// else the last one, which the row truncates.
+func (m *model) fitRow(variants ...string) string {
+	// hintCol puts every hint at most measure - widest hint - 1, and the text must end
+	// 3 columns before it; the widest hint is the play row's "enter"
+	room := measure(m.pageWidth()) - len("enter") - 4
+	for _, v := range variants {
+		if ansi.StringWidth(v) <= room {
+			return v
+		}
+	}
+	return variants[len(variants)-1]
+}
+
+// isStable reports whether version is a stable release in the manifest.
+func (m *model) isStable(version string) bool {
+	r, ok := m.release(version)
+	return ok && r.Stable()
+}
 
 // release is the manifest entry of version.
 func (m *model) release(version string) (manifest.Release, bool) {
@@ -123,6 +174,10 @@ type notice struct {
 func (m *model) chooseVersion() tea.Cmd {
 	if m.job != nil {
 		m.notifyBusy()
+		return nil
+	}
+	if m.manifest == nil {
+		m.offlineNotice()
 		return nil
 	}
 	in, _ := m.current()

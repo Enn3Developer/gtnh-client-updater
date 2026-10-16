@@ -47,7 +47,11 @@ It's a small program that runs in a terminal window, with arrow keys and Enter �
    | **n** | Make a new GTNH instance |
    | **a** | Also show instances that aren't GTNH |
    | **v** | Update gtnh-update itself, when a new version is out |
+   | **r** | Check for GTNH versions again, after the GTNH server couldn't be reached |
    | **q** | Quit |
+
+   No internet? Play, Undo and Settings still work; updates wait until the GTNH server
+   can be reached again.
 
 **Playing.** gtnh-update finds Prism by itself and asks it to start the game, so Prism still
 handles your Microsoft login and Java. By default it then stays open and tells you when the
@@ -56,7 +60,8 @@ a look at Prism's window — it may be asking you something. You can quit gtnh-u
 time; the game keeps running.
 
 **Settings** (**s**) are per instance: the server to join, your server's extra-mods link,
-memory for the game, Java arguments, which Java to use and the window size. Leave a value
+memory for the game (like `8 GB` or `8192`), Java arguments, which Java to use and the
+window size. Leave a value
 empty to go back to Prism's default. These are the same settings Prism has, so if Prism is
 open while you change them, restart Prism. Two settings are for gtnh-update itself: whether
 it stays open or quits after you press Play, and where Prism is, if it can't find it on its
@@ -101,9 +106,17 @@ game starts.
 
 Some servers add a few mods on top of GTNH: a `.zip` of jars behind a link the server owner
 gives you. gtnh-update asks for it the first time you press **j** (Play & join) or save a
-server in Settings; change or remove it later in Settings. From then on the server's mods
-are synced every time you press Play, right after you change the link, and with every
-update.
+server in Settings, or press enter on *Server mods* in Settings to add it yourself. A link
+is only saved once the mods could be downloaded from it; if not, you're told why right
+there. From then on you don't have to do anything: every time you open gtnh-update it
+checks each instance's server for new or removed mods and installs them by itself, showing
+what it did under *Update* ("Server mods synced just now · 2 new", "up to date", or why it
+couldn't). They're synced again before every Play and with every update. While the game is
+running from an instance its mods are left alone until the next Play.
+
+With a link set, *Server mods* shows it and the mods it installed, and lets you **check for
+new mods** right away, **use another link**, or **stop using them**. To set the link without
+opening the screen: `gtnh-update -instance "GTNH" -server-mods <link> -yes`.
 
 - Only mods that came from the link are ever removed, and not if you changed them.
 - If one of your own jars is in the way of a server mod (same file or same mod), it's moved
@@ -124,6 +137,7 @@ gtnh-update -instance "GTNH" -version latest-stable -yes
 gtnh-update -create -version latest-stable -name "GTNH" -yes   # a brand-new instance
 gtnh-update -play -yes -instance "GTNH"             # start it in Prism
 gtnh-update -play -yes -instance "GTNH" -version latest   # update, then start it
+gtnh-update -instance "GTNH" -server-mods https://… -yes  # use a server's mods (none = stop)
 gtnh-update -self-update
 ```
 
@@ -132,13 +146,13 @@ gtnh-update -self-update
 | `-instance` | Instance folder, or its name in Prism |
 | `-version` | A GTNH version (`2.8.4`), `latest` or `latest-stable` |
 | `-installed` | The version the instance is on now, if it's detected wrong |
-| `-server-mods` | Server extra-mods link, or `none`. Default: what the instance remembers |
+| `-server-mods` | Server extra-mods link, or `none`. Default: what the instance remembers. With `-instance` and `-yes` alone it sets the link and syncs (a link that doesn't work isn't saved); without `-yes` the screen syncs from it when it opens |
 | `-prism-dir` | Prism's data folder (the one with `prismlauncher.cfg`), if it isn't found automatically |
 | `-configs` | Config files both you and GTNH changed: `new` (default, yours backed up) or `mine` (GTNH's saved as `.mcnew`). Without `-yes` it picks the preselected answer |
 | `-create` | Create a new instance with `-version` instead of updating one |
 | `-name` | Name for the new instance. Default: `GT New Horizons <version>` |
 | `-play` | Start the instance in Prism. With `-yes` it needs `-instance`, starts it and exits; add `-version` to update first. Without `-yes` it opens gtnh-update and starts `-instance` right away |
-| `-yes` | Don't ask, just do it: updating needs `-instance` and `-version`, `-create` needs `-version` (plus optional `-name`, `-server-mods`, and `-configs` for updates), `-play` needs `-instance` |
+| `-yes` | Don't ask, just do it: updating needs `-instance` and `-version`, `-create` needs `-version` (plus optional `-name`, `-server-mods`, and `-configs` for updates), `-play` needs `-instance`, `-server-mods` alone needs `-instance` |
 | `-no-update-check` | Don't check GitHub for a newer gtnh-update |
 | `-V` | Print the gtnh-update version |
 
@@ -146,6 +160,7 @@ Prism's data folder is found automatically in its standard place on Windows, mac
 Linux (including Flatpak), or next to `gtnh-update` for portable installs. To start the
 game, gtnh-update looks for the Prism program the same way (Flatpak, portable, then the
 usual install places); if it can't find it, set *Prism Launcher location* in Settings.
+If Prism's data folder isn't found, gtnh-update asks you for it once and remembers it.
 Launcher-wide settings are saved in `gtnh-update/config.json` in your user config folder.
 
 ## How it works

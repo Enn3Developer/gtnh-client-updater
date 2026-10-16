@@ -775,8 +775,8 @@ func TestPolish2C8EditingHelpWrapsAt61(t *testing.T) {
 	got := trimLines(strings.Join(row.lines(61, true), "\n"))
 
 	want := []string{
-		"  How much memory the game may use, in MB — GTNH runs well",
-		"  with 6144 to 8192. Empty means Prism's default.",
+		"  Memory for the game, like 8 GB or 8192 MB — GTNH runs well",
+		"  with 6 to 8 GB. Empty means Prism's default.",
 	}
 	if len(got) != 3 || !strings.HasPrefix(got[0], "▸ Memory         8192") || !eq(got[1:], want) {
 		t.Errorf("edited row %q, want the field and %q", got, want)
@@ -792,8 +792,8 @@ func TestPolish2C8EditingHelpLinesAreDim(t *testing.T) {
 
 	got := row.lines(61, true)
 
-	if len(got) != 3 || got[1] != infoLine("How much memory the game may use, in MB — GTNH runs well") ||
-		got[2] != infoLine("with 6144 to 8192. Empty means Prism's default.") {
+	if len(got) != 3 || got[1] != infoLine("Memory for the game, like 8 GB or 8192 MB — GTNH runs well") ||
+		got[2] != infoLine("with 6 to 8 GB. Empty means Prism's default.") {
 		t.Errorf("edited row %q, want two dim help lines", got)
 	}
 }
@@ -808,8 +808,8 @@ func TestPolish2C8ErrorFollowsTheWrappedHelp(t *testing.T) {
 
 	got := trimLines(strings.Join(row.lines(61, true), "\n"))
 
-	if len(got) != 4 || got[3] != "  Give me a whole number of MB between 1024 and 65536." ||
-		got[2] != "  with 6144 to 8192. Empty means Prism's default." {
+	if len(got) != 4 || got[3] != "  Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB." ||
+		got[2] != "  with 6 to 8 GB. Empty means Prism's default." {
 		t.Errorf("edited row %q, want field, two help lines and the error", got)
 	}
 }
@@ -823,8 +823,8 @@ func TestPolish2C8EditingHelpAt40HasThreeWholeLines(t *testing.T) {
 	got := trimLines(strings.Join(row.lines(40, true), "\n"))
 
 	want := []string{
-		"  How much memory the game may use, in",
-		"  MB — GTNH runs well with 6144 to 8192.",
+		"  Memory for the game, like 8 GB or 8192",
+		"  MB — GTNH runs well with 6 to 8 GB.",
 		"  Empty means Prism's default.",
 	}
 	if len(got) != 4 || !eq(got[1:], want) {
@@ -840,10 +840,10 @@ func TestPolish2C8EditingHelpIsCutAfterThreeLines(t *testing.T) {
 
 	got := trimLines(strings.Join(row.lines(30, true), "\n"))
 
-	if len(got) != 4 || got[1] != "  How much memory the game may" || got[2] != "  use, in MB — GTNH runs well" {
+	if len(got) != 4 || got[1] != "  Memory for the game, like 8" || got[2] != "  GB or 8192 MB — GTNH runs" {
 		t.Fatalf("edited row %q, want the field and three help lines", got)
 	}
-	if !strings.HasPrefix(got[3], "  with") || !strings.HasSuffix(got[3], "…") || ansi.StringWidth(got[3]) > 30 {
+	if !strings.HasPrefix(got[3], "  well") || !strings.HasSuffix(got[3], "…") || ansi.StringWidth(got[3]) > 30 {
 		t.Errorf("third help line %q, want it cut with … within 30 columns", got[3])
 	}
 }

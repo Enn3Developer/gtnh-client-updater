@@ -9,6 +9,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if s == "q" || s == "ctrl+c" {
 		return m, m.quitKey()
 	}
+	if m.noPrism && s == "enter" {
+		m.askPrismDir()
+	}
 	if !m.loaded {
 		return m, nil
 	}
@@ -24,6 +27,9 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusPage
 		}
 	case "enter":
+		if len(m.visible()) == 0 {
+			return m, m.newInstance()
+		}
 		if m.focus == focusSidebar {
 			return m, m.playCmd(false)
 		}
@@ -44,6 +50,8 @@ func (m *model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.runRow("versions")
 	case "b":
 		return m, m.runRow("undo")
+	case "r":
+		return m, m.retryManifest()
 	case "s":
 		m.jumpToSettings()
 	case "n":

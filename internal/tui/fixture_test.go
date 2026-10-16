@@ -141,6 +141,7 @@ type fakes struct {
 	modsSync     *update.ModsSync // nil = one with an empty plan
 	modsApplied  int
 	modsApplyErr error
+	modsManaged  []string // what applying notes as the jars the sync manages; nil = leave it
 }
 
 var fakeLauncher = prism.Launcher{Exe: "prism-fake", Kind: "custom"}
@@ -184,6 +185,25 @@ func newTestModel(cfg Config, width, height int) (*model, *fakes) {
 		f.modsApplied++
 		if f.modsApplyErr != nil {
 			return nil, f.modsApplyErr
+		}
+		// like the real Apply: a link given for the sync is saved as the answer
+		if o := f.modsSyncs[len(f.modsSyncs)-1]; o.URL != "" {
+			link := o.URL
+			if link == "none" {
+				link = ""
+			}
+			if err := update.UpdateState(o.Instance.Dir, func(st *update.State) {
+				st.CustomModsURL, st.CustomModsAsked = link, true
+				if f.modsManaged != nil {
+					st.CustomMods = f.modsManaged
+				}
+			}); err != nil {
+				return nil, err
+			}
+		} else if f.modsManaged != nil {
+			if err := update.UpdateState(o.Instance.Dir, func(st *update.State) { st.CustomMods = f.modsManaged }); err != nil {
+				return nil, err
+			}
 		}
 		return s.Plan, nil
 	}

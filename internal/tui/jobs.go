@@ -32,6 +32,10 @@ type job struct {
 	title  string
 	phase  string // "prepare" | "apply"
 	backup string // backup dir of a jobRestore; "" otherwise
+	// a jobMods the launcher started on its own at start (see flow_mods_auto.go): quiet
+	// on the page, and Play waits for it instead of being refused
+	auto    bool
+	tryLink bool // auto with a link from the command line: if it can't be fetched, it isn't saved
 }
 
 // pending is the instance being created: a synthetic GTNH instance while a jobCreate runs.
@@ -81,8 +85,14 @@ func (m *model) pendingEntries() []entry {
 	return append(es, rowEntries([]row{m.jobRow()})...)
 }
 
-// jobShown reports whether the running job belongs to the instance at dir.
+// jobShown reports whether the running job belongs to the instance at dir and takes the
+// place of its play rows: every job but a sync the launcher started on its own.
 func (m *model) jobShown(dir string) bool {
+	return m.jobOn(dir) && !m.job.auto
+}
+
+// jobOn reports whether the running job, whichever, works on the instance at dir.
+func (m *model) jobOn(dir string) bool {
 	return m.job != nil && m.job.dir == dir
 }
 
@@ -113,6 +123,10 @@ func (m *model) jobName() string {
 
 // notifyBusy tells the player that another job has to finish first (C3a).
 func (m *model) notifyBusy() {
+	if m.job.auto {
+		m.notify("Just a moment", "I'm checking your server's mods for "+m.jobName()+". Try again in a few seconds.")
+		return
+	}
 	m.notify("One thing at a time", "I'm still busy with "+m.jobName()+". Let it finish first.")
 }
 

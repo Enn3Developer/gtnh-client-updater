@@ -42,6 +42,7 @@ func (m *model) newInstance() tea.Cmd {
 		return nil
 	}
 	if m.manifest == nil {
+		m.offlineNotice()
 		return nil
 	}
 	if m.cfg.Target != "" && !m.targetUsed {

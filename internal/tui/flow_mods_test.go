@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -299,47 +301,260 @@ func editTo(m *model, id, value string) tea.Cmd {
 	return press(m, "enter")
 }
 
-// Saving the mods link syncs the mods right away; clearing it takes them out.
-func TestSavingTheModsLinkSyncsNow(t *testing.T) {
-	m, f, home, _ := modsHome(t)
+// openModsRow selects the Server mods row of the current instance and presses enter.
+func openModsRow(m *model) tea.Cmd {
+	m.focus = focusPage
+	m.selectRow("mods")
+	return press(m, "enter")
+}
+
+// dialogText is the open dialog's body, flattened.
+func dialogText(m *model) string {
+	if m.dialog == nil {
+		return ""
+	}
+	return flat(m.dialog.body(200))
+}
+
+// Without a link the Server mods row asks for one; a pasted link (quotes and all) is
+// checked by syncing from it, and the dialog says what the sync did.
+func TestServerModsRowWithoutALinkAsksForOne(t *testing.T) {
+	m, f, _, second := modsHome(t)
+	m.selectDir(second.Dir)
 	f.modsSync = &update.ModsSync{Plan: modsPlanOf(update.ModAdd, "a.jar")}
+	f.modsManaged = []string{"a.jar"}
 
-	cmd := editTo(m, "mods", "https://other.example.org/m.zip")
+	openModsRow(m)
+	if dialogTitle(m) != modsDialogTitle || m.dialog.input == nil || m.dialog.input.Value() != "" {
+		t.Fatalf("dialog %q, want the empty field for the link", dialogTitle(m))
+	}
+	m.dialog.input.SetValue(` "https://mods.example.org/m.zip" `)
+	cmd := press(m, "enter")
 
-	if m.savedRow != "mods" || m.job == nil || m.job.kind != jobMods {
-		t.Fatalf("saved %q job %+v, want the saved mark and the sync", m.savedRow, m.job)
+	if dialogTitle(m) != "Checking your server's mods" || m.job == nil || m.job.kind != jobMods {
+		t.Fatalf("dialog %q job %+v, want the check in a progress dialog", dialogTitle(m), m.job)
 	}
-	if msgs := settle(m, cmd); len(msgs) != 0 || len(f.launches) != 0 {
-		t.Errorf("msgs %v launches %d, want nothing after the sync", msgs, len(f.launches))
+	if got := m.statusPairs(); !eq(got, []string{"esc", "cancel"}) {
+		t.Errorf("status %q, want esc cancel while it downloads", got)
 	}
-	if got := m.notices[home.Dir].text; got != "Server mods synced just now · 1 new" {
-		t.Errorf("notice %q", got)
+	if st, _ := update.LoadState(second.Dir); st.CustomModsURL != "" {
+		t.Errorf("link saved before the check: %+v", st)
 	}
+	settle(m, cmd)
 
-	// what the (fake) sync would have noted: the jars it manages
-	if err := update.UpdateState(home.Dir, func(st *update.State) { st.CustomMods = []string{"a.jar", "b.jar"} }); err != nil {
-		t.Fatal(err)
+	if len(f.modsSyncs) != 1 || f.modsSyncs[0].URL != "https://mods.example.org/m.zip" || f.modsSyncs[0].Context == nil {
+		t.Fatalf("syncs %+v, want one from the cleaned link, cancellable", f.modsSyncs)
 	}
-	f.modsSync = &update.ModsSync{Plan: modsPlanOf(update.ModRemove, "a.jar", update.ModRemove, "b.jar")}
-	settle(m, editTo(m, "mods", ""))
-
-	if got := m.notices[home.Dir].text; got != "Removed 2 mods of your old server just now" || len(f.modsSyncs) != 2 {
-		t.Errorf("notice %q syncs %d, want the removal", got, len(f.modsSyncs))
+	if st := seState(t, second.Dir); st.CustomModsURL != "https://mods.example.org/m.zip" || !st.CustomModsAsked {
+		t.Errorf("state %+v, want the link saved once it worked", st)
+	}
+	if dialogTitle(m) != modsDialogTitle || m.job != nil || m.modsFlow != nil {
+		t.Fatalf("dialog %q job %+v, want the result", dialogTitle(m), m.job)
+	}
+	if got, want := dialogText(m), "Done: 1 new. From mods.example.org now: a.jar"; got != want {
+		t.Errorf("result %q, want %q", got, want)
+	}
+	if _, ok := m.notices[second.Dir]; ok {
+		t.Errorf("notice %+v, want the result in the dialog only", m.notices[second.Dir])
 	}
 }
 
-// While another job runs the new link waits for the next Play, which the notice says.
-func TestSavingTheModsLinkDuringAnotherJob(t *testing.T) {
-	m, f, home, second := modsHome(t)
+// A new link the server can't give isn't saved: the field comes back with the reason
+// and nothing in mods/ changes.
+func TestABrokenNewLinkIsNotSaved(t *testing.T) {
+	m, f, home, _ := modsHome(t)
+	f.modsSync = &update.ModsSync{Plan: modsPlanOf(), FetchErr: update.ErrModsWebPage}
+
+	openModsRow(m)
+	press(m, "down", "enter") // Use another link
+	if m.dialog == nil || m.dialog.input == nil || m.dialog.input.Value() != "https://mods.example.org/pack/extra.zip" {
+		t.Fatalf("dialog %q, want the field with the current link", dialogTitle(m))
+	}
+	m.dialog.input.SetValue("https://www.dropbox.com/s/abc/mods.zip?dl=0")
+	settle(m, press(m, "enter"))
+
+	if m.dialog == nil || m.dialog.input == nil || m.dialog.input.Value() != "https://www.dropbox.com/s/abc/mods.zip?dl=0" {
+		t.Fatalf("dialog %q, want the field back with the link as typed", dialogTitle(m))
+	}
+	if want := "I couldn't use that link: " + update.ErrModsWebPage.Error() + "."; m.dialog.inputErr != want {
+		t.Errorf("err %q, want %q", m.dialog.inputErr, want)
+	}
+	if f.modsApplied != 0 || m.job != nil {
+		t.Errorf("applied %d job %+v, want nothing applied", f.modsApplied, m.job)
+	}
+	if st := seState(t, home.Dir); st.CustomModsURL != "https://mods.example.org/pack/extra.zip" {
+		t.Errorf("link %q, want the old one kept", st.CustomModsURL)
+	}
+}
+
+// With a link the row opens a dialog that shows the link and the mods; "Check for new
+// mods" syncs now from the same link, and says so even when nothing changed.
+func TestCheckForNewModsFromTheRow(t *testing.T) {
+	m, f, home, _ := modsHome(t)
+	if err := update.UpdateState(home.Dir, func(st *update.State) {
+		st.CustomMods, st.CustomModsSynced = []string{"a.jar", "b.jar"}, time.Now().Add(-3*day)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m.refresh()
+
+	openModsRow(m)
+	if dialogTitle(m) != modsDialogTitle || m.dialog.list == nil {
+		t.Fatalf("dialog %q, want the Server mods dialog", dialogTitle(m))
+	}
+	if got, want := dialogText(m), "From https://mods.example.org/pack/extra.zip 2 mods, synced 3 days ago: a.jar, b.jar"; got != want {
+		t.Errorf("intro %q, want %q", got, want)
+	}
+	var titles []string
+	for _, it := range m.dialog.list.items {
+		titles = append(titles, it.title)
+	}
+	if want := []string{"Check for new mods", "Use another link", "Stop using them"}; !eq(titles, want) {
+		t.Errorf("items %q, want %q", titles, want)
+	}
+	settle(m, press(m, "enter"))
+
+	if len(f.modsSyncs) != 1 || f.modsSyncs[0].URL != "" || f.modsApplied != 1 {
+		t.Fatalf("syncs %+v applied %d, want one from the instance's own link", f.modsSyncs, f.modsApplied)
+	}
+	if got, want := dialogText(m), "You have all of the server's mods already. From mods.example.org now: a.jar, b.jar"; got != want {
+		t.Errorf("result %q, want %q", got, want)
+	}
+
+	// the server can't be reached: the dialog says so, from the copy of last time
+	press(m, "enter")
+	f.modsSync = &update.ModsSync{Plan: modsPlanOf(update.ModUpdate, "a.jar"), FetchErr: errors.New("the download stopped")}
+	openModsRow(m)
+	settle(m, press(m, "enter"))
+	if got, want := dialogText(m), "Done: 1 updated. I couldn't check your server's mods: the download stopped. From mods.example.org now: a.jar, b.jar"; got != want {
+		t.Errorf("result %q, want %q", got, want)
+	}
+}
+
+// "Stop using them" takes the server's mods out and forgets the link.
+func TestStopUsingTheServersMods(t *testing.T) {
+	m, f, home, _ := modsHome(t)
+	f.modsSync = &update.ModsSync{Plan: modsPlanOf(update.ModRemove, "a.jar", update.ModRemove, "b.jar")}
+	f.modsManaged = []string{}
+
+	openModsRow(m)
+	if dialogTitle(m) != modsDialogTitle {
+		t.Fatalf("dialog %q", dialogTitle(m))
+	}
+	cmd := press(m, "down", "down", "enter")
+	if dialogTitle(m) != "Taking out your server's mods" {
+		t.Errorf("progress %q", dialogTitle(m))
+	}
+	settle(m, cmd)
+
+	if len(f.modsSyncs) != 1 || f.modsSyncs[0].URL != "none" {
+		t.Fatalf("syncs %+v, want one with no link", f.modsSyncs)
+	}
+	if st := seState(t, home.Dir); st.CustomModsURL != "" || !st.CustomModsAsked {
+		t.Errorf("state %+v, want no link, asked", st)
+	}
+	if got := dialogText(m); got != "I took out 2 mods of your server." {
+		t.Errorf("result %q", got)
+	}
+	if got := settingValue("mods", m.home[home.Dir], m.now()); got != "none" {
+		t.Errorf("row %q, want none", got)
+	}
+}
+
+// esc while the link downloads stops it and goes back to the field, quietly.
+func TestEscStopsTheCheckOfALink(t *testing.T) {
+	m, f, _, second := modsHome(t)
+	m.selectDir(second.Dir)
+	openModsRow(m)
+	m.dialog.input.SetValue("https://mods.example.org/m.zip")
+	cmd := press(m, "enter")
+
+	press(m, "esc")
+	if len(f.modsSyncs) != 0 {
+		// the fake prepares only when cmd runs; the options carry the context
+		t.Fatalf("syncs %+v before the command ran", f.modsSyncs)
+	}
+	settle(m, cmd)
+
+	if err := f.modsSyncs[0].Context.Err(); !errors.Is(err, context.Canceled) {
+		t.Errorf("context %v, want cancelled", err)
+	}
+	if m.dialog == nil || m.dialog.input == nil || m.dialog.input.Value() != "https://mods.example.org/m.zip" || m.dialog.inputErr != "" {
+		t.Fatalf("dialog %q, want the field back as typed, without an error", dialogTitle(m))
+	}
+	if f.modsApplied != 0 || m.job != nil {
+		t.Errorf("applied %d job %+v, want nothing", f.modsApplied, m.job)
+	}
+
+	// the real prepare answers a cancelled download with an error: same outcome
+	cmd = press(m, "enter")
+	press(m, "esc")
+	m.Update(errMsg{context.Canceled})
+	if m.dialog == nil || m.dialog.input == nil || m.dialog.inputErr != "" || m.job != nil {
+		t.Errorf("dialog %q job %+v, want the field back", dialogTitle(m), m.job)
+	}
+	_ = cmd
+}
+
+// A sync from the dialog that fails ends in an error dialog that says what changed.
+func TestASyncFromTheDialogThatFails(t *testing.T) {
+	cases := []struct {
+		name    string
+		set     func(f *fakes)
+		outcome string
+	}{
+		{"prepare", func(f *fakes) { f.modsPrepErr = errors.New("I couldn't read my notes") }, "Nothing was changed."},
+		{"rolled back", func(f *fakes) { f.modsApplyErr = fmt.Errorf("disk full (%w)", update.ErrModsRolledBack) },
+			"Everything was put back the way it was."},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m, f, home, _ := modsHome(t)
+			c.set(f)
+			openModsRow(m)
+			settle(m, press(m, "enter"))
+
+			if dialogTitle(m) != "Something went wrong" || !strings.Contains(dialogText(m), c.outcome) ||
+				!strings.HasPrefix(dialogText(m), "I couldn't sync your server's mods: ") {
+				t.Errorf("dialog %q %q, want the error with %q", dialogTitle(m), dialogText(m), c.outcome)
+			}
+			if _, ok := m.notices[home.Dir]; ok || m.job != nil {
+				t.Errorf("notice %+v job %+v, want neither", m.notices[home.Dir], m.job)
+			}
+		})
+	}
+}
+
+// While a job runs, the Server mods row says one thing at a time.
+func TestServerModsRowWhileBusy(t *testing.T) {
+	m, f, _, second := modsHome(t)
 	m.job = jobOn(second.Dir, "Updating to GTNH 2.8.4", "prepare")
 
-	cmd := editTo(m, "mods", "https://other.example.org/m.zip")
-
-	if cmd != nil || len(f.modsSyncs) != 0 || m.job.dir != second.Dir {
-		t.Errorf("cmd %v syncs %d job %+v, want no sync", cmd != nil, len(f.modsSyncs), m.job)
+	if cmd := openModsRow(m); cmd != nil || dialogTitle(m) != "One thing at a time" || len(f.modsSyncs) != 0 {
+		t.Errorf("cmd %v dialog %q syncs %d, want One thing at a time", cmd != nil, dialogTitle(m), len(f.modsSyncs))
 	}
-	if got := m.notices[home.Dir].warn; len(got) != 1 || !strings.Contains(got[0], "I'll do it the next time you play") {
-		t.Errorf("notice warn %q", got)
+}
+
+// Play and join checks the answer to the question too: a broken link comes back to
+// the question, an empty one joins without mods.
+func TestPlayAndJoinQuestionChecksTheLink(t *testing.T) {
+	m, f, in := joinHome(t)
+	f.modsSync = &update.ModsSync{Plan: modsPlanOf(), FetchErr: update.ErrModsNotFound}
+	press(m, "j")
+	m.dialog.input.SetValue("https://mods.example.org/gone.zip")
+
+	settle(m, press(m, "enter"))
+	if dialogTitle(m) != modsTitle || !strings.Contains(m.dialog.inputErr, update.ErrModsNotFound.Error()) || len(f.launches) != 0 {
+		t.Fatalf("dialog %q err %q launches %d, want the question back with the reason", dialogTitle(m), m.dialog.inputErr, len(f.launches))
+	}
+	m.dialog.input.SetValue("")
+	msgs := settle(m, press(m, "enter"))
+
+	if st := seState(t, in.Dir); st.CustomModsURL != "" || !st.CustomModsAsked {
+		t.Errorf("state %+v, want asked with no link", st)
+	}
+	if !launchedMsgs(msgs) || len(f.launches) != 1 || f.launches[0].server != "play.example.org" {
+		t.Errorf("msgs %v launches %+v, want the join", msgs, f.launches)
 	}
 }
 
@@ -362,6 +577,10 @@ func TestSavingAServerAsksAboutItsMods(t *testing.T) {
 	if st := seState(t, in.Dir); st.CustomModsURL != "https://mods.example.org/m.zip" || len(f.modsSyncs) != 1 {
 		t.Errorf("state %+v syncs %d, want the link saved and synced", st, len(f.modsSyncs))
 	}
+	if dialogTitle(m) != modsDialogTitle {
+		t.Errorf("dialog %q, want what the sync did", dialogTitle(m))
+	}
+	press(m, "enter")
 
 	editTo(m, "server", "other.example.org")
 	if m.dialog != nil {

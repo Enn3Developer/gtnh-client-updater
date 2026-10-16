@@ -580,3 +580,85 @@ func TestC6ConfigChoiceKeepsItsOwnErrorText(t *testing.T) {
 		t.Errorf("configChoice(\"both\") error = %v, want %q", err, want)
 	}
 }
+
+// ---- -h and stray words ----
+
+func TestCheckArgsRefusesWordsAfterTheOptions(t *testing.T) {
+	if err := checkArgs(nil); err != nil {
+		t.Errorf("no args: %v", err)
+	}
+	err := checkArgs([]string{"GTNH", "-yes"})
+	if err == nil || !strings.Contains(err.Error(), `"GTNH"`) || !strings.Contains(err.Error(), `-instance "GTNH"`) {
+		t.Errorf("checkArgs(GTNH -yes) = %v, want it refused with a hint", err)
+	}
+}
+
+func TestUsageShowsExamplesThenTheOptions(t *testing.T) {
+	old := flag.CommandLine
+	fs := flag.NewFlagSet("gtnh-update", flag.ContinueOnError)
+	fs.Bool("yes", false, "don't ask")
+	var out strings.Builder
+	fs.SetOutput(&out)
+	flag.CommandLine = fs
+	t.Cleanup(func() { flag.CommandLine = old })
+
+	usage()
+
+	got := out.String()
+	if !strings.HasPrefix(got, "GTNH Launcher (gtnh-update)") || !strings.Contains(got, "  gtnh-update -list\n") ||
+		!strings.Contains(got, "Options:\n  -yes") {
+		t.Errorf("usage:\n%s", got)
+	}
+	for _, l := range strings.Split(got, "\n") {
+		if len(l) > 80 && !strings.HasPrefix(l, "    \t") {
+			t.Errorf("line wider than 80 columns: %q", l)
+		}
+	}
+}
+
+// -instance X -server-mods <link> -yes sets the link and installs its mods at once; a new
+// link the server can't give isn't saved.
+func TestModsLinkHeadless(t *testing.T) {
+	data := t.TempDir()
+	var err error
+	captureStdout(t, func() {
+		err = createHeadless(&http.Client{Transport: packTransport{t, tinyPack(t)}}, []string{data}, "Mine", "2.8.1", "none")
+	})
+	if err != nil {
+		t.Fatalf("setup createHeadless = %v", err)
+	}
+	dir := filepath.Join(data, "instances", "Mine")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("extra.jar")
+	w.Write([]byte("extra"))
+	zw.Close()
+
+	captureStdout(t, func() {
+		err = modsLinkHeadless(&http.Client{Transport: packTransport{t, nil}}, []string{data}, "Mine", brokenModsURL)
+	})
+	if err == nil || !strings.Contains(err.Error(), "I couldn't use that link, so I didn't save it") {
+		t.Errorf("broken link: err = %v, want it refused", err)
+	}
+	if st, _ := update.LoadState(dir); st == nil || st.CustomModsURL != "" {
+		t.Errorf("state = %+v, want no link saved", st)
+	}
+
+	out := captureStdout(t, func() {
+		err = modsLinkHeadless(&http.Client{Transport: modsTransport{buf.Bytes()}}, []string{data}, "Mine", "https://mods.example.org/m.zip")
+	})
+	if err != nil || !strings.Contains(out, "server mods added: extra.jar") || !strings.Contains(out, "Done: Mine uses https://mods.example.org/m.zip.") {
+		t.Errorf("err %v, output %q; want the jar added and the link in use", err, out)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, ".minecraft", "mods", "extra.jar")); err != nil || string(got) != "extra" {
+		t.Errorf("extra.jar = %q, %v; want the server's jar", got, err)
+	}
+	if st, _ := update.LoadState(dir); st == nil || st.CustomModsURL != "https://mods.example.org/m.zip" || !st.CustomModsAsked {
+		t.Errorf("state = %+v, want the link saved", st)
+	}
+
+	out = captureStdout(t, func() { err = modsLinkHeadless(nil, []string{data}, "Mine", "none") })
+	if _, statErr := os.Stat(filepath.Join(dir, ".minecraft", "mods", "extra.jar")); err != nil || statErr == nil {
+		t.Errorf("none: err %v, extra.jar still there: %v; output %q", err, statErr == nil, out)
+	}
+}

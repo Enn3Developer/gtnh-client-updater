@@ -151,7 +151,11 @@ func TestC1UnreadableSettingsRefuseTheInstanceCfgSettings(t *testing.T) {
 
 // C1: unreadable settings don't refuse the settings kept elsewhere.
 func TestC1UnreadableSettingsStillAllowServerModsAndPrism(t *testing.T) {
-	for _, id := range []string{"server", "mods", "prism"} {
+	m, _, _ := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", noCfg: true})
+	if m.editSetting("mods"); dialogTitle(m) != modsDialogTitle {
+		t.Errorf("editSetting(mods) with unreadable settings: dialog %q, want the Server mods dialog", dialogTitle(m))
+	}
+	for _, id := range []string{"server", "prism"} {
 		t.Run(id, func(t *testing.T) {
 			m, _, _ := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", noCfg: true})
 
@@ -327,7 +331,7 @@ func TestC1RawSettingValueIsTheStoredValue(t *testing.T) {
 		{"window off", "window", off, app, ""},
 		{"server set", "server", set, app, "mc.example.net:25565"},
 		{"server none", "server", off, app, ""},
-		{"mods set", "mods", set, app, "https://dl.example.com/pack/extra.zip"},
+		{"mods set", "mods", set, app, ""}, // its own dialog
 		{"mods none", "mods", off, app, ""},
 		{"prism set", "prism", off, app, "/opt/prism/prismlauncher"},
 		{"prism auto", "prism", off, appcfg.Config{}, ""},
@@ -359,7 +363,7 @@ func TestC1RawSettingValueWithEverythingSetPicksEachOwnValue(t *testing.T) {
 		{"java", "/usr/lib/jvm/java-21/bin/java"},
 		{"window", "1920x1080"},
 		{"server", "mc.example.net:25565"},
-		{"mods", "https://dl.example.com/pack/extra.zip"},
+		{"mods", ""},
 		{"prism", "/opt/prism/prismlauncher"},
 		{"after", ""},
 		{"unknown", ""},
@@ -410,7 +414,7 @@ func TestC3EscCancelsWithoutSaving(t *testing.T) {
 
 // C3
 func TestC3MoveKeysAreIgnoredWhileEditing(t *testing.T) {
-	for _, k := range []string{"up", "down", "tab", "shift+tab", "left", "right"} {
+	for _, k := range []string{"up", "down", "tab", "shift+tab"} {
 		t.Run(k, func(t *testing.T) {
 			m, _ := twoGTNH(t)
 			m.focus = focusPage
@@ -501,7 +505,7 @@ func TestC4ARefusedValueKeepsEditingWithTheReason(t *testing.T) {
 
 	seSave(t, m, "memory", "abc")
 
-	if m.edit == nil || m.edit.err != "Give me a whole number of MB between 1024 and 65536." {
+	if m.edit == nil || m.edit.err != "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB." {
 		t.Fatalf("edit after a bad value = %+v, want still editing with the memory message", m.edit)
 	}
 	if after := seCfg(t, in.Dir); after != before {
@@ -679,28 +683,6 @@ func TestC4ServerCleared(t *testing.T) {
 }
 
 // C4
-func TestC4ModsLinkIsSavedAndMarkedAsked(t *testing.T) {
-	m, _, in := seHome(t, "")
-
-	seSave(t, m, "mods", "https://dl.example.com/extra.zip")
-
-	if st := seState(t, in.Dir); st.CustomModsURL != "https://dl.example.com/extra.zip" || !st.CustomModsAsked {
-		t.Errorf("state = url %q asked %v, want the link and asked", st.CustomModsURL, st.CustomModsAsked)
-	}
-}
-
-// C4
-func TestC4ModsClearedIsNoneButAsked(t *testing.T) {
-	m, _, in := seModel(t, instSpec{name: "Home", gtnh: true, version: "2.8.4", mods: "https://old.example.org/m.zip"})
-
-	seSave(t, m, "mods", "")
-
-	if st := seState(t, in.Dir); st.CustomModsURL != "" || !st.CustomModsAsked {
-		t.Errorf("state = url %q asked %v, want none and asked", st.CustomModsURL, st.CustomModsAsked)
-	}
-}
-
-// C4
 func TestC4PrismLocationIsSavedToTheAppSettings(t *testing.T) {
 	m, f, _ := seHome(t, "")
 	exe := seFile(t, "prismlauncher")
@@ -780,7 +762,7 @@ func TestC6CheckSettingMessages(t *testing.T) {
 	const (
 		badServer = "That doesn't look like a server address — try play.example.com or play.example.com:25565."
 		badMods   = "That doesn't look like a download link — it should start with https://"
-		badMemory = "Give me a whole number of MB between 1024 and 65536."
+		badMemory = "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB."
 		badFile   = "I can't find a file there."
 		badWindow = "Give me width and height like 1920x1080."
 	)
@@ -804,8 +786,6 @@ func TestC6CheckSettingMessages(t *testing.T) {
 		{"server", "a b", badServer}, {"server", "http://x", badServer}, {"server", "play.example.com", ""},
 		{"server", ":25565", badServer}, {"server", "host:abc", badServer}, {"server", "host:1", ""},
 		{"server", "host:25565:1", badServer},
-
-		{"mods", "http://x", badMods}, {"mods", "https://dl.example.com/extra.zip", ""}, {"mods", "ftp://x", badMods},
 
 		{"java", file, ""}, {"java", dir, badFile}, {"java", missing, badFile},
 		{"prism", file, ""}, {"prism", dir, badFile}, {"prism", missing, badFile},
@@ -878,10 +858,10 @@ func TestC2EditingRendersTheFieldHelpAndErrorAt80x24(t *testing.T) {
 	if !strings.HasPrefix(strings.TrimLeft(field, " "), "▸ Memory         8192") {
 		t.Errorf("field line = %q, want ▸ Memory and the value 8192", field)
 	}
-	if !containsLine(plain, "How much memory the game may use") {
+	if !containsLine(plain, "Memory for the game, like 8 GB") {
 		t.Errorf("no help line:\n%s", strings.Join(plain, "\n"))
 	}
-	if !containsLine(refused, "Give me a whole number of MB between 1024 and 65536.") {
+	if !containsLine(refused, "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB.") {
 		t.Errorf("no error line after a refused value:\n%s", strings.Join(refused, "\n"))
 	}
 }

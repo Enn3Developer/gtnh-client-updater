@@ -121,12 +121,18 @@ func (m *model) sectionLines(width int, es []entry) []string {
 // first moved so the selected row is fully visible and off the "more" markers (C4).
 func (m *model) pageView(width, height int) string {
 	switch {
+	case m.noPrism:
+		return noPrismView(width)
 	case m.loadErr != nil:
 		return m.loadErrView(width)
 	case !m.loaded:
 		return m.spin.View() + " Looking for your GTNH instances…"
 	case len(m.visible()) == 0:
-		return "No GTNH instances in Prism yet.\n" + dimSty.Render("Press n to make one.")
+		hint := "Press enter or n to make one."
+		if m.hasOthers() {
+			hint += " Press a to see your other instances."
+		}
+		return "No GTNH instances in Prism yet.\n" + dimSty.Render(wrap(hint, width))
 	}
 	m.row = max(min(m.row, len(m.rows())-1), 0)
 	lines, span := m.render(width, m.entries())

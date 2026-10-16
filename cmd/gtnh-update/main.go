@@ -8,6 +8,7 @@
 //	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] -yes
 //	gtnh-update -create -version <ver|latest|latest-stable> [-name <name>] [-server-mods <url>] -yes
 //	gtnh-update -play -instance <dir|name> [-version <ver>] -yes
+//	gtnh-update -instance <dir|name> -server-mods <url|none> -yes
 //
 // -configs new|mine decides what happens to config files changed both by the player and
 // by the new version (default new); in the TUI it only changes the preselected answer.
@@ -17,8 +18,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -61,7 +64,11 @@ func run() error {
 		noCheck    = flag.Bool("no-update-check", false, "don't check GitHub for a newer gtnh-update")
 		showVer    = flag.Bool("V", false, "print the gtnh-update version")
 	)
+	flag.Usage = usage
 	flag.Parse()
+	if err := checkArgs(flag.Args()); err != nil {
+		return err
+	}
 	selfupdate.CleanupOld()
 	if *showVer {
 		if packaged != "" {
@@ -87,12 +94,13 @@ func run() error {
 			return err
 		}
 	}
-	dirs := prism.DataDirs()
-	if *prismDir != "" {
-		dirs = []string{*prismDir}
-	}
+	dirs := dataDirs(*prismDir)
 	client := &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy: http.ProxyFromEnvironment,
+		// Without these, a computer that's offline behind a dead route waits minutes on
+		// the OS's connect timeout before saying anything.
+		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 60 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}}
@@ -115,6 +123,8 @@ func run() error {
 			noticeNewer(client)
 		}
 		return playHeadless(client, dirs, *instance, *installed, *target, *serverMods, choice)
+	case *yes && *target == "" && *serverMods != "" && *instance != "":
+		return modsLinkHeadless(client, dirs, *instance, *serverMods)
 	case *yes:
 		if *instance == "" || *target == "" {
 			return errors.New("-yes needs -instance and -version")
@@ -136,6 +146,58 @@ func run() error {
 		return selfupdate.Restart()
 	}
 	return nil
+}
+
+const usageText = `GTNH Launcher (gtnh-update): play, update and make GT: New Horizons instances in
+Prism Launcher, keeping your worlds, settings and config tweaks.
+
+Run it without options for the launcher's screen. For scripts:
+
+  gtnh-update -list
+    	your instances and all GTNH versions
+  gtnh-update -instance "GTNH" -version latest-stable -yes
+    	update an instance
+  gtnh-update -create -version latest-stable -name "GTNH" -yes
+    	make a new instance
+  gtnh-update -play -yes -instance "GTNH" [-version latest]
+    	start it in Prism; with -version, update it first
+  gtnh-update -instance "GTNH" -server-mods https://example.org/mods.zip -yes
+    	use your server's extra mods (checked and installed now; "none" stops)
+  gtnh-update -self-update
+    	update the launcher itself
+
+Options:
+`
+
+// usage prints what the program is, examples and the options (-h).
+func usage() {
+	out := flag.CommandLine.Output()
+	fmt.Fprint(out, usageText)
+	flag.PrintDefaults()
+}
+
+// checkArgs refuses words left after the options: the flag package stops at the first
+// one, so `gtnh-update GTNH -yes` would silently ignore -yes and open the screen.
+func checkArgs(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return fmt.Errorf("I don't know what %q means here: options start with a dash, like -instance %q (see -h)", args[0], args[0])
+}
+
+// dataDirs are the Prism data dirs to scan: -prism-dir when given, else the folder the
+// player showed the launcher (appcfg PrismDir) first, then the ones found automatically.
+func dataDirs(flagDir string) []string {
+	if flagDir != "" {
+		return []string{flagDir}
+	}
+	dirs := prism.DataDirs()
+	if cfg, err := appcfg.Load(); err == nil && cfg.PrismDir != "" {
+		if d, ok := prism.DataDirAt(cfg.PrismDir); ok && !slices.Contains(dirs, d) {
+			dirs = append([]string{d}, dirs...)
+		}
+	}
+	return dirs
 }
 
 // configChoice maps the -configs flag to the engine's choice for conflicting configs.
@@ -201,6 +263,40 @@ func playHeadless(client *http.Client, dirs []string, instName, installed, targe
 		return err
 	}
 	fmt.Printf("Started %s in Prism Launcher.\n", inst.Name)
+	return nil
+}
+
+// modsLinkHeadless sets the server-mods link of an instance (-server-mods, "none" = none)
+// and syncs from it at once. A new link the server can't give isn't saved.
+func modsLinkHeadless(client *http.Client, dirs []string, instName, link string) error {
+	inst, err := findInstance(dirs, instName)
+	if err != nil {
+		return err
+	}
+	if !inst.GTNH {
+		return fmt.Errorf("%s isn't a GTNH instance", inst.Name)
+	}
+	st, err := update.LoadState(inst.Dir)
+	if err != nil {
+		return err
+	}
+	s, err := update.PrepareModsSync(update.ModsSyncOptions{Client: client, Instance: inst, URL: link}, &textReporter{})
+	if err != nil {
+		return err
+	}
+	if s.FetchErr != nil && link != "none" && (st == nil || st.CustomModsURL != link) {
+		s.Close()
+		return fmt.Errorf("I couldn't use that link, so I didn't save it: %w", s.FetchErr)
+	}
+	if s.FetchErr != nil {
+		fmt.Printf("  heads up: I couldn't check your server's mods: %v.\n", s.FetchErr)
+	}
+	p, err := s.Apply(&textReporter{})
+	printMods(s.Link, p, err)
+	if err != nil {
+		return errors.New("the link wasn't changed")
+	}
+	fmt.Printf("Done: %s uses %s.\n", inst.Name, orDefault(s.Link, "no server mods"))
 	return nil
 }
 

@@ -75,7 +75,7 @@ func TestC6MissingLauncherIsExplainedInADialog(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatalf("no dialog")
 	}
-	if m.dialog.title != "I couldn't start the game" || strings.Join(m.dialog.buttons, ",") != "OK" {
+	if m.dialog.title != "I couldn't start the game" || strings.Join(m.dialog.buttons, ",") != "Set Prism's location,OK" {
 		t.Errorf("dialog %q with buttons %v", m.dialog.title, m.dialog.buttons)
 	}
 	want := "I couldn't find Prism Launcher on this computer. Start the game from Prism yourself, or tell me where Prism is in the settings."
@@ -369,5 +369,22 @@ func TestC6AnotherInstanceShowsPlainPlay(t *testing.T) {
 
 	if got := playRow(m); got[0] != hinted("  ", "Play", "enter", 78) {
 		t.Errorf("Bravo's play row = %q", got)
+	}
+}
+
+// C6: the missing-launcher dialog opens the Prism setting, and names a stale location.
+func TestC6MissingLauncherOpensThePrismSetting(t *testing.T) {
+	m, f, _, _ := playModel(t)
+	f.findErr = prism.ErrLauncherNotFound
+	m.app.PrismExe = "/gone/prismlauncher"
+
+	runCmd(press(m, "p"))
+	if m.dialog == nil || !strings.Contains(flat(m.dialog.body(200)), "Prism Launcher isn't at /gone/prismlauncher anymore") {
+		t.Fatalf("dialog %+v", m.dialog)
+	}
+	press(m, "enter")
+
+	if m.dialog != nil || m.edit == nil || m.edit.id != "prism" || m.edit.input.Value() != "/gone/prismlauncher" {
+		t.Errorf("dialog %+v edit %+v, want the Prism setting being edited", m.dialog, m.edit)
 	}
 }

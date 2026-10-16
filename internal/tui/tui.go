@@ -5,6 +5,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"net/http"
 	"strings"
@@ -82,6 +83,7 @@ type homeInfo struct {
 	settings                              prism.Settings
 	settingsErr                           error
 	mods                                  int       // server mods the sync manages
+	modNames                              []string  // their file names
 	synced                                time.Time // when they were last synced with the server; zero = never
 	modsAsked                             bool      // the player answered whether the server has extra mods
 }
@@ -93,7 +95,11 @@ type model struct {
 	width, height int
 	spin          spinner.Model
 
-	manifest   *manifest.Manifest
+	// the GTNH version list: nil until fetched; the page works without it
+	manifest     *manifest.Manifest
+	manifestErr  error // why the last fetch failed; nil while fetching or once fetched
+	startPending bool  // the command line's create/update waits for the manifest
+
 	insts      []prism.Instance
 	showAll    bool
 	sel        int // index into visible()
@@ -107,6 +113,7 @@ type model struct {
 	launchDir  string // Dir of the instance whose launch is under way
 	loaded     bool
 	loadErr    error
+	noPrism    bool // no Prism data dir: the page asks for it
 	quitting   bool
 	restart    bool
 	home       map[string]homeInfo // per instance Dir, filled by refresh
@@ -132,18 +139,24 @@ type model struct {
 	creation        *update.Creation
 	cancelCreate    context.CancelFunc // stops the running PrepareCreate; nil when none runs
 	quitAfterCancel bool               // quit once the cancelled PrepareCreate has returned
+	quitRefused     bool               // the last key was a q or ctrl+c refused mid-apply
 	target          string
 	serverMods      string                 // the server-mods link of the update or creation, "" = none
 	serverModsGiven bool                   // serverMods came from the command line: it's the player's answer
 	holdOpen        bool                   // the launch came with a warning: stay open even if set to quit
 	modsOverride    string                 // the server-mods link the next sync uses and saves ("none" = none); "" = the instance's
 	afterMods       func(m *model) tea.Cmd // runs when the jobMods is done, whatever its outcome
+	modsFlow        *modsFlow              // the jobMods started in a dialog, shown there; nil = none
+	autoQueue       []prism.Instance       // instances whose server mods the launcher syncs on its own next
+	autoLink        string                 // the command line's link for the first of them; "" = theirs
+	autoCancel      context.CancelFunc     // stops the download of the running auto sync
 	newName         string
 	detect          update.Detection
 	nameUsed        bool              // cfg.Name was offered already
 	targetUsed      bool              // cfg.Target was consumed by a creation
 	job             *job              // the running job shown inline; nil when none runs
 	notices         map[string]notice // outcome of the last job per instance Dir
+	told            map[string]string // the version the player said an instance is on, per Dir
 	runUnknown      bool              // the last check couldn't tell whether the game runs
 }
 
@@ -156,7 +169,7 @@ func newModel(cfg Config) *model {
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore, now: time.Now,
 		prepareMods: update.PrepareModsSync, applyMods: (*update.ModsSync).Apply,
-		notices: map[string]notice{},
+		notices: map[string]notice{}, told: map[string]string{},
 	}
 }
 
@@ -164,6 +177,9 @@ func newModel(cfg Config) *model {
 // self-update check, and loads the launcher settings into m.app.
 func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{tea.SetWindowTitle("GTNH Launcher"), m.spin.Tick, m.load}
+	if len(m.cfg.PrismDirs) > 0 {
+		cmds = append(cmds, m.fetchManifest)
+	}
 	if m.cfg.UpdateCheck {
 		cmds = append(cmds, m.checkSelf)
 	}
@@ -185,8 +201,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spin, cmd = m.spin.Update(msg)
 		return m, cmd
 	case loadedMsg:
-		m.manifest, m.insts = msg.m, msg.insts
+		if msg.m != nil {
+			m.manifest = msg.m
+		}
+		m.insts = msg.insts
 		return m, m.afterLoad()
+	case manifestMsg:
+		return m, m.onManifest(msg)
+	case noPrismMsg:
+		m.noPrism = true
 	case newerMsg:
 		m.newer = msg.r
 	case stepMsg:
@@ -225,6 +248,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.job != nil {
 			return m, m.onRestored(msg.r)
 		}
+	case autoModsMsg:
+		return m, m.startAutoMods()
 	case modsPreparedMsg:
 		return m, m.onModsPrepared(msg.s)
 	case modsSyncedMsg:
@@ -245,6 +270,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.notify("Something went wrong", msg.err.Error())
 	case tea.KeyMsg:
+		m.quitRefused = false
 		if cmd, ok := m.keyEdit(msg); ok {
 			return m, cmd
 		}
@@ -366,7 +392,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	st, _ := update.LoadState(in.Dir)
 	info := homeInfo{
 		gtnh:    in.GTNH,
-		version: update.DetectVersion(in, st, m.manifest).Version,
+		version: cmp.Or(update.DetectVersion(in, st, m.manifest).Version, m.told[in.Dir]),
 		played:  ago(in.LastLaunch, m.now()),
 		flavor:  update.FlavorOf(in),
 	}
@@ -376,6 +402,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	if st != nil {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
 		info.mods, info.synced, info.modsAsked = len(st.CustomMods), st.CustomModsSynced, st.CustomModsAsked
+		info.modNames = st.CustomMods
 	}
 	if in.GTNH {
 		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {
@@ -396,7 +423,8 @@ func (m *model) quit() (tea.Model, tea.Cmd) {
 // quits once it has cleaned up, else quits.
 func (m *model) quitKey() tea.Cmd {
 	if m.busyApplying() {
-		return nil // never quit mid-apply
+		m.quitRefused = true // never quit mid-apply; the status bar says so
+		return nil
 	}
 	if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
 		m.cancelCreate() // quit once the download has cleaned up (C10)

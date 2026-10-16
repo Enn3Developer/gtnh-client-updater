@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,7 +20,7 @@ import (
 const (
 	couldntSaveSetting = "I couldn't save that setting"
 	msgBadServer       = "That doesn't look like a server address — try play.example.com or play.example.com:25565."
-	msgBadMemory       = "Give me a whole number of MB between 1024 and 65536."
+	msgBadMemory       = "Give me an amount between 1 and 64 GB, like 8 GB or 8192 MB."
 	msgBadFile         = "I can't find a file there."
 	msgBadWindowSize   = "Give me width and height like 1920x1080."
 )
@@ -46,6 +48,8 @@ func (m *model) editSetting(id string) tea.Cmd {
 	case "after":
 		m.toggleAfterPlay()
 		return nil
+	case "mods":
+		return m.manageMods() // a dialog of its own: the link is checked before it's saved
 	}
 	field := textinput.New()
 	field.Prompt = ""
@@ -99,13 +103,15 @@ func (m *model) keyEdit(k tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	case "ctrl+c":
 		if m.busyApplying() {
+			m.quitRefused = true
 			return nil, true // never quit mid-apply; keep the field as typed
 		}
 		m.cancelEdit()
 		return m.quitKey(), true
-	case "up", "down", "tab", "shift+tab", "left", "right":
+	case "up", "down", "tab", "shift+tab":
 		return nil, true
 	}
+	// ←→ (and home/end) move the cursor in the field like everything else typed
 	var cmd tea.Cmd
 	m.edit.input, cmd = m.edit.input.Update(k)
 	return cmd, true
@@ -114,7 +120,7 @@ func (m *model) keyEdit(k tea.KeyMsg) (tea.Cmd, bool) {
 // saveEdit checks and saves the edited value, or keeps editing with the reason (C4).
 func (m *model) saveEdit() tea.Cmd {
 	e := m.edit
-	v := strings.TrimSpace(e.input.Value())
+	v := normalSetting(e.id, strings.TrimSpace(e.input.Value()))
 	if msg := checkSetting(e.id, v); msg != "" {
 		e.err = msg
 		return nil
@@ -128,10 +134,7 @@ func (m *model) saveEdit() tea.Cmd {
 	m.refresh()
 	m.savedRow = e.id
 	m.selectRow(e.id) // a first server adds the join row above it
-	switch info := m.home[in.Dir]; {
-	case e.id == "mods":
-		return m.syncMods(in, nil) // a new link gets its mods now, none takes them out
-	case e.id == "server" && v != "" && info.gtnh && !info.modsAsked && info.modsURL == "":
+	if info := m.home[in.Dir]; e.id == "server" && v != "" && info.gtnh && !info.modsAsked && info.modsURL == "" {
 		return m.askServerMods(in, nil)
 	}
 	return nil
@@ -146,7 +149,7 @@ func (m *model) cancelEdit() {
 func settingHelp(id string) string {
 	switch id {
 	case "memory":
-		return "How much memory the game may use, in MB — GTNH runs well with 6144 to 8192. Empty means Prism's default."
+		return "Memory for the game, like 8 GB or 8192 MB — GTNH runs well with 6 to 8 GB. Empty means Prism's default."
 	case "jvm":
 		return "Extra arguments for Java. Only change this if someone told you what to put here. Empty means Prism's default."
 	case "java":
@@ -155,12 +158,78 @@ func settingHelp(id string) string {
 		return "Width and height of the game window, like 1920x1080. Empty means Prism's default."
 	case "server":
 		return "The server you usually play on, like play.example.com or play.example.com:25565. Empty means none."
-	case "mods":
-		return "The link your server owner gave you for its extra mods. Empty means none."
 	case "prism":
 		return "Where Prism Launcher is on this computer — the full path of its program. Empty lets me find it myself."
 	}
 	return ""
+}
+
+// normalSetting is the trimmed value v the player typed for the setting id in the form
+// it's checked and stored in: memory in MB ("8 GB", "8G" and a bare 8 are 8192), a
+// window size without spaces, a pasted path without its quotes, and for Java and Prism
+// the program inside a folder given instead of it. A value it can't read is left for
+// checkSetting to refuse.
+func normalSetting(id, v string) string {
+	switch id {
+	case "memory":
+		if mb, ok := parseMemory(v); ok {
+			return strconv.Itoa(mb)
+		}
+	case "window":
+		return strings.ReplaceAll(strings.ReplaceAll(v, " ", ""), "X", "x")
+	case "java":
+		return programIn(cleanPath(v), "bin/javaw.exe", "bin/java.exe", "bin/java")
+	case "prism":
+		return programIn(cleanPath(v), "prismlauncher.exe", "PrismLauncher.exe", "prismlauncher", "PrismLauncher",
+			"Contents/MacOS/prismlauncher")
+	}
+	return v
+}
+
+// programIn is the first of names (slashed, relative) inside the folder dir, or dir
+// itself when it isn't a folder or holds none of them.
+func programIn(dir string, names ...string) string {
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return dir
+	}
+	for _, n := range names {
+		p := filepath.Join(dir, filepath.FromSlash(n))
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
+			return p
+		}
+	}
+	return dir
+}
+
+// parseMemory reads an amount of memory as MB: "8192", "8192 MB", "8 GB", "8G", "6.5 GB";
+// a bare number up to 64 means GB.
+func parseMemory(v string) (int, bool) {
+	s := strings.ToLower(strings.ReplaceAll(v, " ", ""))
+	unit := 0.0
+	for _, u := range []struct {
+		suffix string
+		mb     float64
+	}{{"gib", 1024}, {"gb", 1024}, {"g", 1024}, {"mib", 1}, {"mb", 1}, {"m", 1}} {
+		if strings.HasSuffix(s, u.suffix) {
+			s, unit = strings.TrimSuffix(s, u.suffix), u.mb
+			break
+		}
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f <= 0 || f > 1<<20 {
+		return 0, false
+	}
+	if unit == 0 {
+		unit = 1
+		if f <= 64 {
+			unit = 1024
+		}
+	}
+	mb := f * unit
+	if mb != math.Trunc(mb) {
+		return 0, false
+	}
+	return int(mb), true
 }
 
 // checkSetting validates the trimmed value v for the setting id: "" if it's fine,
@@ -173,10 +242,6 @@ func checkSetting(id, v string) string {
 	case "server":
 		if !checkServerAddress(v) {
 			return msgBadServer
-		}
-	case "mods":
-		if update.CheckCustomModsURL(v) != nil {
-			return msgBadModsLink
 		}
 	case "memory":
 		n, err := strconv.Atoi(v)
@@ -201,11 +266,6 @@ func (m *model) saveSetting(dir, id, v string) error {
 	switch id {
 	case "server":
 		return update.UpdateState(dir, func(st *update.State) { st.ServerAddress = v })
-	case "mods":
-		return update.UpdateState(dir, func(st *update.State) {
-			st.CustomModsURL = v
-			st.CustomModsAsked = true
-		})
 	case "prism":
 		prev := m.app
 		m.app.PrismExe = v
@@ -300,8 +360,6 @@ func rawSettingValue(id string, info homeInfo, app appcfg.Config) string {
 		return fmt.Sprintf("%dx%d", s.WinWidth, s.WinHeight)
 	case id == "server":
 		return info.server
-	case id == "mods":
-		return info.modsURL
 	case id == "prism":
 		return app.PrismExe
 	}

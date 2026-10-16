@@ -26,10 +26,15 @@ stay `gtnh-update`.
 
 ```
 cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -play,
-                             -list, -self-update, -V; launches TUI
+                             -list, -self-update, -V, -instance X -server-mods L -yes
+                             (`modsLinkHeadless`); launches TUI; -h is `usage`
+                             (intro, examples, options); words after the options are
+                             refused (`checkArgs`)
 internal/appcfg/             launcher-wide settings: config.json under
                              os.UserConfigDir()/gtnh-update (Config.PrismExe "prismExe",
-                             Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen)
+                             Config.AfterPlay "afterPlay" = "stay"|"quit", StaysOpen,
+                             Config.PrismDir "prismDir": the Prism data dir the player
+                             showed the TUI, scanned first unless -prism-dir is given)
 internal/manifest/           fetch/parse versions.json, version ordering, URL pinning,
                              manifest.Resolve (latest / latest-stable / exact key)
 internal/pack/               pack zip reading (local + HTTP range), fingerprints, Download,
@@ -85,8 +90,13 @@ internal/tui/                bubbletea UI, one persistent workspace (see "TUI wo
                              status.go statusBar, statusPairs; flow_load.go load, afterLoad,
                              cfgInstance, reload; flow_update.go startUpdate -> prepare ->
                              conflicts/resolve/confirm -> apply -> notice; flow_mods.go the
-                             server-mods sync job (`syncMods`), the mods question
-                             (`askServerMods`), mods notices and confirmation lines;
+                             server-mods sync job (`syncMods`/`startModsSync`), the
+                             mods question (`askServerMods`), mods notices and
+                             confirmation lines; flow_mods_dialog.go the Server mods
+                             dialog (`manageMods`, `askModsLink`, `modsFlow`: a sync
+                             shown in a progress dialog, then `resultDialog`);
+                             flow_mods_auto.go the syncs at start (`startAutoMods`,
+                             `job.auto`, `waitAutoMods`);
                              flow_create.go new instance; flow_restore.go undo; flow_self.go
                              launcher self-update (incl. progressDialog); flow_play.go
                              playCmd and the game monitor; reporter.go engine progress ->
@@ -174,7 +184,7 @@ without a finished Apply, the folder is removed. Headless is
 `-create -version … [-name …] [-server-mods …] -yes`. Instances dir =
 `prism.InstancesDir(PrismDirs[0])`.
 
-TUI (flow_create.go): `n` (or `-create`, or the "Press n to make one." page when Prism has
+TUI (flow_create.go): `n` (or `-create`, or enter on the "Press enter or n to make one." page when Prism has
 no instances) → version picker list dialog "Which GTNH version do you want to install?"
 (recommended / Java 8 only marked; `-version` is used once instead) → name input
 dialog (server mods come only from `-server-mods`; the question waits for a server
@@ -232,7 +242,9 @@ running, and says "One thing at a time" while a job runs on the instance.
    instance while it's watched.
 
 A launcher that can't be found → dialog "I couldn't start the game" telling the player to
-start the game from Prism or set Prism's location in the settings.
+start the game from Prism or set Prism's location in the settings (naming the saved
+location when it's gone), `[ Set Prism's location ]  [ OK ]`; the first opens that
+setting for editing (`launcherMissing`).
 
 Headless: `-play -yes -instance X [-version Y]` updates first when `-version` is given
 (same as `-yes` update), else syncs the server's mods (`syncModsHeadless`; `-server-mods`
@@ -283,7 +295,7 @@ else that some files may have changed and the backup folder is still there.
 
 A server can add jars on top of GTNH: a zip behind a link the server owner hands out
 (`State.CustomModsURL`). They follow the server, not the GTNH version: they're synced
-before every Play, right after the link is saved, and with every update and creation,
+when the launcher opens, before every Play, right after the link is saved, and with every update and creation,
 and never go into an update's backup or undo.
 
 - **Fetch** (servermods_fetch.go `fetchMods`): https only, redirects too (`httpsOnly`);
@@ -319,19 +331,53 @@ and never go into an update's backup or undo.
   overrides the link and is saved, "none" = no link) → `ModsSync.Apply` (refuses while
   the game runs, saves `CustomMods`/`CustomModsFP`, `CustomModsSynced` when the server
   answered; without a link drops the copy).
+- **At start** (flow_mods_auto.go): after load (no `-create`/`-version`/`-play`) `afterLoad`
+  sends `autoModsMsg`, and `startAutoMods` queues every GTNH instance with a link (the
+  selected one first, with `-server-mods` when given) and syncs them one by one as
+  `jobMods` with `job.auto`: same sync as Play (journaled, rollback, the player's jars
+  never deleted), so the player never has to open anything. Chosen over "only check at
+  start, install at Play" because mods then also arrive for a game started from Prism,
+  and the sync is local and fast once the archive is fetched; the risk is a game
+  starting during it, which `ModsSync.Apply`'s `ErrGameRunning` check covers as at Play
+  (the next Play syncs). An auto job is quiet: `jobShown` is false (the Play rows and
+  Update section stay; `autoLine` "◐ Checking your server's mods…" under Update; the
+  sidebar's ◐ via `jobOn`), and its outcome is a notice, never a dialog (`autoSynced`:
+  "Server mods synced just now · 2 new" / "Your server's mods are up to date."; `autoFailed`:
+  why, or "The game is running, so I'll sync … next time you play."; a cancelled one says
+  nothing). Play during it doesn't refuse (`waitAutoMods`): on the same instance it waits
+  for that sync, on another it stops the download (`autoCancel`) and syncs its own; the
+  rest of the queue is dropped. Other actions say "Just a moment" (`notifyBusy`). A
+  `-server-mods` link that can't be fetched is not saved and nothing changes (`tryLink`,
+  `autoTried`).
 - **TUI**: the sync is `jobMods` (title "Syncing your server's mods"; prepare = the fetch,
-  apply follows at once, no confirmation). It never ends in an error dialog: the notice
-  says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed N mods of
-  your old server just now") or why not (`modsNotice`, `addMods`); nothing changed and
-  the server answered → no notice. The question "Does your server have extra mods?"
-  (`askServerMods`) comes on Play and join, or after saving a server address, on an
-  instance never asked; updates and creations never ask. Saving the Server mods row
-  syncs at once (clearing it takes the jars out). The row shows "<host> · N mods ·
-  synced <ago>" or "<host> · not synced yet" (`modsValue`). Update and create
+  apply follows at once, no confirmation). Before Play it never ends in an error dialog:
+  the notice says what it did ("Server mods synced just now · 2 new, 1 updated", "Removed
+  N mods of your old server just now") or why not (`modsNotice`, `addMods`); nothing
+  changed and the server answered → no notice. The question "Does your server have extra
+  mods?" (`askServerMods`) comes on Play and join, or after saving a server address, on
+  an instance never asked; updates and creations never ask. The row shows "<host> · N
+  mods · synced <ago>" or "<host> · not synced yet" (`modsValue`) and is not edited in
+  place: enter (`manageMods`) opens "Your server's mods" — without a link the field for
+  one; with a link the link, the mods it installed and when (`modsSummary`), and "Check
+  for new mods" (sync now) / "Use another link" (the field, holding the link) / "Stop
+  using them" (sync with "none"). Refused with "One thing at a time" while a job runs.
+- **Link field** (`askModsLink`, also the question): pasted quotes/spaces are dropped
+  (`cleanLink`); not https → `msgBadModsLink`; empty = none (an earlier link's jars are
+  taken out by a sync). A link is never saved before it works: Continue syncs from it
+  (`ModsSyncOptions.URL`, which only Apply saves) in a progress dialog ("Checking your
+  server's mods", esc stops the download via its Context and goes back to the field);
+  a *new* link whose fetch fails (`ModsSync.FetchErr`) is thrown away and the field
+  comes back with "I couldn't use that link: <reason>." Started from the row, the sync
+  ends in `resultDialog` ("Done: 2 new.", "You have all of the server's mods already.",
+  "I took out N mods of your server.", warnings, "From <host> now: <jars>") or the error
+  dialog ("Nothing was changed." / rolled back); from the question it ends in the
+  notice and the launch (`modsFlow.next`). Update and create
   confirmations list "Server mods from <host>: …" with the warnings and dim lines of
   `modsPreview`/`modsLines`.
 - **CLI**: `-yes` updates and `-create` print the sync (`printMods`); `-play -yes` syncs
-  before the launch (`syncModsHeadless`).
+  before the launch (`syncModsHeadless`); `-instance X -server-mods <link|none> -yes`
+  without `-version` sets the link and syncs (`modsLinkHeadless`; a new link that can't
+  be fetched is refused, not saved); without `-yes` the start sync uses it.
 - **mcconsole** (the server side) publishes an empty zip when the last jar goes, never no
   file: a 404 keeps the installed mods (a broken link isn't "no mods").
 
@@ -394,11 +440,15 @@ and never go into an update's backup or undo.
   `MinecraftWinHeight`. (`prism.SetName` only builds the instance.cfg of a *new*
   instance.) Clearing a setting turns its `Override*` flag off and keeps the values.
 - **Settings validation lives in `tui.checkSetting`** (settings_edit.go): server
-  `host[:port]` (`checkServerAddress`); mods link `update.CheckCustomModsURL`; memory a
+  `host[:port]` (`checkServerAddress`); memory a
   whole number of MB in 1024–65536 (sets `MaxMemAlloc`, `MinMemAlloc` = min(old or 1024,
   it)); Java path and Prism location must be existing regular files; window `WxH` (x or
-  ×), each 320–16384. An empty value means Prism's default / none. Server and mods link go
-  to state.json via `update.UpdateState`, the Prism location to appcfg.
+  ×), each 320–16384. An empty value means Prism's default / none. The server goes
+  to state.json via `update.UpdateState`, the Prism location to appcfg. Before the check
+  `normalSetting` puts what was typed into that form: memory via `parseMemory` ("8 GB",
+  "8G", "8192 MB"; a bare number up to 64 is GB), a window size without spaces, paths
+  through `cleanPath` (quotes, ~), and a folder given for Java or Prism becomes the
+  program inside it (`bin/java[w].exe`, `prismlauncher[.exe]`, a macOS `.app`).
 - **Restore only removes paths recorded in `Added`** and only moves back files the backup
   holds; nothing outside that list is deleted. Never "guess" added files from a
   manifest-less backup.
@@ -409,10 +459,10 @@ and never go into an update's backup or undo.
   failed process listing as "not running".
 - `appcfg` `config.json` is persisted on players' machines: **add fields only**
   (omitempty, zero value = old behavior: `PrismExe` "" = find Prism, `AfterPlay` "" =
-  stay). Don't rename `prismExe`/`afterPlay`.
+  stay, `PrismDir` "" = find the data dir). Don't rename `prismExe`/`afterPlay`/`prismDir`.
 - **Keys** (`tui.key`, no dialog open): `p` play, `j` the join row, `u` the update row,
   `o` choose another version, `b` the undo row (each a no-op when the page has no such
-  row), `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
+  row), `r` fetch the GTNH manifest again after a failed fetch, `s` jump to the first Settings row (or the first Launcher row), `n` new instance,
   `a` show all instances, `v` launcher update (only when a newer release is known),
   `q`/`ctrl+c` quit. `↑↓` move the instance (sidebar) or the row (page);
   tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and on the page runs the
@@ -473,7 +523,8 @@ reads what the page shows about each instance into `m.home`.
   right side gives way first.
 - **Sidebar** (sidebar.go): only when loaded and more than one instance is visible
   (`sidebarShows`; `visible()` = the GTNH instances, or all of them after `a`, plus the
-  pending one). Width clamp(longest name + 4, 16, 28) (`sidebarWidth`). A dim "Instances"
+  pending one). Width clamp(longest name + 4, 16, 28), at most max(width/3, 10)
+  so a narrow terminal keeps room for the page (`sidebarWidth`). A dim "Instances"
   heading, then one "<glyph> <name>" line per instance, scrolled to keep the selection
   visible. Glyphs (`glyph`): ● up to date (ok colour), ▲ newer version out (warn), ○ not
   GTNH or version unknown (dim), ◐ (accent) for the instance whose game is being watched
@@ -488,7 +539,13 @@ reads what the page shows about each instance into `m.home`.
     notice lines (`notice`: the ok line, then warn lines, then dim info lines), then the
     update row: "GTNH <rec> is out · <kind> · <ago>"
     (hint `u`), "Which version is this? Tell me and I'll check for updates"
-    for an unknown version, or the dim info line "You have the newest stable version.";
+    for an unknown version (`askInstalled`: the picker "Which GTNH version is X on right
+    now?", the answer kept for this run in `m.told`, so the page shows the version and
+    whether an update is out; nothing is downloaded until `u`), or the dim info line
+    "You have the newest stable version."
+    ("You have the newest version." on a beta or RC); on a narrow page these rows drop
+    their least useful part (the age, then the kind or the from-version) instead of being
+    cut mid-word (`fitRow`);
     "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
     exists, "Last update A → B, <ago> · undo" (hint `b`).
   - "Settings" heading (rows_settings.go): Memory, Java arguments, Java, Window and, for
@@ -500,26 +557,44 @@ reads what the page shows about each instance into `m.home`.
   - "Launcher" heading: "After I start the game" (quit | stay open and show whether it's
     running) and "Prism Launcher" (the path | found automatically).
 
+  With no Prism data dir (`noPrismMsg`) the page says "I couldn't find Prism Launcher on
+  this computer." and enter opens the input "Where does Prism keep its data?"
+  (`askPrismDir`): `prism.DataDirAt` accepts the data dir, its prismlauncher.cfg or a
+  folder right inside it (pasted quotes and ~ are cleaned by `cleanPath`); the folder is
+  saved as appcfg `PrismDir` and loaded at once.
+
+  Loading never waits for the network: `load` lists the instances and `fetchManifest`
+  gets the manifest on its own (`manifestMsg`; `m.manifest` nil until then). Without it
+  the Update section shows a spinner "Checking for new GTNH versions…" or, after a failed
+  fetch (`m.manifestErr`), a yellow "I can't reach the GTNH download server…" line and a
+  "Try again" row (hint `r`); Play, Undo and Settings keep working, the sidebar marks a
+  known version with a dim ●, `update.DetectVersion` uses only the state and the
+  changelog's own version, and update/versions/new say why they can't
+  (`offlineNotice`). A `-create`/`-version` from the command line waits for the manifest
+  (`startPending`).
+
   A row is "▸ " + accent bold text when selected, else two spaces + text, with its key
   hint right-aligned and dim (`rowLine`). The page scrolls so the selected row is fully
   visible and off the "↑ N more" / "↓ N more" markers (`scrollTo`, `bodyWindow`). Before
   load the page is a spinner "Looking for your GTNH instances…"; a load error shows in
-  red; with no visible instance it says "No GTNH instances in Prism yet." / "Press n to
-  make one.".
+  red; with no visible instance it says "No GTNH instances in Prism yet." / "Press enter or n
+  to make one." (+ "Press a to see your other instances." when Prism has others), enter
+  starts a new instance and the status bar is "enter new instance [· a show all] · q quit".
 - **Focus**: sidebar or page. After load the sidebar has focus (the page when the sidebar
   is hidden). `↑↓` move the instance or the row (changing instance resets row and scroll);
   tab/shift+tab/`←→` switch focus; `enter` plays from the sidebar and runs the row on the
   page; `esc` on the play row dismisses a finished game state. Letter shortcuts work with
   no dialog open (see "Keys" under Invariants).
 - **Status bar** (`statusPairs`, status.go): key/label chips on the bar background; pairs
-  that don't fit are dropped from the end. Before load: "q quit". With a dialog, its pairs
+  that don't fit are dropped from the end, except a last "q quit", which stays. Before load: "q quit". With a dialog, its pairs
   (`dialogPairs`; list: ↑↓ move · enter choose · esc cancel [· space switch]; input:
   enter continue · esc cancel; buttons: ←→ choose · enter ok · esc cancel; the progress
   dialog: "updating please don't close this window"). While editing a setting: "enter
   save · esc cancel". Otherwise sidebar focus "↑↓ instance · enter play · tab page" or
   page focus "↑↓ move · enter run|edit [· tab instances]", then "n new instance", "a show
   all" (when non-GTNH instances exist or all are shown), then "updating please don't
-  close this window" while applying, "stopping cleaning up…" while a cancelled create
+  close this window" while applying (after a refused q/ctrl+c, until the next key: "I
+  can't quit in the middle of this — wait for it to finish", `quitRefused`), "stopping cleaning up…" while a cancelled create
   download cleans up, else "q quit".
 - **Dialogs** (dialog.go): one at a time (`m.dialog`), a rounded dim-bordered box with the
   title in the top border, content on the bar background, buttons as right-aligned chips
@@ -534,13 +609,15 @@ reads what the page shows about each instance into `m.home`.
   - notify (`notify`): title + text, OK;
   - progress (`progressDialog`, flow_self.go): buttonless, shows the running job's
     progress line and step text, takes and ignores every key; used by the launcher
-    self-update.
+    self-update, and by a server-mods sync from its dialog, where esc stops the download
+    and the status bar says "esc cancel" (`dialog.pairs` overrides `dialogPairs`).
 
   A dialog takes every key (`keyDialog`): esc = cancel/close, `←→`/tab/shift+tab move
   between buttons, enter activates; in a list `↑↓` move and enter picks; in an input
   dialog (`keyInput`) every key but enter/esc/tab/shift+tab goes to the field.
 - **Jobs** (jobs.go): kinds update, create, restore, self, mods (`jobKind`; mods is the
-  server-mods sync, see "Server mods", which never ends in an error dialog); phase "prepare" |
+  server-mods sync, see "Server mods", which ends in an error dialog only when started
+  from the Server mods dialog); phase "prepare" |
   "apply"; one at a time — starting another shows "One thing at a time" (`notifyBusy`).
   The job block (`jobBlock`) replaces the Play rows of its instance: "◐ <title>" (hint
   "please wait" while applying), a progress bar with percentage and "N of M files" / MB
@@ -564,11 +641,11 @@ reads what the page shows about each instance into `m.home`.
   turns it into "▸ <label>  <text field>" with a dim help line (`settingHelp`) and a red
   error line. While editing (`keyEdit`) enter saves (`saveEdit`: `checkSetting` → on an
   error the message stays in the row and editing continues; else `saveSetting`,
-  `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab/`←→` are
-  swallowed, other keys type. An empty value means Prism's default / none. The "After I
-  start the game" row toggles stay/quit on enter and saves at once. Saving the Server mods
-  row starts the sync; saving a server on an instance never asked about its mods opens
-  the mods question. Editing is refused while a dialog is open or a job runs on the
+  `refresh`, and "✓ saved" on the row until the next key), esc cancels, `↑↓`/tab are
+  swallowed, other keys (`←→` included: they move the cursor) go to the field. An empty value means Prism's default / none. The "After I
+  start the game" row toggles stay/quit on enter and saves at once. The Server mods row isn't
+  edited in place (its own dialog, see "Server mods"); saving a server on an instance
+  never asked about its mods opens the mods question. Editing is refused while a dialog is open or a job runs on the
   instance; a save failure shows the dialog "I couldn't save that setting".
 
 ## UI voice

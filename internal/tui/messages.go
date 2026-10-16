@@ -11,6 +11,12 @@ import (
 
 // Messages from background work.
 type (
+	// loadedMsg: the instances are listed (m: the manifest too, when it came with them).
+	// manifestMsg: the GTNH version list, or why it couldn't be fetched.
+	manifestMsg struct {
+		m   *manifest.Manifest
+		err error
+	}
 	loadedMsg struct {
 		m     *manifest.Manifest
 		insts []prism.Instance
@@ -44,6 +50,10 @@ type (
 		p        *update.ModsPlan
 		fetchErr error
 	}
+	// autoModsMsg: the instances are loaded, start the syncs of their server's mods.
+	autoModsMsg struct{}
+	// noPrismMsg: no Prism data dir was found or given.
+	noPrismMsg struct{}
 )
 
 func errCmd(err error) tea.Cmd { return func() tea.Msg { return errMsg{err} } }
