@@ -664,3 +664,25 @@ func TestModsNotices(t *testing.T) {
 		})
 	}
 }
+
+func TestModsLinesOfServerOverrides(t *testing.T) {
+	p := &update.ModsPlan{Changes: []update.ModChange{
+		{Kind: update.ModAdd, Name: "foo-server.jar", Disk: "foo-server.jar"},
+		{Kind: update.ModSetAside, Name: "foo-custom.jar", Disk: "foo-custom.jar", With: "foo-server.jar", Preserve: true},
+		{Kind: update.ModDisable, Name: "foo-1.0.jar", Disk: "foo-1.0.jar", With: "foo-server.jar"},
+		{Kind: update.ModEnable, Name: "bar-1.jar", Disk: "bar-1.jar.disabled"},
+	}, Dropped: []string{"foo-custom.jar"}}
+	if got := modsCounts(p); got != "1 new, 1 of GTNH's switched off, 1 of GTNH's back on" {
+		t.Errorf("counts = %q", got)
+	}
+	warn, info := modsLines(p, true)
+	want := []string{
+		"I moved your own foo-custom.jar to .gtnh-updater/replaced-mods inside the instance to make way for the server's",
+		"I stopped using your foo-custom.jar instead of GTNH's: your server uses its own build of that mod",
+		"Your server uses its own builds: foo-server.jar instead of GTNH's foo-1.0.jar",
+		"Your server doesn't replace GTNH's bar-1.jar any more, so it's back on",
+	}
+	if got := append(warn, info...); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("lines =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

@@ -205,7 +205,7 @@ func (s *Session) nextIDs(name string) []string {
 func (s *Session) planMods(final bool) *ModsPlan {
 	link := s.opts.CustomModsURL
 	switch {
-	case link == "" && len(managedOf(s.state)) == 0:
+	case link == "" && !syncsSomething(s.state):
 		return nil
 	case link != "" && s.mods == nil:
 		return keepMods(s.opts.Instance, s.state)
@@ -218,6 +218,7 @@ func (s *Session) planMods(final bool) *ModsPlan {
 	in := modsInputFor(s.mods, s.opts.Instance, &st, s.nextFP, final, final)
 	if !final {
 		in.afterPack(s.Plan, s.nextFP)
+		in.packIDs(s.next)
 	}
 	return planMods(in)
 }
@@ -316,7 +317,7 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 			res.ModsErr = err // shown in the summary; not fatal
 		} else {
 			res.Mods = mp
-			setManaged(&st, mp.Managed)
+			recordSync(&st, mp)
 			if link != "" && s.ModsErr == nil {
 				st.CustomModsSynced = time.Now()
 			}

@@ -251,6 +251,8 @@ func (c *Creation) modsInput(ids bool) modsInput {
 		}
 		sort.Strings(files)
 		in.files, in.pack = files, packJars(fps, files)
+		in.ovDiskIDs = nil
+		in.packIDs(c.pack)
 		in.fp = func(name string) (pack.Fingerprint, bool) {
 			fp, ok := fps[pack.GameDir+"mods/"+name]
 			return fp, ok
@@ -306,7 +308,7 @@ func (c *Creation) Apply(rep Reporter) (res *CreateResult, err error) {
 			res.ModsErr = err // shown in the summary; not fatal
 		} else {
 			res.Mods = mp
-			setManaged(st, mp.Managed)
+			recordSync(st, mp)
 			st.CustomModsSynced = time.Now()
 		}
 	}

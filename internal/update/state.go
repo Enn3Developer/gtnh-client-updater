@@ -45,6 +45,10 @@ type State struct {
 	ServerAddress string `json:"serverAddress,omitempty"`
 	// Overrides are the player's jars that stand in for jars GTNH ships (overrides.go).
 	Overrides []Override `json:"overrides,omitempty"`
+	// ServerOverrides are the server's jars (from the overrides/ folder of its mods
+	// archive) that stand in for jars GTNH ships, with GTNH's jars the sync switched off
+	// for them. The jars themselves are managed like any server jar (CustomMods).
+	ServerOverrides []Override `json:"serverOverrides,omitempty"`
 }
 
 func statePath(instDir string) string { return filepath.Join(instDir, StateDir, "state.json") }

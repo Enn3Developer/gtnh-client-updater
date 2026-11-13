@@ -59,10 +59,12 @@ internal/update/             the engine: state, version detection, plan, apply, 
 internal/update/create.go    new instance: download into the new folder, extract, server
                              mods, state; instance.cfg written last
 internal/update/servermods*  the server's extra mods (see "Server mods"): servermods.go
-                             ModsSync (PrepareModsSync -> Apply), the plan's input;
+                             ModsSync (PrepareModsSync -> Apply), the plan's input,
+                             recordSync (state after a sync);
                              servermods_fetch.go the cached, conditional, https-only download
                              and the archive's usable jars; servermods_plan.go the pure
-                             planner (ModsPlan, ModKind); servermods_apply.go the journaled
+                             planner (ModsPlan, ModKind, planServerOverrides: the server's
+                             overrides/ jars); servermods_apply.go the journaled
                              sync and replaced-mods; servermods_ids.go mod ids (mcmod.info)
                              and version-stripped name keys
 internal/update/overrides.go mod overrides (see "Mod overrides"): Override, CheckOverride,
@@ -329,12 +331,31 @@ and never go into an update's backup or undo.
   mods: …" (`ErrModsNotFound` for 404/410, `ErrModsWebPage`, `ErrModsNotZip`,
   `ErrModsInFolders`, `ErrModsInsecure`, `ErrModsTooBig`, `ErrModsUnpacked`, stalls,
   certificates, no connection).
-- **Archive shape**: jars at the top, or all inside one folder (a zipped folder). macOS
+- **Archive shape**: jars at the top, or all inside one folder (a zipped folder), plus
+  the server's overrides in an `overrides/` folder at that level (`OverridesFolder`,
+  `ModsArchive.over`; a zip whose only folder is `overrides/` has no root folder). macOS
   and Windows junk is skipped; jars deeper down, names Windows or a hidden file can't
-  have, and case-doubles are left out and listed (`ModsPlan.Ignored`); jars only in
-  folders → `ErrModsInFolders`.
+  have, and case-doubles (overrides included) are left out and listed (`ModsPlan.Ignored`);
+  no usable jar but jars in folders → `ErrModsInFolders`.
+- **Server overrides** (`planServerOverrides`, before the main plan): with a known pack,
+  each override jar finds GTNH's jars of its mod (enabled or disabled, mod id else name
+  key; a preview reads ids only for these, `ovServerIDs`/`ovDiskIDs`/`packIDs`) and the
+  player's override jars: GTNH's enabled ones → `ModDisable` (renamed to `.disabled`, an
+  older disabled copy to replaced-mods), the player's → `ModSetAside` and its record goes
+  (`ModsPlan.Dropped`, its `Replaces` carried over). The jar itself is then planned like
+  any server jar but never skipped for GTNH's same mod. GTNH's jars a recorded override
+  (`State.ServerOverrides`) kept off that no override covers now → `ModEnable` (not when
+  the enabled name exists or a player's override covers it), and the main plan then
+  checks every server jar for their mod (`checkAll`). An override GTNH ships a jar of the
+  same name as → `ModSkip`; without a known pack overrides are plain server jars.
+  `ModsPlan.Overrides` (jar → GTNH's jars off) is saved as `State.ServerOverrides` by
+  `recordSync`, everywhere a sync's plan is saved (sync, update, create). Updates need
+  nothing else: the pack plan updates a disabled jar in its disabled name, and the sync
+  after it switches off GTNH's new-name jars of the mod; undo leaves them disabled and the
+  next sync re-fits the record. Never asked: the server decides.
 - **Plan** (servermods_plan.go `planMods`, pure): GTNH's own jars win (a server jar GTNH
-  ships by name or mod id is `ModSkip`, a copy the sync installed earlier goes); the
+  ships by name or mod id is `ModSkip`, a copy the sync installed earlier goes), except
+  for the server's overrides (below); the
   server's jars win over the player's (same name → `ModReplace`, same mod under another
   name → `ModSetAside`; their files are moved to `.gtnh-updater/replaced-mods/`, never
   deleted, "name (2).jar" on a clash); only jars the sync installed and the player didn't
@@ -380,7 +401,8 @@ and never go into an update's backup or undo.
   an instance never asked; updates and creations never ask. The row shows "<host> · N
   mods · synced <ago>" or "<host> · not synced yet" (`modsValue`) and is not edited in
   place: enter (`manageMods`) opens "Your server's mods" — without a link the field for
-  one; with a link the link, the mods it installed and when (`modsSummary`), and "Check
+  one; with a link the link, the mods it installed and when, and the server's overrides
+  (`modsSummary`, `serverOverridesLine`), and "Check
   for new mods" (sync now) / "Use another link" (the field, holding the link) / "Stop
   using them" (sync with "none"). Refused with "One thing at a time" while a job runs.
 - **Link field** (`askModsLink`, also the question): pasted quotes/spaces are dropped
@@ -431,7 +453,10 @@ updates and undo carry them.
   false): `Gone` (the jar is gone from mods/: released, record dropped) and `Shipped` (N
   ships the jar itself, same content: GTNH's now).
 - **Server mods**: override jars count as GTNH's own (`modsInput.own`/`withOwn`), so a
-  server jar of the same name or mod is `ModSkip`, never set beside one.
+  server jar of the same name or mod is `ModSkip`, never set beside one. A server
+  *override* of that mod wins instead (see "Server mods"): the player's jar goes to
+  replaced-mods and the record is dropped. `CheckOverride` refuses a jar of a mod the
+  server overrides, and `switchOn` never enables a jar a server override covers.
 - **TUI**: Settings row "Mod overrides" (GTNH instances; value `overridesValue`: "none",
   "<jar> instead of GTNH's", "N jars instead of GTNH's"), not edited in place: enter
   (`manageOverrides`) opens the field "Which jar do you want to use?" (no overrides; a
@@ -467,7 +492,10 @@ updates and undo carry them.
   `.gtnh-updater/replaced-mods/`, which nothing empties. GTNH's jars win over the
   server's, and so do the player's overrides; without a known pack nothing unmanaged is
   touched. It is journaled and rolls
-  back. Archive jars are flat names (top level or one folder; odd names left out).
+  back. Archive jars are flat names (top level or one folder, plus its `overrides/`; odd
+  names left out). GTNH's jars only ever make way for the server's overrides by a rename
+  to `.disabled` (`ModDisable`), undone when the server stops overriding them
+  (`ModEnable`); a plain server jar never beats GTNH's.
 - **An override never deletes a jar**: GTNH's copy is only renamed to `.disabled` (and
   back); the player's jar goes to replaced-mods (remove) or the update's backup (an update
   that takes GTNH's). An update never enables a GTNH jar a kept override stands in for,

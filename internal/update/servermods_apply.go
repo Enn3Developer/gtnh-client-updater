@@ -61,6 +61,25 @@ func applyModsPlan(p *ModsPlan, a *ModsArchive, inst prism.Instance) (err error)
 			if err := j.stash(disk); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("I couldn't move %s: %w", c.Disk, err)
 			}
+		case c.Kind == ModDisable:
+			off := disk + ".disabled"
+			if _, err := os.Lstat(off); err == nil { // an old disabled copy: out of the way, never deleted
+				if err := j.stash(off); err != nil {
+					return fmt.Errorf("I couldn't move %s: %w", c.Disk+".disabled", err)
+				}
+				preserve = append(preserve, c.Disk+".disabled")
+			}
+			if err := j.move(disk, off); err != nil {
+				return fmt.Errorf("I couldn't switch off GTNH's %s: %w", c.Name, err)
+			}
+		case c.Kind == ModEnable:
+			on := strings.TrimSuffix(disk, ".disabled")
+			if _, err := os.Lstat(on); err == nil {
+				continue // something has its enabled name: it stays off
+			}
+			if err := j.move(disk, on); err != nil {
+				return fmt.Errorf("I couldn't switch GTNH's %s back on: %w", c.Name, err)
+			}
 		default:
 			continue
 		}

@@ -90,6 +90,7 @@ type homeInfo struct {
 	synced                                time.Time         // when they were last synced with the server; zero = never
 	modsAsked                             bool              // the player answered whether the server has extra mods
 	overrides                             []update.Override // the player's jars used instead of GTNH's
+	serverOverrides                       []update.Override // the server's jars used instead of GTNH's
 }
 
 type model struct {
@@ -410,7 +411,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
 		info.mods, info.synced, info.modsAsked = len(st.CustomMods), st.CustomModsSynced, st.CustomModsAsked
 		info.modNames = st.CustomMods
-		info.overrides = st.Overrides
+		info.overrides, info.serverOverrides = st.Overrides, st.ServerOverrides
 	}
 	if in.GTNH {
 		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {

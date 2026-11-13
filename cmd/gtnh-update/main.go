@@ -589,6 +589,9 @@ func printMods(link string, p *update.ModsPlan, err error) {
 		{"your own jars moved to .gtnh-updater/" + update.ReplacedMods + " to make way for the server's", mine},
 		{"server mods left out, the instance has them already", p.Names(update.ModSkip)},
 		{"dropped by the server but kept, you changed them", p.Names(update.ModKeep)},
+		{"GTNH's jars switched off, the server uses its own builds", p.Names(update.ModDisable)},
+		{"GTNH's jars switched back on, the server doesn't replace them any more", p.Names(update.ModEnable)},
+		{"your overrides dropped, the server uses its own build of those mods", p.Dropped},
 		{"left out of the server's zip (in a folder, or a name Windows doesn't allow)", p.Ignored},
 	} {
 		if len(l.names) > 0 {

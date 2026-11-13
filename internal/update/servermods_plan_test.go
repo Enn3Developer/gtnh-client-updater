@@ -57,7 +57,7 @@ func (c planCase) input() modsInput {
 }
 
 func describe(c ModChange) string {
-	kind := [...]string{"add", "update", "remove", "adopt", "replace", "aside", "keep", "skip"}[c.Kind]
+	kind := [...]string{"add", "update", "remove", "adopt", "replace", "aside", "keep", "skip", "off", "on"}[c.Kind]
 	s := kind + " " + c.Name
 	if c.Disk != "" && c.Disk != c.Name {
 		s += " @" + c.Disk

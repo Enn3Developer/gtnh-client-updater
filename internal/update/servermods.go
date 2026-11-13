@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -95,7 +96,7 @@ func (s *ModsSync) Apply(rep Reporter) (*ModsPlan, error) {
 	if prism.Running(s.inst) {
 		return nil, ErrGameRunning
 	}
-	if s.Link == "" && !s.override && len(managedOf(s.state)) == 0 {
+	if s.Link == "" && !s.override && !syncsSomething(s.state) {
 		return s.Plan, nil // no link and nothing from an old one: nothing to note either
 	}
 	if s.Plan.writes() {
@@ -108,7 +109,7 @@ func (s *ModsSync) Apply(rep Reporter) (*ModsPlan, error) {
 		if s.override {
 			st.CustomModsURL, st.CustomModsAsked = s.Link, true
 		}
-		setManaged(st, s.Plan.Managed)
+		recordSync(st, s.Plan)
 		switch {
 		case s.Link == "":
 			st.CustomModsSynced = time.Time{}
@@ -146,21 +147,31 @@ func modsInputFor(a *ModsArchive, inst prism.Instance, st *State, packFP map[str
 	for _, o := range overridesOf(st) {
 		in.own = append(in.own, o.Jar)
 	}
+	in.ownOv = overridesOf(st)
+	if st != nil {
+		in.serverOv = st.ServerOverrides
+	}
 	in.pack = in.withOwn(packJars(packFP, files))
 	if a != nil {
 		for n, zf := range a.jars {
 			in.archive[n] = pack.Fingerprint{Size: zf.UncompressedSize64, CRC: zf.CRC32}
 		}
-		in.ignored = a.ignored
+		in.ignored, in.over = a.ignored, a.over
 	}
+	in.ovServerIDs = memoIDs(func(n string) []string {
+		if zf, ok := a.jarOf(n); ok {
+			return archiveModIDs(zf)
+		}
+		return nil
+	})
+	in.ovDiskIDs = memoIDs(func(n string) []string {
+		if ids := fileModIDs(filepath.Join(modsDir, n)); ids != nil || strings.HasSuffix(n, ".disabled") {
+			return ids
+		}
+		return fileModIDs(filepath.Join(modsDir, n+".disabled"))
+	})
 	if ids {
-		in.serverIDs = memoIDs(func(n string) []string {
-			if zf, ok := a.jarOf(n); ok {
-				return archiveModIDs(zf)
-			}
-			return nil
-		})
-		in.diskIDs = memoIDs(func(n string) []string { return fileModIDs(filepath.Join(modsDir, n)) })
+		in.serverIDs, in.diskIDs = in.ovServerIDs, in.ovDiskIDs
 	}
 	return in
 }
@@ -228,12 +239,23 @@ func managedOf(st *State) map[string]*pack.Fingerprint {
 	return out
 }
 
-// setManaged records the jars the sync manages now.
-func setManaged(st *State, m map[string]pack.Fingerprint) {
-	st.CustomMods, st.CustomModsFP = sortedKeys(m), nil
-	if len(m) > 0 {
-		st.CustomModsFP = maps.Clone(m)
+// recordSync records in st what the sync p left: the jars it manages now with their
+// content, the server's overrides, and the player's overrides it took over gone.
+func recordSync(st *State, p *ModsPlan) {
+	st.CustomMods, st.CustomModsFP = sortedKeys(p.Managed), nil
+	if len(p.Managed) > 0 {
+		st.CustomModsFP = maps.Clone(p.Managed)
 	}
+	st.ServerOverrides = slices.Clone(p.Overrides)
+	if len(p.Dropped) > 0 {
+		st.Overrides = slices.DeleteFunc(slices.Clone(st.Overrides), func(o Override) bool { return slices.Contains(p.Dropped, o.Jar) })
+	}
+}
+
+// syncsSomething reports whether a sync without a link still has something to undo:
+// jars an old link installed, or GTNH's jars its overrides switched off.
+func syncsSomething(st *State) bool {
+	return len(managedOf(st)) > 0 || st != nil && len(st.ServerOverrides) > 0
 }
 
 // packJars are GTNH's jars in mods/ by lower-cased name, read from a pack's

@@ -235,7 +235,7 @@ func modsCounts(p *update.ModsPlan) string {
 	if p == nil {
 		return ""
 	}
-	var add, upd, rem int
+	var add, upd, rem, off, on int
 	for _, c := range p.Changes {
 		switch {
 		case c.Kind == update.ModAdd:
@@ -244,13 +244,17 @@ func modsCounts(p *update.ModsPlan) string {
 			upd++
 		case c.Kind == update.ModRemove || c.Kind == update.ModSkip && c.Disk != "":
 			rem++
+		case c.Kind == update.ModDisable:
+			off++
+		case c.Kind == update.ModEnable:
+			on++
 		}
 	}
 	var parts []string
 	for _, part := range []struct {
 		n    int
 		what string
-	}{{add, "new"}, {upd, "updated"}, {rem, "removed"}} {
+	}{{add, "new"}, {upd, "updated"}, {rem, "removed"}, {off, "of GTNH's switched off"}, {on, "of GTNH's back on"}} {
 		if part.n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", part.n, part.what))
 		}
@@ -286,6 +290,23 @@ func modsLines(p *update.ModsPlan, done bool) (warn, info []string) {
 	}
 	if len(skipped) > 0 {
 		info = append(info, "Left out, this instance has "+plural(len(skipped), "it", "them")+" already: "+jarList(skipped))
+	}
+	if off := p.Of(update.ModDisable); len(off) > 0 {
+		var parts []string
+		for _, c := range off {
+			parts = append(parts, c.With+" instead of GTNH's "+c.Name)
+		}
+		info = append(info, "Your server uses its own builds: "+jarList(parts))
+	}
+	if on := p.Names(update.ModEnable); len(on) > 0 {
+		info = append(info, "Your server doesn't replace GTNH's "+jarList(on)+" any more, so "+plural(len(on), "it's", "they're")+" back on")
+	}
+	if len(p.Dropped) > 0 {
+		verb := "I'll stop"
+		if done {
+			verb = "I stopped"
+		}
+		warn = append(warn, verb+" using your "+jarList(p.Dropped)+" instead of GTNH's: your server uses its own build of "+plural(len(p.Dropped), "that mod", "those mods"))
 	}
 	if kept := p.Names(update.ModKeep); len(kept) > 0 {
 		info = append(info, "The server dropped "+jarList(kept)+", but you changed "+plural(len(kept), "it", "them")+

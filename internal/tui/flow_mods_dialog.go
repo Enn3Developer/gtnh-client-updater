@@ -124,8 +124,24 @@ func modsSummary(info homeInfo, now time.Time) string {
 	case info.synced.IsZero():
 		return s + jarList(info.modNames)
 	}
-	return s + fmt.Sprintf("%d %s, synced %s: %s", len(info.modNames), plural(len(info.modNames), "mod", "mods"),
+	s += fmt.Sprintf("%d %s, synced %s: %s", len(info.modNames), plural(len(info.modNames), "mod", "mods"),
 		ago(info.synced, now), jarList(info.modNames))
+	if l := serverOverridesLine(info.serverOverrides); l != "" {
+		s += "\n" + l
+	}
+	return s
+}
+
+// serverOverridesLine says which of the server's jars stand in for GTNH's; "" for none.
+func serverOverridesLine(ovs []update.Override) string {
+	var parts []string
+	for _, o := range ovs {
+		parts = append(parts, o.Jar+" instead of GTNH's "+strings.Join(o.Replaces, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Used instead of GTNH's: " + jarList(parts)
 }
 
 // startModsFlow starts the sync f is about from url (a ModsSyncOptions.URL), in a

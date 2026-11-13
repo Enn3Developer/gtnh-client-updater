@@ -28,7 +28,10 @@ import (
 //   - Taking an override out moves the player's jar to the replaced-mods folder (never
 //     deleted) and switches GTNH's jar back on.
 //   - The server-mods sync treats an override like GTNH's own jar: a server jar of the
-//     same mod is left out, never set beside it.
+//     same mod is left out, never set beside it. A server override (a jar of the
+//     overrides folder of the server's archive) of that mod is the exception: the
+//     server's jar wins, the player's goes to the replaced-mods folder and its record
+//     goes. Only the sync switches GTNH's jars off and on for the server's overrides.
 
 // Override is one of the player's jars standing in for jars GTNH ships.
 type Override struct {
@@ -97,8 +100,19 @@ func CheckOverride(inst prism.Instance, src string) (*OverrideCheck, error) {
 	if len(c.All) == 0 {
 		return nil, errors.New("I can't find any of GTNH's mods in this instance to replace.")
 	}
+	srcIDs := fileModIDs(src)
+	if st != nil && len(st.ServerOverrides) > 0 {
+		var jars []string
+		for _, o := range st.ServerOverrides {
+			jars = append(jars, o.Jar)
+		}
+		sx := newJarIndex(jars, func(n string) []string { return modIDsIn(modsDir, n) })
+		if same := sx.same(c.Jar, srcIDs); len(same) > 0 {
+			return nil, fmt.Errorf("Your server uses its own %s for that mod already.", same[0])
+		}
+	}
 	idx := newJarIndex(c.All, func(n string) []string { return fileModIDs(filepath.Join(modsDir, n)) })
-	c.Same = idx.same(c.Jar, fileModIDs(src))
+	c.Same = idx.same(c.Jar, srcIDs)
 	if !c.InMods {
 		if have, ok := newDiskNames(files).find(c.Jar); ok && !slices.Contains(c.Same, have) {
 			return nil, fmt.Errorf("There's a different %s in the mods folder already.", have)
@@ -238,9 +252,13 @@ func RemoveOverride(inst prism.Instance, jar string) error {
 }
 
 // switchOn enables GTNH's jar r again, unless something has its enabled name or another
-// override stands in for it.
+// override (the player's or the server's) stands in for it.
 func switchOn(modsDir, r string, st *State) error {
-	for _, o := range overridesOf(st) {
+	all := overridesOf(st)
+	if st != nil {
+		all = append(slices.Clone(all), st.ServerOverrides...)
+	}
+	for _, o := range all {
 		if o.Jar == r || slices.Contains(o.Replaces, r) {
 			return nil
 		}
@@ -271,6 +289,14 @@ func switchOff(inst prism.Instance, r string) error {
 		return fmt.Errorf("I couldn't switch off GTNH's %s: %w", r, err)
 	}
 	return nil
+}
+
+// modIDsIn reads the mod ids of the jar name in modsDir, or of its disabled name.
+func modIDsIn(modsDir, name string) []string {
+	if ids := fileModIDs(filepath.Join(modsDir, name)); ids != nil {
+		return ids
+	}
+	return fileModIDs(filepath.Join(modsDir, name+".disabled"))
 }
 
 func overridesOf(st *State) []Override {

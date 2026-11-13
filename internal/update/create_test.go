@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -793,5 +794,31 @@ func TestApplyFailureWhenTargetIsDirectoryRemovesInstanceFolder(t *testing.T) {
 	}
 	if exists(c.Dir) {
 		t.Errorf("instance folder %s left after a failed Apply", c.Dir)
+	}
+}
+
+// A new instance gets the server's override with GTNH's jar of that mod switched off.
+func TestApplyInstallsAServerOverride(t *testing.T) {
+	pk := createPack()
+	gtnh := modJar(t, "pm", "gtnh")
+	pk[".minecraft/mods/pack-mod.jar"] = gtnh
+	env := newCreateEnv(t, pk)
+	server := modJar(t, "pm", "server")
+	env.files["/custom_mods.zip"] = zipBytes(t, "", map[string]string{"overrides/pm-server.jar": server})
+	env.opts.CustomModsURL = customModsURL
+	env.opts.CustomModsAsked = true
+	c, res := createInstance(t, env, &recReporter{})
+	if res.ModsErr != nil {
+		t.Fatalf("ModsErr = %v", res.ModsErr)
+	}
+	if got := fmt.Sprint(c.ModsPlan.Names(ModDisable), res.Mods.Names(ModDisable)); got != "[pack-mod.jar] [pack-mod.jar]" {
+		t.Errorf("switched off: preview and sync %s", got)
+	}
+	mods := filepath.Join(c.Dir, ".minecraft", "mods")
+	if mustRead(t, filepath.Join(mods, "pack-mod.jar.disabled")) != gtnh || mustRead(t, filepath.Join(mods, "pm-server.jar")) != server {
+		t.Errorf("mods/ = %s", dirContents(t, mods))
+	}
+	if st, _ := LoadState(c.Dir); fmt.Sprint(st.ServerOverrides) != "[{pm-server.jar [pack-mod.jar]}]" {
+		t.Errorf("server overrides = %v", st.ServerOverrides)
 	}
 }

@@ -2,6 +2,7 @@ package update
 
 import (
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,6 +21,12 @@ import (
 //   - A jar disabled in Prism (foo.jar.disabled) is updated in its disabled name.
 //   - Without a known pack (an instance this launcher never installed or updated) every
 //     jar the sync doesn't manage might be GTNH's, so nothing of the player's is touched.
+//   - The server's overrides (jars in its archive's overrides folder) win over GTNH's: GTNH's
+//     jars of the same mod are switched off in Prism (foo.jar.disabled) instead of the
+//     server's jar being left out, and switched back on once the server stops overriding
+//     them. They win over the player's override of that mod too (it goes to the
+//     replaced-mods folder). An override GTNH ships a jar of the same name as is left out,
+//     and without a known pack an override is just a server jar.
 
 // ModKind is what a server-mods sync does about one jar.
 type ModKind int
@@ -33,11 +40,14 @@ const (
 	ModSetAside                // the player's own jar of the same mod makes way for the server's
 	ModKeep                    // dropped by the server, but the player changed our copy: it stays, unmanaged
 	ModSkip                    // GTNH ships the same mod, or a different jar of that name is there: left out
+	ModDisable                 // GTNH's jar the server overrides: switched off (Disk -> Disk.disabled)
+	ModEnable                  // GTNH's jar the server doesn't override any more: switched back on
 )
 
 // ModChange is one step of a sync. Name is the server's jar (for ModSetAside the
-// player's jar), Disk the file in mods/ it writes, moves or keeps ("" = none), With the
-// jar behind a ModSkip or a ModSetAside. Preserve marks a Disk that is the player's: it
+// player's jar, for ModDisable and ModEnable GTNH's), Disk the file in mods/ it writes,
+// moves or keeps ("" = none), With the jar behind a ModSkip, a ModSetAside or a
+// ModDisable. Preserve marks a Disk that is the player's: it
 // is moved to the replaced-mods folder, never deleted.
 type ModChange struct {
 	Kind     ModKind
@@ -54,6 +64,12 @@ type ModsPlan struct {
 	Managed map[string]pack.Fingerprint
 	// Ignored are archive entries left out: jars in folders, odd or doubled names.
 	Ignored []string
+	// Overrides are the server's jars that stand in for GTNH's afterwards, with GTNH's
+	// jars they keep switched off.
+	Overrides []Override
+	// Dropped are the player's overrides the server's override of the same mod takes
+	// over: their records go.
+	Dropped []string
 }
 
 // Of returns the changes of kind k, in plan order.
@@ -94,7 +110,7 @@ func (p *ModsPlan) Installed() []string {
 func (p *ModsPlan) writes() bool {
 	for _, c := range p.Changes {
 		switch c.Kind {
-		case ModAdd, ModUpdate, ModReplace, ModRemove, ModSetAside:
+		case ModAdd, ModUpdate, ModReplace, ModRemove, ModSetAside, ModDisable, ModEnable:
 			return true
 		case ModSkip:
 			if c.Disk != "" {
@@ -119,6 +135,29 @@ type modsInput struct {
 	checkAll           bool // check every server jar for the same mod, not just new content
 	ignored            []string
 	own                []string // the player's override jars: they win like GTNH's own
+	// over are the server's jars that stand in for GTNH's (its overrides folder);
+	// serverOv the server's overrides as the last sync left them, ownOv the player's.
+	over            map[string]bool
+	serverOv, ownOv []Override
+	// ovServerIDs and ovDiskIDs read mod ids for the overrides when serverIDs and diskIDs
+	// are nil (a preview): only the server's overrides and GTNH's jars beside them are read.
+	ovServerIDs, ovDiskIDs func(name string) []string
+}
+
+// packIDs makes in.ovDiskIDs read a jar that isn't in mods/ yet from the pack p.
+func (in *modsInput) packIDs(p *pack.Pack) {
+	disk := in.ovDiskIDs
+	in.ovDiskIDs = memoIDs(func(n string) []string {
+		if disk != nil {
+			if ids := disk(n); ids != nil {
+				return ids
+			}
+		}
+		if e, ok := p.Entries[pack.GameDir+"mods/"+strings.TrimSuffix(n, ".disabled")]; ok {
+			return nestedModIDs(e.FP.Size, e.Open)
+		}
+		return nil
+	})
 }
 
 // withOwn adds the override jars to pk, GTNH's jars by lower-cased name (nil: unknown).
@@ -158,6 +197,11 @@ func planMods(in modsInput) *ModsPlan {
 	for n := range in.archive {
 		archived[strings.ToLower(n)] = true
 	}
+	handled := map[string]bool{} // managed jars a ModSkip already dealt with
+	overrides, enabled := planServerOverrides(&in, p, d, handled)
+	if len(enabled) > 0 {
+		in.checkAll = true // a server jar may be of the mod of a jar switched back on
+	}
 	var idx *jarIndex
 	index := func() *jarIndex { // the enabled jars the sync doesn't manage, read on first need
 		if idx == nil {
@@ -167,16 +211,19 @@ func planMods(in modsInput) *ModsPlan {
 					names = append(names, f)
 				}
 			}
-			idx = newJarIndex(names, in.diskIDs)
+			idx = newJarIndex(append(names, enabled...), in.diskIDs)
 		}
 		return idx
 	}
-	handled := map[string]bool{} // managed jars a ModSkip already dealt with
 
 	for _, n := range sortedKeys(in.archive) {
 		want := in.archive[n]
 		rec, managed := in.managed[n]
-		if g, ok := in.pack[strings.ToLower(n)]; ok {
+		over := overrides[n]
+		if handled[n] {
+			continue
+		}
+		if g, ok := in.pack[strings.ToLower(n)]; ok && !over {
 			add(ModChange{Kind: ModSkip, Name: n, With: g}) // the file of that name is GTNH's
 			handled[n] = true
 			continue
@@ -191,7 +238,11 @@ func planMods(in modsInput) *ModsPlan {
 		if in.serverIDs != nil && in.diskIDs != nil && (!onDisk || cur != want || in.checkAll) {
 			skipWith, asides := "", []string(nil)
 			for _, h := range index().same(n, in.serverIDs(n)) {
-				if _, isPack := in.pack[strings.ToLower(h)]; isPack || in.pack == nil {
+				_, isPack := in.pack[strings.ToLower(h)]
+				if over && isPack {
+					continue // GTNH's: planServerOverrides switches it off
+				}
+				if isPack || in.pack == nil {
 					skipWith = h
 					break
 				}
@@ -290,6 +341,9 @@ func (d diskNames) find(name string) (string, bool) {
 // recorded yet).
 func keepMods(inst prism.Instance, st *State) *ModsPlan {
 	p := &ModsPlan{Managed: map[string]pack.Fingerprint{}}
+	if st != nil {
+		p.Overrides = slices.Clone(st.ServerOverrides)
+	}
 	modsDir := filepath.Join(inst.GameDir, "mods")
 	for n, rec := range managedOf(st) {
 		if rec != nil {
@@ -347,4 +401,146 @@ func (in *modsInput) afterPack(pl *Plan, next map[string]pack.Fingerprint) {
 		return fp(name)
 	}
 	in.pack = in.withOwn(packJars(next, files))
+}
+
+// planServerOverrides plans the server's overrides (in.over) into p: GTNH's jars of each
+// one's mod are switched off and the player's override of it set aside, and GTNH's jars a
+// former override kept off are switched back on. It returns the archive jars that stand
+// in for GTNH's, and the jars switched back on. An override GTNH ships a jar of the same
+// name as is left out (handled); without a known pack there are none.
+func planServerOverrides(in *modsInput, p *ModsPlan, d diskNames, handled map[string]bool) (map[string]bool, []string) {
+	over := map[string]bool{}
+	if in.pack == nil && len(in.serverOv) == 0 {
+		return over, nil
+	}
+	add := func(c ModChange) { p.Changes = append(p.Changes, c) }
+	ownOf := map[string]Override{} // the player's overrides by lower-cased jar
+	for _, o := range in.ownOv {
+		ownOf[strings.ToLower(o.Jar)] = o
+	}
+	dropped := map[string]bool{}
+	// ownCovers reports whether a player's override that stays stands in for GTNH's r.
+	ownCovers := func(r string) bool {
+		for _, o := range in.ownOv {
+			if !dropped[o.Jar] && (strings.EqualFold(o.Jar, r) || slices.ContainsFunc(o.Replaces, func(x string) bool { return strings.EqualFold(x, r) })) {
+				return true
+			}
+		}
+		return false
+	}
+	covered := map[string]bool{} // lower-cased GTNH jars an override keeps off afterwards
+	if in.pack != nil {
+		// GTNH's jars and the player's override jars in mods/, enabled or not, by their
+		// enabled name; file is the file of each (the enabled one when both are there).
+		names, file := []string{}, map[string]string{}
+		for _, f := range in.files {
+			on := strings.TrimSuffix(f, ".disabled")
+			if _, ok := in.pack[strings.ToLower(on)]; !ok {
+				continue
+			}
+			if _, ok := file[on]; !ok {
+				names = append(names, on)
+			}
+			if cur, ok := file[on]; !ok || strings.HasSuffix(cur, ".disabled") {
+				file[on] = f
+			}
+		}
+		var idx *jarIndex
+		off := map[string]bool{} // GTNH's jars switched off already
+		for _, n := range sortedKeys(in.archive) {
+			if !in.over[n] {
+				continue
+			}
+			if g, ok := in.pack[strings.ToLower(n)]; ok {
+				if _, own := ownOf[strings.ToLower(g)]; !own {
+					add(ModChange{Kind: ModSkip, Name: n, With: g}) // it can't stand beside GTNH's jar of that name
+					handled[n] = true
+					continue
+				}
+			}
+			over[n] = true
+			var reps []string
+			takeOwn := func(o Override) {
+				if !dropped[o.Jar] {
+					dropped[o.Jar] = true
+					p.Dropped = append(p.Dropped, o.Jar)
+				}
+				reps = append(reps, o.Replaces...)
+			}
+			if o, ok := ownOf[strings.ToLower(n)]; ok {
+				takeOwn(o) // the player's jar of that name makes way in the main plan
+			}
+			if idx == nil {
+				diskIDs := orIDs(in.diskIDs, in.ovDiskIDs)
+				idx = newJarIndex(names, func(h string) []string {
+					if diskIDs == nil {
+						return nil
+					}
+					return diskIDs(file[h])
+				})
+			}
+			var ids []string
+			if serverIDs := orIDs(in.serverIDs, in.ovServerIDs); serverIDs != nil {
+				ids = serverIDs(n)
+			}
+			for _, h := range idx.same(n, ids) {
+				f := file[h]
+				switch o, own := ownOf[strings.ToLower(h)]; {
+				case strings.EqualFold(h, n):
+				case own:
+					add(ModChange{Kind: ModSetAside, Name: f, Disk: f, With: n, Preserve: true})
+					takeOwn(o)
+				case f != h && ownCovers(h): // off for another of the player's overrides
+				default:
+					if f == h && !off[h] {
+						add(ModChange{Kind: ModDisable, Name: h, Disk: h, With: n})
+						off[h] = true
+					}
+					reps = append(reps, h)
+				}
+			}
+			for _, o := range in.serverOv {
+				if o.Jar != n {
+					continue
+				}
+				for _, r := range o.Replaces {
+					if _, ok := d.find(r + ".disabled"); ok {
+						reps = append(reps, r)
+					}
+				}
+			}
+			slices.Sort(reps)
+			if reps = slices.Compact(reps); len(reps) > 0 {
+				p.Overrides = append(p.Overrides, Override{Jar: n, Replaces: reps})
+			}
+			for _, r := range reps {
+				covered[strings.ToLower(r)] = true
+			}
+		}
+	}
+	var enabled []string
+	for _, o := range in.serverOv {
+		for _, r := range o.Replaces {
+			if covered[strings.ToLower(r)] || ownCovers(r) {
+				continue
+			}
+			covered[strings.ToLower(r)] = true
+			if _, ok := d.find(r); ok {
+				continue // something has its enabled name
+			}
+			if f, ok := d.find(r + ".disabled"); ok {
+				add(ModChange{Kind: ModEnable, Name: r, Disk: f})
+				enabled = append(enabled, r)
+			}
+		}
+	}
+	return over, enabled
+}
+
+// orIDs is a, or b when a is nil.
+func orIDs(a, b func(string) []string) func(string) []string {
+	if a != nil {
+		return a
+	}
+	return b
 }

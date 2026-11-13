@@ -21,7 +21,8 @@ import (
 )
 
 // The server's extra-mods archive is a zip of jars at its top level (or inside a single
-// folder, which is what "compress folder" makes). It is downloaded into the instance's
+// folder, which is what "compress folder" makes). Jars in its overrides/ folder are the
+// server's builds of mods GTNH ships: they are used instead of GTNH's (servermods_plan.go). It is downloaded into the instance's
 // state dir and kept there, so the next sync can ask the server whether it changed
 // (ETag / Last-Modified) and work from that copy when it didn't, or when the server
 // can't be reached.
@@ -48,6 +49,11 @@ var (
 	ErrModsNotZip    = errors.New("the link doesn't give a zip file")
 	ErrModsInFolders = errors.New("the mods in the zip are inside folders — they have to be at the top of the zip")
 )
+
+// OverridesFolder is the folder of the server's archive whose jars stand in for GTNH's.
+const OverridesFolder = "overrides"
+
+var ()
 
 var errInsecureRedirect = errors.New("redirected to an address that isn't https")
 
@@ -84,7 +90,8 @@ func httpsOnly(req *http.Request, via []*http.Request) error {
 // ModsArchive is an opened server-mods archive: its usable jars by file name.
 type ModsArchive struct {
 	jars    map[string]*zip.File
-	ignored []string // entries left out: jars in folders, odd or doubled names
+	over    map[string]bool // jars of the overrides folder: they stand in for GTNH's
+	ignored []string        // entries left out: jars in folders, odd or doubled names
 	closer  io.Closer
 }
 
@@ -287,11 +294,12 @@ func openModsArchive(file string) (*ModsArchive, error) {
 }
 
 // readModsArchive picks the jars at the top of the archive, or inside the one folder
-// that holds everything. Jars deeper down and names that can't be a file on every
-// supported OS are left out and listed; anything that isn't a jar is skipped silently.
+// that holds everything, and those of its overrides folder. Jars deeper down and names
+// that can't be a file on every supported OS are left out and listed; anything that
+// isn't a jar is skipped silently.
 func readModsArchive(files []*zip.File) (*ModsArchive, error) {
 	root := archiveRoot(files)
-	a := &ModsArchive{jars: map[string]*zip.File{}}
+	a := &ModsArchive{jars: map[string]*zip.File{}, over: map[string]bool{}}
 	taken := map[string]bool{} // lower-cased: Windows and macOS don't tell Foo.jar from foo.jar
 	var total uint64
 	nested := 0
@@ -301,6 +309,10 @@ func readModsArchive(files []*zip.File) (*ModsArchive, error) {
 			continue
 		}
 		rel := strings.TrimPrefix(name, root)
+		over := false
+		if dir, jar, ok := strings.Cut(rel, "/"); ok && strings.EqualFold(dir, OverridesFolder) && !strings.Contains(jar, "/") {
+			rel, over = jar, true
+		}
 		switch {
 		case !strings.HasSuffix(rel, ".jar"):
 			continue
@@ -317,6 +329,9 @@ func readModsArchive(files []*zip.File) (*ModsArchive, error) {
 		}
 		taken[strings.ToLower(rel)] = true
 		a.jars[rel] = zf
+		if over {
+			a.over[rel] = true
+		}
 	}
 	if len(a.jars) == 0 && nested > 0 {
 		return nil, ErrModsInFolders
@@ -326,7 +341,7 @@ func readModsArchive(files []*zip.File) (*ModsArchive, error) {
 }
 
 // archiveRoot is the one folder every entry is in ("custom_mods/" for a zipped
-// folder), or "" when anything sits at the top.
+// folder), or "" when anything sits at the top or that folder is the overrides folder.
 func archiveRoot(files []*zip.File) string {
 	root, set := "", false
 	for _, zf := range files {
@@ -340,7 +355,7 @@ func archiveRoot(files []*zip.File) string {
 		}
 		root, set = first, true
 	}
-	if !set {
+	if !set || strings.EqualFold(root, OverridesFolder) {
 		return ""
 	}
 	return root + "/"

@@ -43,6 +43,15 @@ func (j *journal) stash(disk string) error {
 	return nil
 }
 
+// move renames from to to (a jar switched off or on in Prism's way).
+func (j *journal) move(from, to string) error {
+	if err := os.Rename(from, to); err != nil {
+		return err
+	}
+	j.undo = append(j.undo, func() error { return os.Rename(to, from) })
+	return nil
+}
+
 // rollback undoes all recorded changes, newest first, and reports the first failure.
 func (j *journal) rollback() error {
 	var first error

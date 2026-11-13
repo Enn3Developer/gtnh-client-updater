@@ -122,13 +122,22 @@ opening the screen: `gtnh-update -instance "GTNH" -server-mods <link> -yes`.
 - Only mods that came from the link are ever removed, and not if you changed them.
 - If one of your own jars is in the way of a server mod (same file or same mod), it's moved
   to `.gtnh-updater/replaced-mods` inside the instance, never deleted.
-- GTNH's own mods win: a server jar the pack already has is left out.
+- GTNH's own mods win: a server jar the pack already has is left out, unless the server
+  overrides it (see below).
 - If the server is down, you keep the mods you have and the game still starts.
 - Undo doesn't touch server mods: they follow the server, not the GTNH version.
 
 Server owners: serve a `.zip` of `.jar` files over HTTPS, at the top of the zip or inside
 one folder. To take all the mods out, publish an empty zip: a `404` counts as a broken link,
 and players keep the mods they have.
+
+**Server overrides**: to have players use your build of a mod GTNH ships (the one your
+server runs), put its jar in an `overrides/` folder inside the zip
+(`custom_mods/overrides/foo-patched.jar`). The launcher switches GTNH's copy of the same mod
+off in Prism (found by its mod id, else its name without the version) and installs yours.
+It wins over a player's own override of that mod. Take the jar out of `overrides/` and GTNH's
+copy comes back on at the next sync. Give it a name GTNH's jar doesn't have, or it's left
+out. Launchers older than this one ignore the folder.
 
 ## Mod overrides
 
@@ -143,7 +152,9 @@ mods folder as `<name>.jar.disabled`) and puts yours in its place.
   switched off) or use GTNH's (yours goes to the update's backup, so undo brings it back).
 - Taking one out (enter on it in *Mod overrides*) switches GTNH's copy back on and moves
   your jar to `.gtnh-updater/replaced-mods` inside the instance, never deleting it.
-- A server's extra mods never replace your overrides: they win like GTNH's own mods.
+- A server's extra mods never replace your overrides: they win like GTNH's own mods. A
+  server *override* of the same mod does: your jar goes to `.gtnh-updater/replaced-mods` so
+  you play with what the server runs.
 - Delete your jar by hand and the next update switches GTNH's copy back on.
 
 ## For power users
