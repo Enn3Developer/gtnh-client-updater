@@ -23,8 +23,8 @@ Instances        │ Older
                  │   Window         Prism's default
                  │   Server         play.example.org
                  │   Server mods    mods.example.org · not synced yet
+                 │   Mod overrides  none
                  │
                  │ Launcher
-                 │   After I start the game  stay open
-                 │   Prism Launcher          found automatically
+                 │ ↓ 1 more
  ↑↓ move   enter run   tab instances   n new instance   a show all   q quit

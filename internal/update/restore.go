@@ -112,7 +112,7 @@ func Restore(inst prism.Instance, b Backup, rep Reporter) (*RestoreResult, error
 	}
 
 	rep.Step("Saving my notes")
-	if err := restoreState(inst.Dir, b.Info.PrevState); err != nil {
+	if err := restoreState(inst, b.Info.PrevState, rep); err != nil {
 		return nil, fmt.Errorf("saving updater state: %w", err)
 	}
 
@@ -151,7 +151,11 @@ func removeAdded(inst prism.Instance, info BackupInfo, res *RestoreResult) error
 			res.Skipped = append(res.Skipped, p)
 			continue
 		}
-		if err := remove(filepath.Join(inst.Dir, filepath.FromSlash(p))); err != nil {
+		disk := filepath.Join(inst.Dir, filepath.FromSlash(p))
+		if strings.HasSuffix(p, ".jar") && !fileExists(disk) && fileExists(disk+".disabled") {
+			disk += ".disabled" // a jar it added that was disabled since (in Prism, or for an override)
+		}
+		if err := remove(disk); err != nil {
 			return err
 		}
 	}
@@ -209,10 +213,12 @@ func moveBack(inst prism.Instance, backupDir string, rep Reporter, res *RestoreR
 	return nil
 }
 
-// restoreState puts back the pre-update version and baseline. Everything else is kept as
-// it is now: the player's settings (mods link, server address) and the server-mods sync's
-// notes, since a restore leaves the server's mods alone.
-func restoreState(instDir string, prev *State) error {
+// restoreState puts back the pre-update version, baseline and overrides (plus the
+// overrides added since; healOverrides then fits them to mods/). Everything else is kept
+// as it is now: the player's settings (mods link, server address) and the server-mods
+// sync's notes, since a restore leaves the server's mods alone.
+func restoreState(inst prism.Instance, prev *State, rep Reporter) error {
+	instDir := inst.Dir
 	cur, err := LoadState(instDir)
 	if err != nil {
 		return err
@@ -224,6 +230,8 @@ func restoreState(instDir string, prev *State) error {
 	st.Version, st.Baseline = "", map[string]pack.Fingerprint{}
 	if prev != nil {
 		st.Version, st.Baseline = prev.Version, prev.Baseline
+		st.Overrides = mergeOverrides(prev.Overrides, st.Overrides)
 	}
+	healOverrides(inst, &st, rep)
 	return SaveState(instDir, &st)
 }

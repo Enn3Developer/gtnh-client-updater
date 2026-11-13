@@ -134,6 +134,21 @@ func (m *model) beginPrepare(inst prism.Instance, st *update.State, target strin
 // else for confirmation (C4).
 func (m *model) onPrepared(s *update.Session) tea.Cmd {
 	m.session = s
+	if len(asksOverrides(s)) > 0 {
+		c := update.KeepMine
+		if m.cfg.Overrides == "gtnh" {
+			c = update.TakeNew
+		}
+		s.ChooseAllOverrides(c)
+		m.overridesDialog()
+		return nil
+	}
+	return m.afterOverrides()
+}
+
+// afterOverrides asks about conflicting configs, if any, else for confirmation (C4).
+func (m *model) afterOverrides() tea.Cmd {
+	s := m.session
 	if s.Plan.Count(update.Conflict) == 0 {
 		return m.confirmUpdate()
 	}
@@ -245,6 +260,7 @@ func (m *model) confirmUpdate() tea.Cmd {
 			"config file you changed stays yours — the new one is saved next to it as .mcnew",
 			"config files you changed stay yours — the new ones are saved next to them as .mcnew")))
 	}
+	lines = append(lines, overrideLines(m.session, target)...)
 	if len(pl.ExtraMods) > 0 {
 		lines = append(lines, "Mods you added yourself stay: "+ansi.Truncate(strings.Join(pl.ExtraMods, ", "), 100, "…"))
 	}

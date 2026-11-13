@@ -25,7 +25,8 @@ stay `gtnh-update`.
 ## Layout
 
 ```
-cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -play,
+cmd/gtnh-update/main.go      flags, headless (-yes) mode, -create/-name, -configs, -overrides
+                             (`choices`), -play,
                              -list, -self-update, -V, -instance X -server-mods L -yes
                              (`modsLinkHeadless`); launches TUI; -h is `usage`
                              (intro, examples, options); words after the options are
@@ -64,6 +65,9 @@ internal/update/servermods*  the server's extra mods (see "Server mods"): server
                              planner (ModsPlan, ModKind); servermods_apply.go the journaled
                              sync and replaced-mods; servermods_ids.go mod ids (mcmod.info)
                              and version-stripped name keys
+internal/update/overrides.go mod overrides (see "Mod overrides"): Override, CheckOverride,
+                             AddOverride/RemoveOverride, the update's planOverrides/holds
+                             (OverrideChange, Session.ChooseOverride), healOverrides (undo)
 internal/update/restore.go   undo: BackupInfo manifest (gtnh-backup.json in each backup
                              dir), ListBackups, Restore
 internal/selfupdate/         GitHub-release self-update, ed25519 release signatures
@@ -72,7 +76,8 @@ internal/cmd/sign/           release key tool: `keygen -priv <file>`, `sign <che
 internal/tui/                bubbletea UI, one persistent workspace (see "TUI workspace"):
                              tui.go Config/Run/Outcome, model, Init/Update/View,
                              workspace layout, visible/current/refresh; messages.go the
-                             background messages; keys.go key routing (`key`);
+                             background messages; keys.go key routing (`key`,
+                             `quit`/`quitKey`);
                              layout.go styles + named colours, titleBar, bodyWindow, overlay,
                              wrap; sidebar.go sidebarShows/sidebarWidth/sidebarView, glyph;
                              page.go row/entry, entries/rows, render, pageView + scrollTo,
@@ -96,7 +101,10 @@ internal/tui/                bubbletea UI, one persistent workspace (see "TUI wo
                              dialog (`manageMods`, `askModsLink`, `modsFlow`: a sync
                              shown in a progress dialog, then `resultDialog`);
                              flow_mods_auto.go the syncs at start (`startAutoMods`,
-                             `job.auto`, `waitAutoMods`);
+                             `job.auto`, `waitAutoMods`); flow_overrides.go the Mod
+                             overrides row and dialog (`manageOverrides`, `askOverrideJar`,
+                             `pickReplaced`) and the update's question (`overridesDialog`,
+                             `overrideLines`);
                              flow_create.go new instance; flow_restore.go undo; flow_self.go
                              launcher self-update (incl. progressDialog); flow_play.go
                              playCmd and the game monitor; reporter.go engine progress ->
@@ -144,6 +152,14 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
      where space switches a file; `conflictsDialog`/`resolveDialog`), preselected from
      `-configs` if given, else `update.Recommended` = new; esc there cancels the update.
      `-yes` uses `-configs new|mine` (default new).
+   - Mod overrides (see "Mod overrides"): before the plan, `planOverrides` works out
+     which GTNH jars each override covers in B and in N (`OverrideChange`); the plan
+     *holds* those of a kept override (`makePlan`'s `modHolds`: the pack path is planned
+     in its `.disabled` name only) or *releases* them (the disabled copy is removed, N is
+     installed enabled) and removes the player's jar (to the backup). The TUI asks right
+     after Prepare, before the config conflicts (`overridesDialog`; unset = KeepMine);
+     `Session.ChooseOverride` plans again, keeping the config choices. `-yes` uses
+     `-overrides mine|gtnh` (default mine).
    - `instance.cfg` is never reconciled (player's Java/memory/JVM args). Only its
      `name=` line gets the version string swapped (`prism.RenameVersion`).
    - Prepare also fetches the server's mods archive when the instance has a link and plans
@@ -158,7 +174,8 @@ staticcheck.conf             disables ST1005 (TUI errors are capitalized sentenc
 6. Server mods sync from the archive Prepare fetched (no network; planned again on the
    real mods/, with the same-mod checks; not part of the backup, see "Server mods"; a
    failure is `Result.ModsErr`, never undoes the update), save state (N becomes the new
-   baseline; `ServerAddress` and the link are carried over), then — only if this run
+   baseline; `ServerAddress` and the link are carried over; `Overrides` become the kept
+   ones, standing in for N's jars), then — only if this run
    made a backup — write the backup's `gtnh-backup.json` (see "Undo") and prune older
    backups.
 
@@ -268,14 +285,19 @@ restorable.
 `update.Restore(inst, b, rep)`, in order:
 
 1. Refuse with `ErrGameRunning` while `prism.Running`.
-2. Remove `Added` (relative to the instance), then prune emptied dirs. `_external/` paths
+2. Remove `Added` (relative to the instance; a mods jar missing there is removed in its
+   `.disabled` name, as Prism or an override disabled it since), then prune emptied dirs. `_external/` paths
    are not touched and are reported in `Skipped`. Server mods are never touched: they
    follow the server, not the GTNH version.
 3. Move every file in the backup dir back (`custom-mods/`, an older launcher's stash of
    server jars → `.gtnh-updater/replaced-mods/` via `keepFile`; `_external/` stays and is
    reported; the rest → the same path under the instance), overwriting.
-4. Put `PrevState`'s `Version` and `Baseline` back into state.json; everything else stays
-   as it is now (link, asked, server address and the sync's notes).
+4. Put `PrevState`'s `Version`, `Baseline` and `Overrides` (plus overrides added since,
+   `mergeOverrides`) back into state.json; everything else stays as it is now (link,
+   asked, server address and the sync's notes). `healOverrides` then fits the overrides to
+   mods/: one whose jar is gone is dropped and GTNH's jars switched back on, one standing
+   in for jars no longer there finds GTNH's jar of its mod again, and every jar an override
+   stands in for is disabled (a warning when that fails).
 5. `prism.RenameVersion(To → From)`; a failure is only a warning.
 6. Delete the backup dir, only if nothing was skipped.
 
@@ -381,6 +403,47 @@ and never go into an update's backup or undo.
 - **mcconsole** (the server side) publishes an empty zip when the last jar goes, never no
   file: a 404 keeps the installed mods (a broken link isn't "no mods").
 
+## Mod overrides
+
+A player can use their own build of a GTNH mod instead of GTNH's: an override
+(`State.Overrides`: `Jar`, the player's jar in mods/, and `Replaces`, GTNH's jar names it
+stands in for). GTNH's jar stays in mods/ disabled in Prism (`<name>.jar.disabled`); the
+player's sits next to it, enabled. Overrides follow the GTNH version (unlike server mods):
+updates and undo carry them.
+
+- **Add** (`CheckOverride` → `AddOverride`): a `.jar` that opens as a zip, not GTNH's own,
+  not a server-managed jar, not used already. GTNH's jars (`gtnhJars`: the baseline's
+  enabled jars in mods/ when the pack is known, else every enabled jar neither the
+  server-mods sync nor an override put there) of the same mod (`jarIndex.same`: mod id,
+  else version-stripped name) are `Same`; none → the player picks from `All`. A jar
+  already in mods/ is used where it is (`InMods`), else it's copied in; a different file of
+  that name refuses. GTNH's jars are renamed to `.disabled` first (an older disabled copy
+  goes to replaced-mods), then the copy; any failure undoes it. Refuses while the game runs.
+- **Remove** (`RemoveOverride`): the player's jar (or its disabled name, unless that is
+  GTNH's of the same name) goes to `.gtnh-updater/replaced-mods/`, GTNH's jars are enabled
+  again (`switchOn`: not when the enabled name exists or another override covers it).
+- **Update** (`planOverrides`): an override covers N's jars named like `Jar`/`Replaces`
+  plus N's *new-name* jars (not in B) of the same mod (ids read from the downloaded zip,
+  `nestedModIDs`). Unchanged (same names, same content) → held silently. Changed →
+  `OverrideChange` the player decides: KeepMine holds the new jars disabled and records
+  them as `Replaces` (none left: the record goes, the jar stays as the player's own mod);
+  TakeNew releases them and removes the player's jar into the backup. Not asked (`Asks`
+  false): `Gone` (the jar is gone from mods/: released, record dropped) and `Shipped` (N
+  ships the jar itself, same content: GTNH's now).
+- **Server mods**: override jars count as GTNH's own (`modsInput.own`/`withOwn`), so a
+  server jar of the same name or mod is `ModSkip`, never set beside one.
+- **TUI**: Settings row "Mod overrides" (GTNH instances; value `overridesValue`: "none",
+  "<jar> instead of GTNH's", "N jars instead of GTNH's"), not edited in place: enter
+  (`manageOverrides`) opens the field "Which jar do you want to use?" (no overrides; a
+  dropped path's quotes, ~ and backslash-escaped spaces are cleaned, `cleanJarPath`) or the
+  list "Your mod overrides" (enter on one → "Stop using X?"; "Add another…"). The field →
+  confirm "Use X instead of GTNH's Y?" (`[ Use it ]  [ Cancel ]`, cancel back to the
+  field) or the picker "Which of GTNH's mods does X replace?" (esc back to the field). Done
+  → "✓ saved" on the row; refused while a job runs ("One thing at a time") or the game
+  runs. The update question (`overridesDialog`) is a list with a space toggle ("keep mine ·
+  GTNH has Y" / "use GTNH's Y"), esc cancels the update; preselected from `-overrides`
+  (`Config.Overrides`: "gtnh" = GTNH's). The confirmation lists `overrideLines`.
+
 ## Invariants (do not break)
 
 - **Only paths in B ∪ N are ever touched.** Worlds, JourneyMap map data, options.txt,
@@ -402,8 +465,13 @@ and never go into an update's backup or undo.
   jars it installed itself and the player didn't change (`State.CustomMods` +
   `CustomModsFP`); the player's jars that make way for the server's go to
   `.gtnh-updater/replaced-mods/`, which nothing empties. GTNH's jars win over the
-  server's; without a known pack nothing unmanaged is touched. It is journaled and rolls
+  server's, and so do the player's overrides; without a known pack nothing unmanaged is
+  touched. It is journaled and rolls
   back. Archive jars are flat names (top level or one folder; odd names left out).
+- **An override never deletes a jar**: GTNH's copy is only renamed to `.disabled` (and
+  back); the player's jar goes to replaced-mods (remove) or the update's backup (an update
+  that takes GTNH's). An update never enables a GTNH jar a kept override stands in for,
+  and a changed one is never decided silently: only `Gone` and `Shipped` aren't asked.
 - **A 404 is not "no mods"**: it keeps what's installed (with a warning); only an empty
   archive or no link takes the server's mods out.
 - **Server-mods downloads are https only, redirects included**, capped at 1 GiB (2 GiB of
@@ -449,8 +517,10 @@ and never go into an update's backup or undo.
   "8G", "8192 MB"; a bare number up to 64 is GB), a window size without spaces, paths
   through `cleanPath` (quotes, ~), and a folder given for Java or Prism becomes the
   program inside it (`bin/java[w].exe`, `prismlauncher[.exe]`, a macOS `.app`).
-- **Restore only removes paths recorded in `Added`** and only moves back files the backup
-  holds; nothing outside that list is deleted. Never "guess" added files from a
+- **Restore only removes paths recorded in `Added`** (or a mods jar's `.disabled` name
+  when it was disabled since) and only moves back files the backup holds; nothing outside
+  that list is deleted. `healOverrides` after it only renames jars (and moves a stale
+  disabled copy to replaced-mods). Never "guess" added files from a
   manifest-less backup.
 - **Play never implements auth, Java or the game launch itself** — it always starts Prism
   (`prism.Launch`) and lets Prism do the rest. Don't pass anything but `-d`/`-l`/`-s`.
@@ -549,7 +619,7 @@ reads what the page shows about each instance into `m.home`.
     "Choose another version…" (hint `o`, `chooseVersion`); and, when a restorable backup
     exists, "Last update A → B, <ago> · undo" (hint `b`).
   - "Settings" heading (rows_settings.go): Memory, Java arguments, Java, Window and, for
-    GTNH instances, Server and Server mods; the label padded to 15 (`labelled`), values
+    GTNH instances, Server, Server mods and Mod overrides; the label padded to 15 (`labelled`), values
     like "6144 MB (at least 1024 MB)", "1920×1080", "Prism's default", "none", or for
     Server mods "<host> · N mods · synced <ago>" (`settingValue`, `modsValue`). When
     instance.cfg can't be read the rows give way

@@ -446,7 +446,7 @@ func TestHeadlessUnknownVersionFailsNamingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &http.Client{Transport: manifestTransport{t}}
-	err := headless(client, nil, inst, "2.8.1", "9.9.9", "none", update.TakeNew)
+	err := headless(client, nil, inst, "2.8.1", "9.9.9", "none", choices{configs: update.TakeNew})
 	if err == nil || !strings.Contains(err.Error(), `"9.9.9"`) {
 		t.Errorf("headless(-version 9.9.9) error = %v, want one naming \"9.9.9\"", err)
 	}
@@ -489,7 +489,9 @@ func TestHeadlessReportsServerModsSyncFailure(t *testing.T) { // C1
 		t.Fatalf("setup createHeadless = %v", err)
 	}
 	inst := filepath.Join(data, "instances", "Mine")
-	out := captureStdout(t, func() { err = headless(client, nil, inst, "", "2.8.1", brokenModsURL, update.TakeNew) })
+	out := captureStdout(t, func() {
+		err = headless(client, nil, inst, "", "2.8.1", brokenModsURL, choices{configs: update.TakeNew})
+	})
 	if err != nil {
 		t.Fatalf("headless = %v, want nil (server mods failing isn't fatal)", err)
 	}
@@ -539,7 +541,7 @@ func TestCheckPlayFlagsAcceptsValidCombinations(t *testing.T) { // C13
 
 func TestPlayHeadlessUnknownInstanceFailsBeforeNetwork(t *testing.T) { // C13
 	client := &http.Client{Transport: failTransport{t}}
-	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "", "", update.TakeNew)
+	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "", "", choices{configs: update.TakeNew})
 	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Errorf("playHeadless(nope) = %v, want an error naming \"nope\"", err)
 	}
@@ -547,7 +549,7 @@ func TestPlayHeadlessUnknownInstanceFailsBeforeNetwork(t *testing.T) { // C13
 
 func TestPlayHeadlessWithVersionUpdatesFirstAndStopsOnItsError(t *testing.T) { // C13
 	client := &http.Client{Transport: errTransport{}}
-	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "2.8.4", "none", update.TakeNew)
+	err := playHeadless(client, []string{t.TempDir()}, "nope", "", "2.8.4", "none", choices{configs: update.TakeNew})
 	if !errors.Is(err, errOffline) {
 		t.Errorf("playHeadless(-version, offline) = %v, want the update's network error", err)
 	}
@@ -555,7 +557,7 @@ func TestPlayHeadlessWithVersionUpdatesFirstAndStopsOnItsError(t *testing.T) { /
 
 func TestPlayHeadlessWithoutPrismFails(t *testing.T) { // C13
 	client := &http.Client{Transport: failTransport{t}}
-	err := playHeadless(client, nil, "nope", "", "", "", update.TakeNew)
+	err := playHeadless(client, nil, "nope", "", "", "", choices{configs: update.TakeNew})
 	if err == nil || err.Error() != "Prism Launcher not found -- pass -prism-dir" {
 		t.Errorf("playHeadless(no dirs) = %v, want %q", err, "Prism Launcher not found -- pass -prism-dir")
 	}
@@ -660,5 +662,18 @@ func TestModsLinkHeadless(t *testing.T) {
 	out = captureStdout(t, func() { err = modsLinkHeadless(nil, []string{data}, "Mine", "none") })
 	if _, statErr := os.Stat(filepath.Join(dir, ".minecraft", "mods", "extra.jar")); err != nil || statErr == nil {
 		t.Errorf("none: err %v, extra.jar still there: %v; output %q", err, statErr == nil, out)
+	}
+}
+
+// ---- -overrides ----
+
+func TestOverrideChoice(t *testing.T) {
+	for v, want := range map[string]update.Choice{"mine": update.KeepMine, "gtnh": update.TakeNew} {
+		if got, err := overrideChoice(v); err != nil || got != want {
+			t.Errorf("overrideChoice(%q) = %v, %v; want %v", v, got, err, want)
+		}
+	}
+	if _, err := overrideChoice("new"); err == nil || !strings.Contains(err.Error(), `-overrides must be "mine" or "gtnh"`) {
+		t.Errorf("overrideChoice(new) = %v", err)
 	}
 }

@@ -722,7 +722,7 @@ func TestPolish2C7UpdateSectionSaysBusyWhileTheJobRuns(t *testing.T) {
 func TestPolish2C7RowsWhileBusyAreTheJobAndTheSettings(t *testing.T) {
 	m, _ := jobModel(t, "prepare")
 
-	if got := strings.Join(rowIDs(m), ","); got != "job,memory,jvm,java,window,server,mods,after,prism" {
+	if got := strings.Join(rowIDs(m), ","); got != "job,memory,jvm,java,window,server,mods,overrides,after,prism" {
 		t.Errorf("rows = %s", got)
 	}
 }

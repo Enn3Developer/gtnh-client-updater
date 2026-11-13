@@ -18,7 +18,7 @@ Instances        │ Older
                  │   Window         Prism's default
                  │   Server         play.example.org
                  │   Server mods    mods.example.org · not synced yet
+                 │   Mod overrides  none
                  │
-                 │ Launcher
-                 │ ↓ 1 more
+                 │ ↓ 2 more
  enter ok   esc close

@@ -118,6 +118,18 @@ type modsInput struct {
 	serverIDs, diskIDs func(name string) []string
 	checkAll           bool // check every server jar for the same mod, not just new content
 	ignored            []string
+	own                []string // the player's override jars: they win like GTNH's own
+}
+
+// withOwn adds the override jars to pk, GTNH's jars by lower-cased name (nil: unknown).
+func (in *modsInput) withOwn(pk map[string]string) map[string]string {
+	if pk == nil {
+		return nil
+	}
+	for _, j := range in.own {
+		pk[strings.ToLower(j)] = j
+	}
+	return pk
 }
 
 // planMods decides what a sync does; see the rules at the top of the file.
@@ -334,5 +346,5 @@ func (in *modsInput) afterPack(pl *Plan, next map[string]pack.Fingerprint) {
 		}
 		return fp(name)
 	}
-	in.pack = packJars(next, files)
+	in.pack = in.withOwn(packJars(next, files))
 }

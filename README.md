@@ -86,6 +86,7 @@ run it if Prism has no instances yet), pick a version and a name.
 | Worlds, screenshots, JourneyMap maps, keybinds and video settings, server list, shaders | Never touched |
 | Mods and launcher files that come with GTNH | Replaced with the new version's. Mods you **disabled in Prism stay disabled** |
 | Mods you added yourself | Left in place — you'll be reminded to check they work with the new version |
+| Your own builds of GTNH mods (*mod overrides*) | Kept, with GTNH's copy switched off. When the new version changes that mod, you choose: keep yours, or take GTNH's (yours goes to the backup) |
 | Config files you never changed | Updated to the new version's |
 | Config files you changed, that GTNH didn't | Yours are kept |
 | Config files both you and GTNH changed | You choose: take GTNH's new one (yours goes to the backup), keep yours (GTNH's is saved next to it as `<name>.mcnew`), or decide file by file |
@@ -129,6 +130,22 @@ Server owners: serve a `.zip` of `.jar` files over HTTPS, at the top of the zip 
 one folder. To take all the mods out, publish an empty zip: a `404` counts as a broken link,
 and players keep the mods they have.
 
+## Mod overrides
+
+Want a patched or newer build of a mod GTNH ships? Press enter on *Mod overrides* in
+Settings and give gtnh-update the `.jar` (paste its path or drag the file into the
+window). It finds GTNH's copy of the same mod (by its mod id, else its name without the
+version, or asks you which one), **switches GTNH's copy off in Prism** (it stays in the
+mods folder as `<name>.jar.disabled`) and puts yours in its place.
+
+- Updates keep your jar. When a new GTNH version changes that mod (a new version, a new
+  name, or the mod gone), the update asks first: keep yours (GTNH's new jar is installed,
+  switched off) or use GTNH's (yours goes to the update's backup, so undo brings it back).
+- Taking one out (enter on it in *Mod overrides*) switches GTNH's copy back on and moves
+  your jar to `.gtnh-updater/replaced-mods` inside the instance, never deleting it.
+- A server's extra mods never replace your overrides: they win like GTNH's own mods.
+- Delete your jar by hand and the next update switches GTNH's copy back on.
+
 ## For power users
 
 ```text
@@ -149,10 +166,11 @@ gtnh-update -self-update
 | `-server-mods` | Server extra-mods link, or `none`. Default: what the instance remembers. With `-instance` and `-yes` alone it sets the link and syncs (a link that doesn't work isn't saved); without `-yes` the screen syncs from it when it opens |
 | `-prism-dir` | Prism's data folder (the one with `prismlauncher.cfg`), if it isn't found automatically |
 | `-configs` | Config files both you and GTNH changed: `new` (default, yours backed up) or `mine` (GTNH's saved as `.mcnew`). Without `-yes` it picks the preselected answer |
+| `-overrides` | When the new version changes a mod you use your own jar for: `mine` (default, GTNH's new jar is installed switched off) or `gtnh` (GTNH's, yours goes to the backup). Without `-yes` it picks the preselected answer |
 | `-create` | Create a new instance with `-version` instead of updating one |
 | `-name` | Name for the new instance. Default: `GT New Horizons <version>` |
 | `-play` | Start the instance in Prism. With `-yes` it needs `-instance`, starts it and exits; add `-version` to update first. Without `-yes` it opens gtnh-update and starts `-instance` right away |
-| `-yes` | Don't ask, just do it: updating needs `-instance` and `-version`, `-create` needs `-version` (plus optional `-name`, `-server-mods`, and `-configs` for updates), `-play` needs `-instance`, `-server-mods` alone needs `-instance` |
+| `-yes` | Don't ask, just do it: updating needs `-instance` and `-version`, `-create` needs `-version` (plus optional `-name`, `-server-mods`, and `-configs`/`-overrides` for updates), `-play` needs `-instance`, `-server-mods` alone needs `-instance` |
 | `-no-update-check` | Don't check GitHub for a newer gtnh-update |
 | `-V` | Print the gtnh-update version |
 

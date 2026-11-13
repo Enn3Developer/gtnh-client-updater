@@ -18,7 +18,7 @@ Instances        │ Older
    │                 Java                                                   │
    ╰────────────────────────────────────────────────────────────────────────╯
                  │   Server mods    mods.example.org · not synced yet
+                 │   Mod overrides  none
                  │
-                 │ Launcher
-                 │ ↓ 1 more
+                 │ ↓ 2 more
  ↑↓ move   enter choose   esc cancel

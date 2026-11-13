@@ -80,14 +80,20 @@ func fileModIDs(p string) []string {
 
 // archiveModIDs reads the mod ids of a jar inside the server's archive.
 func archiveModIDs(zf *zip.File) []string {
-	if zf.UncompressedSize64 > maxJarRead {
+	return nestedModIDs(zf.UncompressedSize64, zf.Open)
+}
+
+// nestedModIDs reads the mod ids of a jar of size bytes inside another zip, opened with
+// open.
+func nestedModIDs(size uint64, open func() (io.ReadCloser, error)) []string {
+	if size > maxJarRead {
 		return nil
 	}
-	rc, err := zf.Open()
+	rc, err := open()
 	if err != nil {
 		return nil
 	}
-	data, err := io.ReadAll(rc)
+	data, err := io.ReadAll(io.LimitReader(rc, maxJarRead))
 	rc.Close()
 	if err != nil {
 		return nil

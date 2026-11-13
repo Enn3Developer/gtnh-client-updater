@@ -140,10 +140,13 @@ func modsInputFor(a *ModsArchive, inst prism.Instance, st *State, packFP map[str
 		archive:  map[string]pack.Fingerprint{},
 		files:    files,
 		fp:       memoFP(modsDir),
-		pack:     packJars(packFP, files),
 		managed:  managedOf(st),
 		checkAll: checkAll,
 	}
+	for _, o := range overridesOf(st) {
+		in.own = append(in.own, o.Jar)
+	}
+	in.pack = in.withOwn(packJars(packFP, files))
 	if a != nil {
 		for n, zf := range a.jars {
 			in.archive[n] = pack.Fingerprint{Size: zf.UncompressedSize64, CRC: zf.CRC32}

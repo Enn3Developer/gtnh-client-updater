@@ -19,10 +19,10 @@ Instances        │ Older
            │   2.7.3         stable release · a year ago · not available for your Java  │
            │   2.7.2         stable release · 2 years ago · not available for your Java │
            ╰────────────────────────────────────────────────────────────────────────────╯
+                 │
                  │ Launcher
                  │   After I start the game  stay open
                  │   Prism Launcher          found automatically
-                 │
                  │
                  │
                  │

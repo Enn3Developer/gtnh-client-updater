@@ -43,6 +43,8 @@ type State struct {
 	CustomModsSynced time.Time `json:"customModsSynced,omitzero"`
 	// ServerAddress is the host[:port] the player joins with "Play & join"; "" = none.
 	ServerAddress string `json:"serverAddress,omitempty"`
+	// Overrides are the player's jars that stand in for jars GTNH ships (overrides.go).
+	Overrides []Override `json:"overrides,omitempty"`
 }
 
 func statePath(instDir string) string { return filepath.Join(instDir, StateDir, "state.json") }

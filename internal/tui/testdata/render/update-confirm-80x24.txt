@@ -19,6 +19,6 @@ Instances        │ Older
     │                                                                      │
     │                                              [ Go back ]  [ Cancel ] │
     ╰──────────────────────────────────────────────────────────────────────╯
-                 │
+                 │   Prism Launcher          found automatically
                  │
  ←→ choose   enter ok   esc cancel

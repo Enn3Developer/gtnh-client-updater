@@ -56,6 +56,12 @@ type Session struct {
 	// the copy of the last one, or leaves the server mods as they are.
 	ModsErr error
 	mods    *ModsArchive
+	// Overrides are the player's overrides whose mod the update changes; those that
+	// Asks wait for the player's choice (ChooseOverride; unset = keep theirs).
+	Overrides []OverrideChange
+	overrides []ovPlan
+	ovChoice  map[string]Choice
+	cur       map[string]pack.Fingerprint // the scan the plan was made from
 }
 
 // Result summarizes a finished update.
@@ -106,19 +112,15 @@ func Prepare(opts Options, rep Reporter) (s *Session, err error) {
 		return nil, err
 	}
 
-	var managed []string
-	if s.state != nil {
-		managed = s.state.CustomMods
-	}
-
 	// Same version as the saved baseline (a re-run, e.g. to pick up new server mods):
 	// the baseline already describes the target pack, so if every pack file on disk is
 	// as the pack ships it there is nothing to download.
 	if s.BaselineSource == "saved" && opts.Target == opts.Installed {
 		rep.Step("Looking through your instance")
 		cur := Scan(opts.Instance, s.base, s.base, itemProgress(rep))
-		if pl := MakePlan(opts.Instance, s.base, s.base, cur, managed); pl.Count(Install)+pl.Count(Conflict) == 0 {
-			s.nextFP, s.Plan = s.base, pl
+		s.planOverrides(s.base, nil)
+		if pl := s.makePlan(s.base, cur); pl.Count(Install)+pl.Count(Conflict) == 0 {
+			s.nextFP, s.Plan, s.cur = s.base, pl, cur
 		}
 	}
 
@@ -137,8 +139,12 @@ func Prepare(opts Options, rep Reporter) (s *Session, err error) {
 		}
 		rep.Step("Looking through your instance")
 		s.nextFP = s.next.Fingerprints()
-		cur := Scan(opts.Instance, s.base, s.nextFP, itemProgress(rep))
-		s.Plan = MakePlan(opts.Instance, s.base, s.nextFP, cur, managed)
+		s.cur = Scan(opts.Instance, s.base, s.nextFP, itemProgress(rep))
+		if len(overridesOf(s.state)) > 0 {
+			rep.Step("Checking the mods you replaced")
+		}
+		s.planOverrides(s.nextFP, s.nextIDs)
+		s.Plan = s.makePlan(s.nextFP, s.cur)
 	}
 
 	if opts.CustomModsURL != "" {
@@ -151,10 +157,45 @@ func Prepare(opts Options, rep Reporter) (s *Session, err error) {
 			s.mods = cachedMods(opts.CustomModsURL, dir)
 		}
 	}
+	s.planModsPreview()
+	return s, nil
+}
+
+// makePlan plans the pack's files against the scan cur, with the overrides' holds.
+func (s *Session) makePlan(next, cur map[string]pack.Fingerprint) *Plan {
+	var managed []string
+	if s.state != nil {
+		managed = s.state.CustomMods
+	}
+	return makePlan(s.opts.Instance, s.base, next, cur, managed, s.holds(next))
+}
+
+// replan plans the pack's files again after an override choice, keeping the config
+// choices.
+func (s *Session) replan() {
+	if s.cur == nil {
+		return // not made by Prepare (a test's): its plan stays
+	}
+	old := s.Plan
+	s.Plan = s.makePlan(s.nextFP, s.cur)
+	s.Plan.choices = old.choices
+	s.planModsPreview()
+}
+
+// planModsPreview works out the server-mods sync for the confirmation.
+func (s *Session) planModsPreview() {
 	if s.ModsPlan = s.planMods(false); s.ModsPlan != nil {
 		s.Plan.ExtraMods = withoutNames(s.Plan.ExtraMods, append(s.mods.Names(), s.ModsPlan.Names(ModSetAside)...))
 	}
-	return s, nil
+}
+
+// nextIDs reads the mod ids of the new pack's jar name in mods/.
+func (s *Session) nextIDs(name string) []string {
+	e, ok := s.next.Entries[pack.GameDir+"mods/"+name]
+	if !ok {
+		return nil
+	}
+	return nestedModIDs(e.FP.Size, e.Open)
 }
 
 // planMods works out the server-mods sync of this update: for the confirmation, from
@@ -169,7 +210,12 @@ func (s *Session) planMods(final bool) *ModsPlan {
 	case link != "" && s.mods == nil:
 		return keepMods(s.opts.Instance, s.state)
 	}
-	in := modsInputFor(s.mods, s.opts.Instance, s.state, s.nextFP, final, final)
+	st := State{}
+	if s.state != nil {
+		st = *s.state
+	}
+	st.Overrides = s.overridesAfter()
+	in := modsInputFor(s.mods, s.opts.Instance, &st, s.nextFP, final, final)
 	if !final {
 		in.afterPack(s.Plan, s.nextFP)
 	}
@@ -256,6 +302,7 @@ func (s *Session) Apply(rep Reporter) (*Result, error) {
 	}
 	link := s.opts.CustomModsURL
 	st.Version, st.Baseline = s.opts.Target, s.nextFP
+	st.Overrides = s.overridesAfter()
 	st.CustomModsURL = link
 	st.CustomModsAsked = st.CustomModsAsked || s.opts.CustomModsAsked
 	res.ModsErr = s.ModsErr

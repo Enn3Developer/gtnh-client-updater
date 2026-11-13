@@ -59,13 +59,17 @@ func (m *model) settingsRows() []row {
 		{"memory", "Memory"}, {"jvm", "Java arguments"}, {"java", "Java"}, {"window", "Window"},
 	}
 	if info.gtnh {
-		keys = append(keys, struct{ id, label string }{"server", "Server"}, struct{ id, label string }{"mods", "Server mods"})
+		keys = append(keys, struct{ id, label string }{"server", "Server"}, struct{ id, label string }{"mods", "Server mods"},
+			struct{ id, label string }{"overrides", "Mod overrides"})
 	}
 	var out []row
 	for _, k := range keys {
 		r := m.settingRow(k.id, k.label, settingValue(k.id, info, m.now()), labelWidth(k.id))
-		if k.id == "mods" {
+		switch k.id {
+		case "mods":
 			r.run = func(m *model) tea.Cmd { return m.manageMods() }
+		case "overrides":
+			r.run = func(m *model) tea.Cmd { return m.manageOverrides() }
 		}
 		out = append(out, r)
 	}
@@ -138,6 +142,8 @@ func settingValue(key string, info homeInfo, now time.Time) string {
 		return orNone(info.server)
 	case "mods":
 		return modsValue(info, now)
+	case "overrides":
+		return overridesValue(info)
 	}
 	return prismDefault
 }

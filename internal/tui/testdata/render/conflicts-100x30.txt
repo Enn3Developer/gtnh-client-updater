@@ -16,10 +16,10 @@ Instances        │ Older
       │   Keep mine             The new ones are saved next to yours with .mcnew at the end. │
       │   Decide file by file                                                                │
       ╰──────────────────────────────────────────────────────────────────────────────────────╯
+                 │
                  │ Launcher
                  │   After I start the game  stay open
                  │   Prism Launcher          found automatically
-                 │
                  │
                  │
                  │

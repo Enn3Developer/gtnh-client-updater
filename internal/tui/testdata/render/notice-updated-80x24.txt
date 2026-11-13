@@ -20,5 +20,5 @@ Instances        │ Older
                  │ Settings
                  │   Memory         8192 MB (at least 4096 MB)
                  │   Java arguments Prism's default
-                 │ ↓ 7 more
+                 │ ↓ 8 more
  ↑↓ move   enter run   tab instances   n new instance   a show all   q quit

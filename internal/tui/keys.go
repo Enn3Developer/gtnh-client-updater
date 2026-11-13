@@ -121,3 +121,25 @@ func (m *model) toggleShowAll() {
 		m.focus = focusPage
 	}
 }
+
+// quit leaves the program: m.quitting and tea.Quit.
+func (m *model) quit() (tea.Model, tea.Cmd) {
+	m.quitting = true
+	return m, tea.Quit
+}
+
+// quitKey handles q and ctrl+c: never quits mid-apply, cancels a create download and
+// quits once it has cleaned up, else quits.
+func (m *model) quitKey() tea.Cmd {
+	if m.busyApplying() {
+		m.quitRefused = true // never quit mid-apply; the status bar says so
+		return nil
+	}
+	if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
+		m.cancelCreate() // quit once the download has cleaned up (C10)
+		m.quitAfterCancel = true
+		return nil
+	}
+	_, cmd := m.quit()
+	return cmd
+}

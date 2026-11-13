@@ -20,5 +20,5 @@ Instances        │ Older
                  │   Window         Prism's default
                  │   Server         play.example.org
                  │   Server mods    mods.example.org · not synced yet
-                 │ ↓ 3 more
+                 │ ↓ 4 more
  ↑↓ move   enter run   tab instances   updating — please don't close this window

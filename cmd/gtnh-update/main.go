@@ -5,13 +5,15 @@
 // Run it without arguments for the interactive TUI. For scripting:
 //
 //	gtnh-update -list
-//	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] -yes
+//	gtnh-update -instance <dir|name> -version <ver|latest|latest-stable> [-configs new|mine] [-overrides mine|gtnh] -yes
 //	gtnh-update -create -version <ver|latest|latest-stable> [-name <name>] [-server-mods <url>] -yes
 //	gtnh-update -play -instance <dir|name> [-version <ver>] -yes
 //	gtnh-update -instance <dir|name> -server-mods <url|none> -yes
 //
 // -configs new|mine decides what happens to config files changed both by the player and
-// by the new version (default new); in the TUI it only changes the preselected answer.
+// by the new version (default new); -overrides mine|gtnh which version of a mod the player
+// uses their own jar for (a mod override) an update changes: theirs (default) or GTNH's new
+// one. In the TUI both only change the preselected answer.
 package main
 
 import (
@@ -55,6 +57,7 @@ func run() error {
 		installed  = flag.String("installed", "", "the GTNH version the instance is on now, if it's detected wrong")
 		serverMods = flag.String("server-mods", "", "link to your server's extra mods archive (https://…), or \"none\"; default: what the instance remembers")
 		configs    = flag.String("configs", "new", "what to do with config files changed both by you and by the new version: new (replace yours, old ones backed up) or mine (keep yours, new ones saved as .mcnew)")
+		overrides  = flag.String("overrides", "mine", "what to do when the new version changes a mod you use your own jar for: mine (keep yours, GTNH's stays switched off) or gtnh (use GTNH's new one, yours goes to the backup)")
 		create     = flag.Bool("create", false, "create a new Prism instance with -version instead of updating one")
 		name       = flag.String("name", "", "name for the new instance; default: GT New Horizons <version>")
 		play       = flag.Bool("play", false, "start the instance in Prism Launcher; with -yes and -instance it just starts it, add -version to update first")
@@ -83,6 +86,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	ovChoice, err := overrideChoice(*overrides)
+	if err != nil {
+		return err
+	}
+	picks := choices{configs: choice, overrides: ovChoice}
 	if *create && *instance != "" {
 		return errors.New("-create makes a new instance, so it can't be used with -instance")
 	}
@@ -122,7 +130,7 @@ func run() error {
 		if updateCheck && *target != "" {
 			noticeNewer(client)
 		}
-		return playHeadless(client, dirs, *instance, *installed, *target, *serverMods, choice)
+		return playHeadless(client, dirs, *instance, *installed, *target, *serverMods, picks)
 	case *yes && *target == "" && *serverMods != "" && *instance != "":
 		return modsLinkHeadless(client, dirs, *instance, *serverMods)
 	case *yes:
@@ -132,12 +140,12 @@ func run() error {
 		if updateCheck {
 			noticeNewer(client)
 		}
-		return headless(client, dirs, *instance, *installed, *target, *serverMods, choice)
+		return headless(client, dirs, *instance, *installed, *target, *serverMods, picks)
 	}
 	out, err := tui.Run(tui.Config{
 		Client: client, AppVersion: version, PrismDirs: dirs, Instance: *instance,
 		Installed: *installed, Target: *target, ServerMods: *serverMods, UpdateCheck: updateCheck,
-		Create: *create, Name: *name, Configs: tuiConfigs(*configs), Play: *play,
+		Create: *create, Name: *name, Configs: tuiConfigs(*configs), Overrides: *overrides, Play: *play,
 	})
 	if err != nil {
 		return err
@@ -210,6 +218,23 @@ func configChoice(v string) (update.Choice, error) {
 	return c, nil
 }
 
+// choices are the answers of an update that asks nothing: what happens to config files
+// changed on both sides (-configs) and to mods the player overrides that the new version
+// changes (-overrides).
+type choices struct{ configs, overrides update.Choice }
+
+// overrideChoice maps the -overrides flag to the engine's choice: mine = KeepMine, gtnh =
+// TakeNew.
+func overrideChoice(v string) (update.Choice, error) {
+	switch v {
+	case "mine":
+		return update.KeepMine, nil
+	case "gtnh":
+		return update.TakeNew, nil
+	}
+	return 0, fmt.Errorf("-overrides must be \"mine\" or \"gtnh\", not %q", v)
+}
+
 // tuiConfigs is the -configs value for tui.Config.Configs: "" (the recommended answer)
 // unless the flag was given.
 func tuiConfigs(v string) string {
@@ -234,9 +259,9 @@ func checkPlayFlags(play, create, yes bool, instance string) error {
 
 // playHeadless starts an instance in Prism Launcher, updating it to target first when
 // one is given (which syncs the server's mods too), else syncing its server's mods.
-func playHeadless(client *http.Client, dirs []string, instName, installed, target, serverMods string, configs update.Choice) error {
+func playHeadless(client *http.Client, dirs []string, instName, installed, target, serverMods string, picks choices) error {
 	if target != "" {
-		if err := headless(client, dirs, instName, installed, target, serverMods, configs); err != nil {
+		if err := headless(client, dirs, instName, installed, target, serverMods, picks); err != nil {
 			return err
 		}
 	}
@@ -423,7 +448,7 @@ func (r *textReporter) Progress(done, total int64) {
 	fmt.Printf("    %d%%\n", pct)
 }
 
-func headless(client *http.Client, dirs []string, instName, installed, target, serverMods string, configs update.Choice) error {
+func headless(client *http.Client, dirs []string, instName, installed, target, serverMods string, picks choices) error {
 	m, err := manifest.Fetch(client)
 	if err != nil {
 		return err
@@ -468,8 +493,11 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	if err != nil {
 		return err
 	}
+	if len(s.Overrides) > 0 {
+		s.ChooseAllOverrides(picks.overrides)
+	}
 	pl := s.Plan
-	pl.ChooseAll(configs)
+	pl.ChooseAll(picks.configs)
 	if pl.BaselineSuspect() {
 		s.Close()
 		return fmt.Errorf("only %.0f%% of the mods that come with %s are in this instance, so it's probably on another version -- pass it with -installed",
@@ -499,6 +527,7 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 	for _, c := range pl.Chosen(update.TakeNew) {
 		fmt.Println("  replaced your changed config with the new version:", c)
 	}
+	printOverrides(s)
 	if len(pl.ExtraMods) > 0 {
 		fmt.Println("  mods you added yourself, left in place:", strings.Join(pl.ExtraMods, ", "))
 	}
@@ -506,6 +535,27 @@ func headless(client *http.Client, dirs []string, instName, installed, target, s
 		fmt.Println("  old files backed up in", res.BackupDir)
 	}
 	return nil
+}
+
+// printOverrides prints what the update s did to the mods the player overrides.
+func printOverrides(s *update.Session) {
+	for _, c := range s.Overrides {
+		gtnh := strings.Join(c.New, ", ")
+		switch {
+		case c.Gone:
+			fmt.Printf("  your %s isn't in mods/ any more, so GTNH's %s is back on\n", c.Jar, strings.Join(append(c.New, c.Old...), ", "))
+		case c.Shipped:
+			fmt.Printf("  GTNH ships your %s itself now\n", c.Jar)
+		case s.OverrideChoice(c.Jar) == update.KeepMine && gtnh == "":
+			fmt.Printf("  kept your %s; GTNH doesn't have that mod any more\n", c.Jar)
+		case s.OverrideChoice(c.Jar) == update.KeepMine:
+			fmt.Printf("  kept your %s instead of GTNH's %s (installed switched off)\n", c.Jar, gtnh)
+		case gtnh == "":
+			fmt.Printf("  took out your %s (it's in the backup)\n", c.Jar)
+		default:
+			fmt.Printf("  GTNH's %s replaces your %s (yours is in the backup)\n", gtnh, c.Jar)
+		}
+	}
 }
 
 // printMods prints what a server-mods sync from link did (p nil: none ran) and why it

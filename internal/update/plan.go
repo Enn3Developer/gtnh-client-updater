@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -210,17 +211,42 @@ func unionPaths(maps ...map[string]pack.Fingerprint) []string {
 // next the new pack, cur the scan of the disk (see Scan). customMods are the file names
 // the custom-mods sync manages; they are excluded from ExtraMods.
 func MakePlan(inst prism.Instance, base, next, cur map[string]pack.Fingerprint, customMods []string) *Plan {
+	return makePlan(inst, base, next, cur, customMods, modHolds{})
+}
+
+// modHolds is what the player's overrides ask of the pack's mods (see overrides.go).
+type modHolds struct {
+	held     map[string]bool // pack paths kept disabled: an override stands in for them
+	released map[string]bool // pack paths switched back on: their override goes
+	drop     []string        // override jars (names in mods/) the update removes
+	own      []string        // override jars that stay: not mods the player added on top
+}
+
+// makePlan is MakePlan with the overrides' holds.
+func makePlan(inst prism.Instance, base, next, cur map[string]pack.Fingerprint, customMods []string, h modHolds) *Plan {
 	pl := &Plan{}
 	for _, p := range unionPaths(base, next) {
 		B, N := lookup(base, p), lookup(next, p)
 		target, C := p, lookup(cur, p)
-		if isMod(p) && !C.ok {
+		act := func(k Kind) {
+			pl.Actions = append(pl.Actions, Action{Kind: k, Path: target, Disk: DiskPath(inst, target)})
+		}
+		switch {
+		case h.held[p]:
+			// An override stands in for it: GTNH's jar is kept, disabled, whatever is
+			// in the enabled name (which may be the override itself).
+			target, C = p+".disabled", lookup(cur, p+".disabled")
+		case h.released[p] && N.ok:
+			// Its override goes: GTNH's jar comes back in its enabled name.
+			if d := lookup(cur, p+".disabled"); d.ok {
+				target = p + ".disabled"
+				act(Remove)
+				target = p
+			}
+		case isMod(p) && !C.ok:
 			if d := lookup(cur, p+".disabled"); d.ok {
 				target, C = p+".disabled", d // disabled in Prism: update it, keep it disabled
 			}
-		}
-		act := func(k Kind) {
-			pl.Actions = append(pl.Actions, Action{Kind: k, Path: target, Disk: DiskPath(inst, target)})
 		}
 		if packOwned(p) {
 			// A deleted pack file is restored: a missing GTNH jar is almost always an
@@ -256,7 +282,11 @@ func MakePlan(inst prism.Instance, base, next, cur map[string]pack.Fingerprint, 
 			pl.Kept = append(pl.Kept, p) // pack removed it, player changed it: keep
 		}
 	}
-	pl.ExtraMods = extraMods(inst, base, next, customMods)
+	for _, jar := range h.drop {
+		p := pack.GameDir + "mods/" + jar
+		pl.Actions = append(pl.Actions, Action{Kind: Remove, Path: p, Disk: DiskPath(inst, p)})
+	}
+	pl.ExtraMods = extraMods(inst, base, next, append(slices.Clone(customMods), h.own...))
 	pl.BaselineMatch = baselineMatch(base, cur)
 	return pl
 }

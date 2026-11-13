@@ -16,11 +16,11 @@
     Window         Prism's default
     Server         none
     Server mods    none
+    Mod overrides  none
 
   Launcher
     After I start the game  stay open
     Prism Launcher          found automatically
-
 
 
 

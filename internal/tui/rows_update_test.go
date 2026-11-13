@@ -97,7 +97,7 @@ func TestC4NoBackupNoUndoRow(t *testing.T) {
 
 	ids := strings.Join(rowIDs(m), ",")
 
-	if ids != "play,update,versions,memory,jvm,java,window,server,mods,after,prism" {
+	if ids != "play,update,versions,memory,jvm,java,window,server,mods,overrides,after,prism" {
 		t.Errorf("rows = %s", ids)
 	}
 }

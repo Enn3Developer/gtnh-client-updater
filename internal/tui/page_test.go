@@ -35,6 +35,7 @@ func TestC4GTNHPageTopToBottom(t *testing.T) {
 		"  Window         Prism's default",
 		"  Server         play.example.org",
 		"  Server mods    mods.example.org · not synced yet",
+		"  Mod overrides  none",
 		"",
 		"Launcher",
 		"  After I start the game  stay open",
@@ -111,7 +112,7 @@ func TestC4RowsOfAFullGTNHInstanceInOrder(t *testing.T) {
 
 	ids := strings.Join(rowIDs(m), ",")
 
-	if ids != "play,join,update,versions,undo,memory,jvm,java,window,server,mods,after,prism" {
+	if ids != "play,join,update,versions,undo,memory,jvm,java,window,server,mods,overrides,after,prism" {
 		t.Errorf("rows = %s", ids)
 	}
 }
@@ -123,7 +124,7 @@ func TestC4RowsOfAPlainUpToDateInstance(t *testing.T) {
 
 	ids := strings.Join(rowIDs(m), ",")
 
-	if ids != "play,versions,memory,jvm,java,window,server,mods,after,prism" {
+	if ids != "play,versions,memory,jvm,java,window,server,mods,overrides,after,prism" {
 		t.Errorf("rows = %s", ids)
 	}
 }
@@ -211,11 +212,11 @@ func TestC4LastLauncherRowScrollsIntoView(t *testing.T) {
 	m, _ := loadedModel(root, 80, 14, makeInst(t, root, fullSpec("Home")))
 	m.focus = focusPage
 
-	press(m, "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
+	press(m, "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
 	lines := screen(m)
 
 	if m.rows()[m.row].id != "prism" {
-		t.Fatalf("12 downs reached row %q, want prism", m.rows()[m.row].id)
+		t.Fatalf("13 downs reached row %q, want prism", m.rows()[m.row].id)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(lineWith(lines, "Prism Launcher")), "▸ Prism Launcher") {
 		t.Errorf("selected Prism Launcher row not visible:\n%s", strings.Join(lines, "\n"))

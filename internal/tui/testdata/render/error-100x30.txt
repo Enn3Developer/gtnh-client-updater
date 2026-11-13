@@ -18,11 +18,11 @@ Instances        │ Older
                  │  │                                                   [ OK ] │
                  │  ╰──────────────────────────────────────────────────────────╯
                  │   Server mods    mods.example.org · not synced yet
+                 │   Mod overrides  none
                  │
                  │ Launcher
                  │   After I start the game  stay open
                  │   Prism Launcher          found automatically
-                 │
                  │
                  │
                  │

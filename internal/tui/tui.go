@@ -40,6 +40,9 @@ type Config struct {
 	// Configs preselects what happens to config files changed both by the player and by
 	// the new version: "new", "mine", or "" = update.Recommended.
 	Configs string
+	// Overrides preselects which version of a mod the player uses their own jar for an
+	// update asks about: "gtnh" = GTNH's new one, else the player's.
+	Overrides string
 }
 
 // Outcome tells the caller what to do after the TUI exits.
@@ -82,10 +85,11 @@ type homeInfo struct {
 	backup                                *update.Backup // newest restorable backup; nil = nothing to undo
 	settings                              prism.Settings
 	settingsErr                           error
-	mods                                  int       // server mods the sync manages
-	modNames                              []string  // their file names
-	synced                                time.Time // when they were last synced with the server; zero = never
-	modsAsked                             bool      // the player answered whether the server has extra mods
+	mods                                  int               // server mods the sync manages
+	modNames                              []string          // their file names
+	synced                                time.Time         // when they were last synced with the server; zero = never
+	modsAsked                             bool              // the player answered whether the server has extra mods
+	overrides                             []update.Override // the player's jars used instead of GTNH's
 }
 
 type model struct {
@@ -120,14 +124,16 @@ type model struct {
 	edit       *settingEdit        // nil = not editing
 	savedRow   string              // id of the row to mark "✓ saved"; "" none
 
-	findLauncher func(dataDir, override string) (prism.Launcher, error)
-	launch       func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
-	isRunning    func(inst prism.Instance) (bool, error)
-	saveApp      func(appcfg.Config) error
-	restore      func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
-	prepareMods  func(update.ModsSyncOptions, update.Reporter) (*update.ModsSync, error)
-	applyMods    func(*update.ModsSync, update.Reporter) (*update.ModsPlan, error)
-	now          func() time.Time
+	findLauncher   func(dataDir, override string) (prism.Launcher, error)
+	launch         func(l prism.Launcher, dataDir string, inst prism.Instance, server string) error
+	isRunning      func(inst prism.Instance) (bool, error)
+	saveApp        func(appcfg.Config) error
+	restore        func(prism.Instance, update.Backup, update.Reporter) (*update.RestoreResult, error)
+	prepareMods    func(update.ModsSyncOptions, update.Reporter) (*update.ModsSync, error)
+	applyMods      func(*update.ModsSync, update.Reporter) (*update.ModsPlan, error)
+	addOverride    func(inst prism.Instance, src string, replaces []string) error
+	removeOverride func(inst prism.Instance, jar string) error
+	now            func() time.Time
 
 	// job state
 	steps           []string // finished steps of the current job
@@ -169,6 +175,7 @@ func newModel(cfg Config) *model {
 		findLauncher: prism.FindLauncher, launch: prism.Launch, isRunning: prism.IsRunning,
 		saveApp: appcfg.Save, restore: update.Restore, now: time.Now,
 		prepareMods: update.PrepareModsSync, applyMods: (*update.ModsSync).Apply,
+		addOverride: update.AddOverride, removeOverride: update.RemoveOverride,
 		notices: map[string]notice{}, told: map[string]string{},
 	}
 }
@@ -403,6 +410,7 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 		info.server, info.modsURL = st.ServerAddress, st.CustomModsURL
 		info.mods, info.synced, info.modsAsked = len(st.CustomMods), st.CustomModsSynced, st.CustomModsAsked
 		info.modNames = st.CustomMods
+		info.overrides = st.Overrides
 	}
 	if in.GTNH {
 		if bs, _ := update.ListBackups(in.Dir); len(bs) > 0 {
@@ -411,28 +419,6 @@ func (m *model) homeInfoOf(in prism.Instance) homeInfo {
 	}
 	info.settings, info.settingsErr = prism.ReadSettings(in.Dir)
 	return info
-}
-
-// quit leaves the program: m.quitting and tea.Quit.
-func (m *model) quit() (tea.Model, tea.Cmd) {
-	m.quitting = true
-	return m, tea.Quit
-}
-
-// quitKey handles q and ctrl+c: never quits mid-apply, cancels a create download and
-// quits once it has cleaned up, else quits.
-func (m *model) quitKey() tea.Cmd {
-	if m.busyApplying() {
-		m.quitRefused = true // never quit mid-apply; the status bar says so
-		return nil
-	}
-	if j := m.job; j != nil && j.kind == jobCreate && j.phase == "prepare" && m.cancelCreate != nil {
-		m.cancelCreate() // quit once the download has cleaned up (C10)
-		m.quitAfterCancel = true
-		return nil
-	}
-	_, cmd := m.quit()
-	return cmd
 }
 
 // onStep starts the next step of the running job. Unused until slice "updateflow".
